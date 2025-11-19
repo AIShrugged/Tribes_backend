@@ -10,7 +10,4 @@ case "$command" in
   "start-migration" )
     php artisan migrate
   ;;
-  "start-nginx" )
-    nginx -g "daemon off;"
-  ;;
 esac

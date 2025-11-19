@@ -59,7 +59,7 @@ spec:
             - name: nginx-http
               containerPort: {{ .Values.nginx.service.port }}
               protocol: TCP
-          args: ["start-nginx"]              
+          args: ["nginx", "-g", "daemon off;"]              
           {{- with .Values.nginx.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
