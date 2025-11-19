@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "spodial-hr.fullname" . }}-application
+  labels:
+    {{- include "spodial-hr.labels" . | nindent 4 }}-application
+spec:
+  selector:
+    matchLabels:
+      {{- include "spodial-hr.selectorLabels" . | nindent 6 }}-application
+  template:
+    metadata:
+      labels:
+        {{- include "spodial-hr.labels" . | nindent 8 }}-application
+    spec:
+      imagePullSecrets:
+        - name: {{ include "spodial-hr.fullname" . }}-application-pull-secret
+      initContainers:  
+        - name: init-copy
+          command: 
+          - /bin/sh
+          - -c
+          - |
+            cp -av /var/www/* /mnt/share
+            echo "Copied!"
+          image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
+          imagePullPolicy: {{ .Values.application.image.pullPolicy }}
+          volumeMounts:
+            - mountPath: /mnt/share
+              name: public-volume
+      containers:
+        - name: application
+          image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
+          imagePullPolicy: {{ .Values.application.image.pullPolicy }}
+          command: ["start-application"]
+          envFrom:
+          - configMapRef:
+              name: {{ include "spodial-hr.fullname" . }}-application-envs
+          {{- with .Values.application.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.application.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.application.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.application.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        - name: nginx
+          image: "{{ .Values.nginx.image.registry }}/{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          ports:
+            - name: nginx-http
+              containerPort: {{ .Values.nginx.service.port }}
+              protocol: TCP
+          command: ["start-nginx"]              
+          {{- with .Values.nginx.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nginx.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nginx.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nginx.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}          
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,106 @@
+application:
+  image:
+    registry: registry.fabit.ru
+    repository: tribes/tribes
+    tag: latest
+    pullPolicy: IfNotPresent
+    credentials:
+      username: username
+      password: password
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  livenessProbe: {}
+  readinessProbe: {}
+  volumeMounts:
+    - mountPath: /var/www/
+      name: public-volume
+  config:
+    appName: Laravel
+    appEnv: local
+    appDebug: true
+    appUrl: http://localhost
+    appLocale: en
+    appFallbackLocale: en
+    appFakerLocale: en_US
+    appMaintenanceDriver: file
+    phpCliServerWorkers: 4
+    bcryptRounds: 12
+    logChannel: stack
+    logStack: single
+    logDeprecationsChannel: null
+    logLevel: debug
+    dbConnection: pgsql
+    dbHost: 127.0.0.1
+    dbPort: 5432
+    dbDatabase: spodial_hr_backend
+    dbUsername: root
+    dbPassword: DB_PASSWORD=
+    sessionDriver: database
+    sessionLifetime: 120
+    sessionEncrypt: false
+    sessionPath: /
+    sessionDomain: null
+    broadcastConnection: log
+    filesystemDisk: local
+    queueConnection: database
+    cacheStore: database
+    memcachedHost: 127.0.0.1
+    redisClient: phpredis
+    redisHost: 127.0.0.1
+    redisPassword: null
+    redisPort: 6379
+    mailMailer: log
+    mailScheme: null
+    mailHost: 127.0.0.1
+    mailPort: 2525
+    mailUsername: null
+    mailPassword: null
+    mailFromAddress: "hello@example.com"
+    mailFromName: "${APP_NAME}"
+    awsAccessKeyId: AWS_ACCESS_KEY_ID=
+    awsSecretAccessKey: AWS_SECRET_ACCESS_KEY=
+    awsDefaultRegion: us-east-1
+    awsBucket: AWS_BUCKET=
+    awsUsePathStyleEndpoint: false
+    viteAppName: "${APP_NAME}"
+migration:
+  activeDeadlineSeconds: 7200
+  backoffLimit: 5
+nginx:
+  image:
+    registry: third-party-registry.fabit.ru
+    repository: docker.io/library/nginx
+    tag: 1.27.5-alpine3.21-slim
+    pullPolicy: IfNotPresent
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  livenessProbe:
+    httpGet:
+      path: /
+      port: nginx-http
+  readinessProbe:
+    httpGet:
+      path: /
+      port: nginx-http   
+  service:
+    type: ClusterIP
+    port: 80
+  volumeMounts:
+    - mountPath: /var/www/
+      name: public-volume 
+
+volumes:
+  - name: public-volume
+    emptyDir:
+      sizeLimit: 100Mi
+    

@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "spodial-hr.fullname" . }}-application
+  labels:
+    {{- include "spodial-hr.labels" . | nindent 4 }}-application
+data:
+  APP_NAME: {{ quote .Values.application.config.appName }}
+  APP_ENV: {{ quote .Values.application.config.appEnv }}
+  APP_KEY: {{ quote .Values.application.config.appKey }}
+  APP_DEBUG: {{ quote .Values.application.config.appDebug }}
+  APP_URL: {{ quote .Values.application.config.appUrl }}
+  APP_LOCALE: {{ quote .Values.application.config.appLocale }}
+  APP_FALLBACK_LOCALE: {{ quote .Values.application.config.appFallbackLocale }}
+  APP_FAKER_LOCALE: {{ quote .Values.application.config.appFakerLocale }}
+  APP_MAINTENANCE_DRIVER: {{ quote .Values.application.config.appMaintenanceDriver }}
+  PHP_CLI_SERVER_WORKERS: {{ quote .Values.application.config.phpCliServerWorkers }}
+  BCRYPT_ROUNDS: {{ quote .Values.application.config.bcryptRounds }}
+  LOG_CHANNEL: {{ quote .Values.application.config.logChannel }}
+  LOG_STACK: {{ quote .Values.application.config.logStack }}
+  LOG_DEPRECATIONS_CHANNEL: {{ quote .Values.application.config.logDeprecationsChannel }}
+  LOG_LEVEL: {{ quote .Values.application.config.logLevel }}
+  DB_CONNECTION: {{ quote .Values.application.config.dbConnection }}
+  DB_HOST: {{ quote .Values.application.config.dbHost }}
+  DB_PORT: {{ quote .Values.application.config.dbPort }}
+  DB_DATABASE: {{ quote .Values.application.config.dbDatabase }}
+  DB_USERNAME: {{ quote .Values.application.config.dbUsername }}
+  DB_PASSWORD: {{ quote .Values.application.config.dbPassword }}
+  SESSION_DRIVER: {{ quote .Values.application.config.sessionDriver }}
+  SESSION_LIFETIME: {{ quote .Values.application.config.sessionLifetime }}
+  SESSION_ENCRYPT: {{ quote .Values.application.config.sessionEncrypt }}
+  SESSION_PATH: {{ quote .Values.application.config.sessionPath }}
+  SESSION_DOMAIN: {{ quote .Values.application.config.sessionDomain }}
+  BROADCAST_CONNECTION: {{ quote .Values.application.config.broadcastConnection }}
+  FILESYSTEM_DISK: {{ quote .Values.application.config.filesystemDisk }}
+  QUEUE_CONNECTION: {{ quote .Values.application.config.queueConnection }}
+  CACHE_STORE: {{ quote .Values.application.config.cacheStore }}
+  MEMCACHED_HOST: {{ quote .Values.application.config.memcachedHost }}
+  REDIS_CLIENT: {{ quote .Values.application.config.redisClient }}
+  REDIS_HOST: {{ quote .Values.application.config.redisHost }}
+  REDIS_PASSWORD: {{ quote .Values.application.config.redisPassword }}
+  REDIS_PORT: {{ quote .Values.application.config.redisPort }}
+  MAIL_MAILER: {{ quote .Values.application.config.mailMailer }}
+  MAIL_SCHEME: {{ quote .Values.application.config.mailScheme }}
+  MAIL_HOST: {{ quote .Values.application.config.mailHost }}
+  MAIL_PORT: {{ quote .Values.application.config.mailPort }}
+  MAIL_USERNAME: {{ quote .Values.application.config.mailUsername }}
+  MAIL_PASSWORD: {{ quote .Values.application.config.mailPassword }}
+  MAIL_FROM_ADDRESS: {{ quote .Values.application.config.mailFromAddress }}
+  MAIL_FROM_NAME: {{ quote .Values.application.config.mailFromName }}
+  AWS_ACCESS_KEY_ID: {{ quote .Values.application.config.awsAccessKeyId }}
+  AWS_SECRET_ACCESS_KEY: {{ quote .Values.application.config.awsSecretAccessKey }}
+  AWS_DEFAULT_REGION: {{ quote .Values.application.config.awsDefaultRegion }}
+  AWS_BUCKET: {{ quote .Values.application.config.awsBucket }}
+  AWS_USE_PATH_STYLE_ENDPOINT: {{ quote .Values.application.config.awsUsePathStyleEndpoint }}
+  VITE_APP_NAME: {{ quote .Values.application.config.viteAppName }}

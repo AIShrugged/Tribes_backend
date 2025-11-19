@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e;
+
+command="$1"
+
+case "$command" in
+  "start-application" )
+    php artisan key:generate
+  ;;
+  "start-migration" )
+    php artisan migrate
+  ;;
+  "start-nginx" )
+    nginx -g "daemon off;"
+  ;;
+esac

@@ -1,0 +1,67 @@
+include:
+- project: tribes/ci-templates
+  file: base.yaml
+- project: tribes/ci-templates
+  file: build.yaml
+- project: tribes/ci-templates
+  file: conditions.yaml
+- project: tribes/ci-templates
+  file: deploy.yaml
+- project: tribes/ci-templates
+  file: notify.yaml
+- project: tribes/ci-templates
+  file: push_chart.yaml
+
+stages:
+  - build
+  - deploy
+
+image: third-party-registry.fabit.ru/docker.io/library/docker:20.10.14
+
+variables:
+  APP_NAME: spodial-hr
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE != "merge_request_event"
+
+build_image:
+  stage: build
+  extends:
+  - .base_template
+  - .docker_build_image_template
+  - .build_image_args_template
+  when: on_success
+
+argocd_deploy_dev:
+  stage: deploy
+  extends:
+  - .base_template
+  - .commit_argocd_versions_template
+  - .production_deploy
+  variables: 
+    APP_NAME: spodialHr 
+    DEPLOYMENT: spodial-dev
+  when: manual
+
+argocd_deploy_staging:
+  stage: deploy
+  extends:
+  - .base_template
+  - .commit_argocd_versions_template
+  - .production_deploy
+  variables:
+    APP_NAME: spodialHr
+    DEPLOYMENT: spodial-stage
+  when: manual  
+
+argocd_deploy_prod:
+  stage: deploy
+  extends:
+  - .base_template
+  - .commit_argocd_versions_template
+  - .production_deploy
+  variables:
+    APP_NAME: spodialHr
+    DEPLOYMENT: spodial-prod
+  when: manual

@@ -1,0 +1,5 @@
+deploy
+.gitlab-ci.yml
+.docker
+README.md
+docker-compose.yml
