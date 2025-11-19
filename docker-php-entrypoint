@@ -5,9 +5,15 @@ command="$1"
 
 case "$command" in
   "start-application" )
+    echo "Start-application case"    
     php artisan key:generate
   ;;
   "start-migration" )
+    echo "Start-migration case"
     php artisan migrate
   ;;
+  * )
+    echo "Out of case"
+    exec "$@"
+  ;;  
 esac
