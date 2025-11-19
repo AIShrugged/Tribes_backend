@@ -23,4 +23,4 @@ WORKDIR /var/www
 RUN /usr/bin/composer install
 RUN npm install
 
-ENTRYPOINT ["/usr/local/bin/docker-php-entrypoint"]
+ENTRYPOINT ["/var/www/docker-php-entrypoint"]
