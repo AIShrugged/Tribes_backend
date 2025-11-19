@@ -32,7 +32,7 @@ spec:
         - name: application
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.application.image.pullPolicy }}
-          command: ["start-application"]
+          args: ["start-application"]
           envFrom:
           - configMapRef:
               name: {{ include "spodial-hr.fullname" . }}-application-envs
@@ -59,7 +59,7 @@ spec:
             - name: nginx-http
               containerPort: {{ .Values.nginx.service.port }}
               protocol: TCP
-          command: ["start-nginx"]              
+          args: ["start-nginx"]              
           {{- with .Values.nginx.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
