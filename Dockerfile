@@ -2,7 +2,6 @@ FROM third-party-registry.fabit.ru/docker.io/library/php:8.3-fpm-alpine3.21
 
 # Установка системных пакетов
 RUN apk update && apk --no-cache add \
-    nginx=1.26.3-r0 \
     git=2.47.3-r0 \
     unzip=6.0-r15 \
     curl=8.14.1-r2 \
@@ -19,5 +18,10 @@ RUN docker-php-ext-install pdo pdo_pgsql bcmath zip
 
 # Установка Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-
+COPY ./docker-php-entrypoint /usr/local/bin/docker-php-entrypoint
+COPY . /var/www
 WORKDIR /var/www
+RUN /usr/bin/composer install
+RUN npm install
+
+ENTRYPOINT ["/usr/local/bin/docker-php-entrypoint"]

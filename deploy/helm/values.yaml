@@ -20,54 +20,54 @@ application:
     - mountPath: /var/www/
       name: public-volume
   config:
-    appName: Laravel
-    appEnv: local
-    appDebug: true
-    appUrl: http://localhost
-    appLocale: en
-    appFallbackLocale: en
-    appFakerLocale: en_US
-    appMaintenanceDriver: file
-    phpCliServerWorkers: 4
-    bcryptRounds: 12
-    logChannel: stack
-    logStack: single
-    logDeprecationsChannel: null
-    logLevel: debug
-    dbConnection: pgsql
-    dbHost: 127.0.0.1
-    dbPort: 5432
-    dbDatabase: spodial_hr_backend
-    dbUsername: root
-    dbPassword: DB_PASSWORD=
-    sessionDriver: database
-    sessionLifetime: 120
-    sessionEncrypt: false
-    sessionPath: /
-    sessionDomain: null
-    broadcastConnection: log
-    filesystemDisk: local
-    queueConnection: database
-    cacheStore: database
-    memcachedHost: 127.0.0.1
-    redisClient: phpredis
-    redisHost: 127.0.0.1
-    redisPassword: null
-    redisPort: 6379
-    mailMailer: log
-    mailScheme: null
-    mailHost: 127.0.0.1
-    mailPort: 2525
-    mailUsername: null
-    mailPassword: null
-    mailFromAddress: "hello@example.com"
-    mailFromName: "${APP_NAME}"
-    awsAccessKeyId: AWS_ACCESS_KEY_ID=
-    awsSecretAccessKey: AWS_SECRET_ACCESS_KEY=
-    awsDefaultRegion: us-east-1
-    awsBucket: AWS_BUCKET=
-    awsUsePathStyleEndpoint: false
-    viteAppName: "${APP_NAME}"
+    appName: "appName"
+    appEnv: "appEnv"
+    appDebug: "appDebug"
+    appUrl: "appUrl"
+    appLocale: "appLocale"
+    appFallbackLocale: "appFallbackLocale"
+    appFakerLocale: "appFakerLocale"
+    appMaintenanceDriver: "appMaintenanceDriver"
+    phpCliServerWorkers: "phpCliServerWorkers"
+    bcryptRounds: "bcryptRounds"
+    logChannel: "logChannel"
+    logStack: "logStack"
+    logDeprecationsChannel: "logDeprecationsChannel"
+    logLevel: "logLevel"
+    dbConnection: "dbConnection"
+    dbHost: "dbHost"
+    dbPort: "dbPort"
+    dbDatabase: "dbDatabase"
+    dbUsername: "dbUsername"
+    dbPassword: "dbPassword"
+    sessionDriver: "sessionDriver"
+    sessionLifetime: "sessionLifetime"
+    sessionEncrypt: "sessionEncrypt"
+    sessionPath: "sessionPath"
+    sessionDomain: "sessionDomain"
+    broadcastConnection: "broadcastConnection"
+    filesystemDisk: "filesystemDisk"
+    queueConnection: "queueConnection"
+    cacheStore: "cacheStore"
+    memcachedHost: "memcachedHost"
+    redisClient: "redisClient"
+    redisHost: "redisHost"
+    redisPassword: "redisPassword"
+    redisPort: "redisPort"
+    mailMailer: "mailMailer"
+    mailScheme: "mailScheme"
+    mailHost: "mailHost"
+    mailPort: "mailPort"
+    mailUsername: "mailUsername"
+    mailPassword: "mailPassword"
+    mailFromAddress: "mailFromAddress"
+    mailFromName: "mailFromName"
+    awsAccessKeyId: "awsAccessKeyId"
+    awsSecretAccessKey: "awsSecretAccessKey"
+    awsDefaultRegion: "awsDefaultRegion"
+    awsBucket: "awsBucket"
+    awsUsePathStyleEndpoint: "awsUsePathStyleEndpoint"
+    viteAppName: "viteAppName"
 migration:
   activeDeadlineSeconds: 7200
   backoffLimit: 5
@@ -98,9 +98,7 @@ nginx:
   volumeMounts:
     - mountPath: /var/www/
       name: public-volume 
-
-volumes:
-  - name: public-volume
-    emptyDir:
-      sizeLimit: 100Mi
+    - mountPath: /etc/nginx/conf.d/default.conf
+      subPath: default.conf
+      name: application-nginx-config
     

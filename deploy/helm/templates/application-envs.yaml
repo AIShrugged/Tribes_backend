@@ -7,7 +7,6 @@ metadata:
 data:
   APP_NAME: {{ quote .Values.application.config.appName }}
   APP_ENV: {{ quote .Values.application.config.appEnv }}
-  APP_KEY: {{ quote .Values.application.config.appKey }}
   APP_DEBUG: {{ quote .Values.application.config.appDebug }}
   APP_URL: {{ quote .Values.application.config.appUrl }}
   APP_LOCALE: {{ quote .Values.application.config.appLocale }}

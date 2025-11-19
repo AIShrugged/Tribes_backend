@@ -7,8 +7,8 @@ metadata:
   annotations:
     "helm.sh/hook": pre-upgrade
 spec:
-  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
-  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  backoffLimit: {{ .Values.migration.backoffLimit }}
   template:
     spec:
       restartPolicy: Never
@@ -17,7 +17,7 @@ spec:
       containers:
       - name: migration
         command: ["start-migration"]
-        image: "{{ .Values.migration.image.registry }}/{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag }}"
+        image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
         imagePullPolicy: {{ .Values.application.image.pullPolicy }}
         envFrom:
         - configMapRef:

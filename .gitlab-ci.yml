@@ -19,7 +19,7 @@ stages:
 image: third-party-registry.fabit.ru/docker.io/library/docker:20.10.14
 
 variables:
-  APP_NAME: spodial-hr
+  APP_NAME: spodialHrBackend
 
 workflow:
   rules:
@@ -40,7 +40,6 @@ argocd_deploy_dev:
   - .commit_argocd_versions_template
   - .production_deploy
   variables: 
-    APP_NAME: spodialHr 
     DEPLOYMENT: spodial-dev
   when: manual
 
@@ -51,7 +50,6 @@ argocd_deploy_staging:
   - .commit_argocd_versions_template
   - .production_deploy
   variables:
-    APP_NAME: spodialHr
     DEPLOYMENT: spodial-stage
   when: manual  
 
@@ -62,6 +60,5 @@ argocd_deploy_prod:
   - .commit_argocd_versions_template
   - .production_deploy
   variables:
-    APP_NAME: spodialHr
     DEPLOYMENT: spodial-prod
   when: manual
