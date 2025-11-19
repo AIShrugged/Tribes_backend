@@ -2,4 +2,5 @@ deploy
 .gitlab-ci.yml
 .docker
 README.md
+Dockerfile
 docker-compose.yml
