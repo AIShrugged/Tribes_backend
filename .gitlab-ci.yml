@@ -18,9 +18,6 @@ stages:
 
 image: third-party-registry.fabit.ru/docker.io/library/docker:20.10.14
 
-variables:
-  APP_NAME: spodialHrBackend
-
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE != "merge_request_event"
@@ -40,18 +37,9 @@ argocd_deploy_dev:
   - .commit_argocd_versions_template
   - .production_deploy
   variables: 
-    DEPLOYMENT: spodial-dev
+    APP_NAME: spodialHrBackend  
+    DEPLOYMENT: spodial-hr-dev
   when: manual
-
-argocd_deploy_staging:
-  stage: deploy
-  extends:
-  - .base_template
-  - .commit_argocd_versions_template
-  - .production_deploy
-  variables:
-    DEPLOYMENT: spodial-stage
-  when: manual  
 
 argocd_deploy_prod:
   stage: deploy
@@ -60,5 +48,6 @@ argocd_deploy_prod:
   - .commit_argocd_versions_template
   - .production_deploy
   variables:
-    DEPLOYMENT: spodial-prod
+    APP_NAME: spodialHrBackend  
+    DEPLOYMENT: spodial-hr-prod
   when: manual
