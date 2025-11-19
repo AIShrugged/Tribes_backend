@@ -3,7 +3,7 @@ kind: Job
 metadata:
   name: {{ include "spodial-hr.fullname" . }}-application-migration-{{ .Release.Revision }}
   labels:
-    {{- include "spodial-hr.labels" . | nindent 4 }}-application-migration
+    {{- include "spodial-hr.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-upgrade
 spec:

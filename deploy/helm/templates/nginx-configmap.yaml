@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: {{ include "spodial-hr.fullname" . }}-application-nginx-config
   labels:
-    {{- include "spodial-hr.labels" . | nindent 4 }}-application-nginx-config
+    {{- include "spodial-hr.labels" . | nindent 4 }}
 data:
   application-nginx-config.conf: |-
     {{ .Files.Get "files/nginx.conf" | nindent 4 }}

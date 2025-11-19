@@ -3,15 +3,15 @@ kind: Deployment
 metadata:
   name: {{ include "spodial-hr.fullname" . }}-application
   labels:
-    {{- include "spodial-hr.labels" . | nindent 4 }}-application
+    {{- include "spodial-hr.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-      {{- include "spodial-hr.selectorLabels" . | nindent 6 }}-application
+      {{- include "spodial-hr.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "spodial-hr.labels" . | nindent 8 }}-application
+        {{- include "spodial-hr.labels" . | nindent 8 }}
     spec:
       imagePullSecrets:
         - name: {{ include "spodial-hr.fullname" . }}-application-pull-secret

@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: {{ include "spodial-hr.fullname" . }}-application
   labels:
-    {{- include "spodial-hr.labels" . | nindent 4 }}-application
+    {{- include "spodial-hr.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.nginx.service.type }}
   ports:
@@ -12,4 +12,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "spodial-hr.selectorLabels" . | nindent 4 }}-application
+    {{- include "spodial-hr.selectorLabels" . | nindent 4 }}

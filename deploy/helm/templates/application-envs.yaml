@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: {{ include "spodial-hr.fullname" . }}-application-envs
   labels:
-    {{- include "spodial-hr.labels" . | nindent 4 }}-application-envs
+    {{- include "spodial-hr.labels" . | nindent 4 }}
 data:
   APP_NAME: {{ quote .Values.application.config.appName }}
   APP_ENV: {{ quote .Values.application.config.appEnv }}
