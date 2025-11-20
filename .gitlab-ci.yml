@@ -28,6 +28,8 @@ build_image:
   - .base_template
   - .docker_build_image_template
   - .build_image_args_template
+  variables:
+  - DOCKER_BUILDKIT=1
   when: on_success
 
 argocd_deploy_dev:
