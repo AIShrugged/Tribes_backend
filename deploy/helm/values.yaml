@@ -83,10 +83,20 @@ nginx:
     #   cpu: 100m
     #   memory: 128Mi
   livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 3
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 3    
     httpGet:
       path: /
       port: nginx-http
   readinessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 3
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 3    
     httpGet:
       path: /
       port: nginx-http   
