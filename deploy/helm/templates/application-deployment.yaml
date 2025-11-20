@@ -75,12 +75,11 @@ spec:
             - mountPath: /var/www/
               name: public-volume 
             - mountPath: /etc/nginx/conf.d
-              subPath: default.conf
               name: application-nginx-config
       volumes:
       - name: public-volume
         emptyDir:
-          sizeLimit: 100Mi
+          sizeLimit: 500Mi
       - name: application-nginx-config
         configMap:
           name: {{ include "spodial-hr.fullname" . }}-application-nginx-config
