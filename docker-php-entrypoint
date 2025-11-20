@@ -11,6 +11,8 @@ case "$command" in
     php artisan migrate
   ;;
   "nginx" )
+    ln -sf /dev/stdout /var/log/nginx/access.log  
+    ln -sf /dev/stdout /var/log/nginx/access.log    
     nginx -g "daemon off;"
   ;;
   * )
