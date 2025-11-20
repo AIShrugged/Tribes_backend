@@ -48,10 +48,9 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.application.volumeMounts }}
           volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            - mountPath: /var/www/
+              name: public-volume
         - name: nginx
           image: "{{ .Values.nginx.image.registry }}/{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
           imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
@@ -72,10 +71,12 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.nginx.volumeMounts }}
           volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}          
+            - mountPath: /var/www/
+              name: public-volume 
+            - mountPath: /etc/nginx/conf.d
+              subPath: default.conf
+              name: application-nginx-config
       volumes:
       - name: public-volume
         emptyDir:

@@ -16,9 +16,6 @@ application:
     #   memory: 128Mi
   livenessProbe: {}
   readinessProbe: {}
-  volumeMounts:
-    - mountPath: /var/www/
-      name: public-volume
   config:
     appName: "appName"
     appKey: "appKey"
@@ -96,10 +93,4 @@ nginx:
   service:
     type: ClusterIP
     port: 80
-  volumeMounts:
-    - mountPath: /var/www/
-      name: public-volume 
-    - mountPath: /etc/nginx/conf.d/default.conf
-      subPath: default.conf
-      name: application-nginx-config
     
