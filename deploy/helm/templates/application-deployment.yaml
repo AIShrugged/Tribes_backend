@@ -15,19 +15,6 @@ spec:
     spec:
       imagePullSecrets:
         - name: {{ include "spodial-hr.fullname" . }}-application-pull-secret
-      initContainers:  
-        - name: init-copy
-          command: 
-          - /bin/sh
-          - -c
-          - |
-            cp -av /var/www/* /mnt/share
-            echo "Copied!"
-          image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
-          imagePullPolicy: {{ .Values.application.image.pullPolicy }}
-          volumeMounts:
-            - mountPath: /mnt/share
-              name: public-volume
       containers:
         - name: application
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
@@ -48,17 +35,14 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          volumeMounts:
-            - mountPath: /var/www/
-              name: public-volume
         - name: nginx
-          image: "{{ .Values.nginx.image.registry }}/{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
           ports:
             - name: nginx-http
               containerPort: {{ .Values.nginx.service.port }}
               protocol: TCP
-          args: ["nginx", "-g", "daemon off;"]              
+          args: ["nginx"]              
           {{- with .Values.nginx.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -72,14 +56,9 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - mountPath: /var/www/
-              name: public-volume 
             - mountPath: /etc/nginx/conf.d
               name: application-nginx-config
       volumes:
-      - name: public-volume
-        emptyDir:
-          sizeLimit: 500Mi
       - name: application-nginx-config
         configMap:
           name: {{ include "spodial-hr.fullname" . }}-application-nginx-config

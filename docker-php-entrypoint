@@ -10,6 +10,9 @@ case "$command" in
   "migration" )
     php artisan migrate
   ;;
+  "nginx" )
+    nginx -g daemon off;
+  ;;
   * )
     exec "$@"
   ;;  
