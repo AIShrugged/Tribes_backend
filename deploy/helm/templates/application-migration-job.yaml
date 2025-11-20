@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "spodial-hr.fullname" . }}-application-migration-{{ .Release.Revision }}
+  name: {{ include "spodial-hr-backend.fullname" . }}-application-migration-{{ .Release.Revision }}
   labels:
-    {{- include "spodial-hr.labels" . | nindent 4 }}
+    {{- include "spodial-hr-backend.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-upgrade
 spec:
@@ -13,7 +13,7 @@ spec:
     spec:
       restartPolicy: Never
       imagePullSecrets:
-        - name: {{ include "spodial-hr.fullname" . }}-application-pull-secret
+        - name: {{ include "spodial-hr-backend.fullname" . }}-application-pull-secret
       containers:
       - name: migration
         args: ["migration"]
@@ -21,4 +21,4 @@ spec:
         imagePullPolicy: {{ .Values.application.image.pullPolicy }}
         envFrom:
         - configMapRef:
-            name: {{ include "spodial-hr.fullname" . }}-application-envs
+            name: {{ include "spodial-hr-backend.fullname" . }}-application-envs

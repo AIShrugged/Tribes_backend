@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "spodial-hr.name" -}}
+{{- define "spodial-hr-backend.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "spodial-hr.fullname" -}}
+{{- define "spodial-hr-backend.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "spodial-hr.chart" -}}
+{{- define "spodial-hr-backend.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "spodial-hr.labels" -}}
-helm.sh/chart: {{ include "spodial-hr.chart" . }}
-{{ include "spodial-hr.selectorLabels" . }}
+{{- define "spodial-hr-backend.labels" -}}
+helm.sh/chart: {{ include "spodial-hr-backend.chart" . }}
+{{ include "spodial-hr-backend.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,17 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "spodial-hr.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "spodial-hr.name" . }}
+{{- define "spodial-hr-backend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "spodial-hr-backend.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "spodial-hr.serviceAccountName" -}}
+{{- define "spodial-hr-backend.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "spodial-hr.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "spodial-hr-backend.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
@@ -64,7 +64,7 @@ Create the name of the service account to use
 {{/*
 Image pull secret
 */}}
-{{- define "spodial-hr.imagePullSecret" -}}
+{{- define "spodial-hr-backend.imagePullSecret" -}}
 {{- $auth := printf "%s:%s" .credentials.username .credentials.password | b64enc -}}
 {{- printf "{\"auths\": {\"%s\": {\"auth\": \"%s\"}}}" .registry $auth | b64enc }}
 {{- end }}
