@@ -16,7 +16,7 @@ spec:
         - name: {{ include "spodial-hr.fullname" . }}-application-pull-secret
       containers:
       - name: migration
-        args: ["start-migration"]
+        args: ["migration"]
         image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
         imagePullPolicy: {{ .Values.application.image.pullPolicy }}
         envFrom:

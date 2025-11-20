@@ -6,6 +6,7 @@ metadata:
     {{- include "spodial-hr.labels" . | nindent 4 }}
 data:
   APP_NAME: {{ quote .Values.application.config.appName }}
+  APP_KEY: {{ quote .Values.application.config.appKey }}
   APP_ENV: {{ quote .Values.application.config.appEnv }}
   APP_DEBUG: {{ quote .Values.application.config.appDebug }}
   APP_URL: {{ quote .Values.application.config.appUrl }}

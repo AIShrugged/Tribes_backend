@@ -21,6 +21,7 @@ application:
       name: public-volume
   config:
     appName: "appName"
+    appKey: "appKey"
     appEnv: "appEnv"
     appDebug: "appDebug"
     appUrl: "appUrl"

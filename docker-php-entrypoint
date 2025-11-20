@@ -4,16 +4,13 @@ set -e;
 command="$1"
 
 case "$command" in
-  "start-application" )
-    echo "Start-application case"    
-    php artisan key:generate
+  "backend" )
+    php-fpm -R
   ;;
-  "start-migration" )
-    echo "Start-migration case"
+  "migration" )
     php artisan migrate
   ;;
   * )
-    echo "Out of case"
     exec "$@"
   ;;  
 esac

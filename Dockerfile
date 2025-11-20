@@ -18,11 +18,16 @@ RUN docker-php-ext-install pdo pdo_pgsql bcmath zip
 
 # Установка Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-# COPY ./docker-php-entrypoint /usr/local/bin/docker-php-entrypoint
-COPY . /var/www
+COPY --chmod=755 ./docker-php-entrypoint /var/www/docker-php-entrypoint
+COPY --chown=www-data:www-data . /var/www
+#COPY .env.example /var/www/.env
 WORKDIR /var/www
 RUN /usr/bin/composer install
+#RUN mkdir /var/run/php
 RUN npm install
+RUN php artisan scribe:generate || true
+
+EXPOSE 9000
 
 ENTRYPOINT ["/var/www/docker-php-entrypoint"]
 CMD [""]

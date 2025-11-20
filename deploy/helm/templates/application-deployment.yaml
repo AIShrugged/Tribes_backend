@@ -32,7 +32,7 @@ spec:
         - name: application
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.application.image.pullPolicy }}
-          args: ["start-application"]
+          args: ["backend"]
           envFrom:
           - configMapRef:
               name: {{ include "spodial-hr.fullname" . }}-application-envs

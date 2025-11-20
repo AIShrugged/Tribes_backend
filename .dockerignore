@@ -4,3 +4,4 @@ deploy
 README.md
 Dockerfile
 docker-compose.yml
+composer-setup.php
