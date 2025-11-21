@@ -54,3 +54,6 @@ data:
   AWS_BUCKET: {{ quote .Values.application.config.awsBucket }}
   AWS_USE_PATH_STYLE_ENDPOINT: {{ quote .Values.application.config.awsUsePathStyleEndpoint }}
   VITE_APP_NAME: {{ quote .Values.application.config.viteAppName }}
+  GOOGLE_CLIENT_ID: {{ quote .Values.application.config.googleClientId }}
+  GOOGLE_CLIENT_SECRET: {{ quote .Values.application.config.googleClientSecret }}
+  RECALL_API_TOKEN: {{ quote .Values.application.config.recallApiToken }}

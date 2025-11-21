@@ -66,6 +66,9 @@ application:
     awsBucket: "awsBucket"
     awsUsePathStyleEndpoint: "awsUsePathStyleEndpoint"
     viteAppName: "viteAppName"
+    googleClientId: "googleClientId"
+    googleClientSecret: "googleClientSecret"
+    recallApiToken: "recallApiToken"    
 migration:
   activeDeadlineSeconds: 7200
   backoffLimit: 5
