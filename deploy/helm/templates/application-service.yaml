@@ -12,4 +12,5 @@ spec:
       protocol: TCP
       name: http
   selector:
+    spodial-hr-backend: backend  
     {{- include "spodial-hr-backend.selectorLabels" . | nindent 4 }}
