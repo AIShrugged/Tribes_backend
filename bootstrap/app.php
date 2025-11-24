@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -21,6 +22,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(EnsureFrontendRequestsAreStateful::class);
         $middleware->api(ThrottleRequests::class);
         $middleware->api(SubstituteBindings::class);
+        $middleware->trustProxies(['*'],
+            SymfonyRequest::HEADER_X_FORWARDED_FOR |
+            SymfonyRequest::HEADER_X_FORWARDED_HOST |
+            SymfonyRequest::HEADER_X_FORWARDED_PORT |
+            SymfonyRequest::HEADER_X_FORWARDED_PROTO |
+            SymfonyRequest::HEADER_X_FORWARDED_AWS_ELB
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
