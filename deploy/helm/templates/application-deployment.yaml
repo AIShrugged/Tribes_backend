@@ -3,14 +3,17 @@ kind: Deployment
 metadata:
   name: {{ include "spodial-hr-backend.fullname" . }}-application
   labels:
+    spodial-hr-backend: backend
     {{- include "spodial-hr-backend.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
+      spodial-hr-backend: backend
       {{- include "spodial-hr-backend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
+        spodial-hr-backend: backend
         {{- include "spodial-hr-backend.labels" . | nindent 8 }}
     spec:
       imagePullSecrets:
