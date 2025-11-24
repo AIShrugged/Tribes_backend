@@ -10,6 +10,9 @@ case "$command" in
   "migration" )
     php artisan migrate
   ;;
+  "queue-worker" )
+    php artisan queue:work
+  ;;  
   "nginx" )
     ln -sf /dev/stdout /var/log/nginx/access.log  
     ln -sf /dev/stdout /var/log/nginx/access.log    
