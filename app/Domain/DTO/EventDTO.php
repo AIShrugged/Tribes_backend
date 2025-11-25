@@ -12,7 +12,6 @@ class EventDTO extends BaseDTO
         public string $url,
         public string $title,
         public string $description,
-        public bool $hasBot,
     ) {
     }
 
@@ -26,7 +25,6 @@ class EventDTO extends BaseDTO
             'url'         => $this->url,
             'title'       => $this->title,
             'description' => $this->description,
-            'has_bot'     => $this->hasBot,
         ];
     }
 }

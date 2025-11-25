@@ -18,7 +18,7 @@ Route::group(['prefix' => 'v1'], function () {
     Route::get('google/oauth/callback', [GoogleCalendarController::class, 'callback'])
         ->name('google.oauth.callback');
 
-    Route::get('recall/webhook', [RecallWebhookController::class, 'webhook']);
+    Route::post('recall/webhook', [RecallWebhookController::class, 'webhook']);
 
     Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::group(['prefix' => 'users'], function () {

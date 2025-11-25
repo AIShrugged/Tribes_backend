@@ -7,6 +7,7 @@ use App\Exceptions\AppException;
 use App\Models\Source;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class RecallEventService implements SourceEventServiceInterface
 {
@@ -33,6 +34,8 @@ class RecallEventService implements SourceEventServiceInterface
             throw new AppException($response->json('message'), 'RECALL_GENERIC_ERROR');
         }
 
+        Log::info('Event data', $response->json());
+
         foreach ($response->json()['results'] ?? [] as $event) {
             $result[] = new EventDTO(
                 $event['id'],
@@ -41,8 +44,7 @@ class RecallEventService implements SourceEventServiceInterface
                 $event['end_time'],
                 $event['meeting_url'],
                 $event['raw']['summary'],
-                $event['raw']['description'],
-                true
+                $event['raw']['description'] ?? '',
             );
         }
 

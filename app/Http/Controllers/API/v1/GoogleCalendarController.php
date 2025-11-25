@@ -79,8 +79,6 @@ class GoogleCalendarController extends Controller
                 'email'         => $oauthDTO->email,
             ]);
 
-            ParseEventsJob::dispatch($source);
-
             DB::commit();
             return ApiResponse::success(data: SourceResource::make($source));
         } catch (\Exception $exception) {

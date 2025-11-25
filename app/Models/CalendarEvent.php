@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Auth;
 
 class CalendarEvent extends Model
@@ -19,6 +20,11 @@ class CalendarEvent extends Model
     public function source(): BelongsTo
     {
         return $this->belongsTo(Source::class);
+    }
+
+    public function bot(): HasOne
+    {
+        return $this->hasOne(Bot::class);
     }
 
     public function scopeOwned(Builder $query, int $userId): Builder

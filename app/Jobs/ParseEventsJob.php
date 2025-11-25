@@ -32,7 +32,10 @@ class ParseEventsJob implements ShouldQueue
         $events = $eventService->getAllByCalendar();
 
         foreach ($events as $eventDTO) {
-            $this->source->calendarEvents()->create($eventDTO->toArray());
+            $this->source->calendarEvents()->updateOrCreate(
+                ['external_id' => $eventDTO->externalId],
+                $eventDTO->toArray()
+            );
         }
     }
 }
