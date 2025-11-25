@@ -26,7 +26,6 @@ WORKDIR /var/www
 RUN /usr/bin/composer install
 #RUN mkdir /var/run/php
 RUN npm install
-RUN php artisan scribe:generate || true
 
 EXPOSE 9000
 
