@@ -29,6 +29,7 @@ build_image:
   - .docker_build_image_template
   - .build_image_args_template
   variables:
+    DOCKER_BUILD_ARGS: --no-cache
     DOCKER_BUILDKIT: 1
   when: on_success
 
