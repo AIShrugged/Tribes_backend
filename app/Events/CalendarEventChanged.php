@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Models\CalendarEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
@@ -18,7 +19,7 @@ class CalendarEventChanged
      * Create a new event instance.
      */
     public function __construct(
-        public int $calendarEventId
+        public CalendarEvent $calendarEvent
     ) {
         //
     }

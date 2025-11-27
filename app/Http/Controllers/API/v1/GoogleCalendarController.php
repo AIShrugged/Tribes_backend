@@ -11,7 +11,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\GoogleCalendarRequest;
 use App\Http\Resources\API\v1\SourceResource;
 use App\Http\Responses\ApiResponse;
-use App\Jobs\ParseEventsJob;
 use App\Models\OAuthState;
 use App\Models\Source;
 use App\Models\SourceOauth;
@@ -41,6 +40,13 @@ class GoogleCalendarController extends Controller
         ]);
     }
 
+
+    /**
+     * @param GoogleCalendarRequest $request
+     * @return ApiResponse
+     * @throws \Exception
+     * @hideFromAPIDocumentation
+     */
     public function callback(GoogleCalendarRequest $request): ApiResponse
     {
         $oauthState = OAuthState::firstWhere('state', $request->getState());

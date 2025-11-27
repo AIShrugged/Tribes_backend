@@ -3,7 +3,6 @@
 namespace App\Services\Recall\Handlers;
 
 use App\Exceptions\AppException;
-use App\Jobs\ParseEventsJob;
 use App\Models\Source;
 use App\Services\Recall\Payloads\CalendarUpdatePayload;
 use App\Services\Recall\RecallEventHandlerInterface;
@@ -19,9 +18,5 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
         if (!$source) {
             throw new AppException('Invalid source', 'EVENT_SOURCE_NOT_FOUND');
         }
-
-        //TODO: проверять статус календаря в реколле и выполнять соответсвующую логику
-
-        ParseEventsJob::dispatch($source);
     }
 }

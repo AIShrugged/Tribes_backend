@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\AppException;
+use App\Http\Middleware\Authenticate;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -19,9 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->api(EnsureFrontendRequestsAreStateful::class);
         $middleware->api(ThrottleRequests::class);
         $middleware->api(SubstituteBindings::class);
+        $middleware->alias(['auth' => Authenticate::class]);
         $middleware->trustProxies(['*'],
             SymfonyRequest::HEADER_X_FORWARDED_FOR |
             SymfonyRequest::HEADER_X_FORWARDED_HOST |

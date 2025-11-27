@@ -5,8 +5,10 @@ namespace App\Services\Recall;
 use App\Exceptions\AppException;
 use App\Services\Recall\Handlers\CalendarSyncEventHandler;
 use App\Services\Recall\Handlers\CalendarUpdateHandler;
+use App\Services\Recall\Handlers\TranscriptDoneHandler;
 use App\Services\Recall\Payloads\CalendarSyncEventPayload;
 use App\Services\Recall\Payloads\CalendarUpdatePayload;
+use App\Services\Recall\Payloads\TranscriptDonePayload;
 
 class RecallWebhookService
 {
@@ -18,6 +20,10 @@ class RecallWebhookService
         'calendar.sync_events' => [
             'handler' => CalendarSyncEventHandler::class,
             'payload' => CalendarSyncEventPayload::class,
+        ],
+        'transcript.done' => [
+            'handler' => TranscriptDoneHandler::class,
+            'payload' => TranscriptDonePayload::class,
         ]
     ];
 

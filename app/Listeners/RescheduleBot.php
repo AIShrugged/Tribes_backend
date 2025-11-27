@@ -22,6 +22,6 @@ class RescheduleBot
      */
     public function handle(CalendarEventChanged $event): void
     {
-        app(RecallBotService::class)->schedule($event->calendarEventId);
+        $event->calendarEvent->scheduleBot();
     }
 }

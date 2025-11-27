@@ -10,6 +10,11 @@ use Illuminate\Support\Facades\Log;
 
 class RecallWebhookController extends Controller
 {
+    /**
+     * @param Request $request
+     * @return ApiResponse
+     * @hideFromAPIDocumentation
+     */
     public function webhook(Request $request): ApiResponse
     {
         Log::info('Recall webhook', $request->all());

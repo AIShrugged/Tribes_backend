@@ -11,11 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('bots', function (Blueprint $table) {
-            $table->id('calendar_event_id');
-            $table->string('external_id');
-            $table->string('deduplication_key');
-            $table->timestamps();
+        Schema::create('calendar_event_profile', function (Blueprint $table) {
+            $table->bigInteger('calendar_event_id');
+            $table->bigInteger('profile_id');
+
+            $table->unique(['calendar_event_id', 'profile_id']);
         });
     }
 
@@ -24,6 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('bots');
+        Schema::dropIfExists('calendar_event_profile');
     }
 };

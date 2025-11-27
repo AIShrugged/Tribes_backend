@@ -2,14 +2,14 @@
 
 namespace App\Services\Recall\Handlers;
 
-use App\Events\CalendarEventChanged;
+use App\Domain\DTO\EventDTO;
+use App\Domain\DTO\ProfileDTO;
 use App\Exceptions\AppException;
-use App\Models\CalendarEvent;
 use App\Models\Source;
+use App\Services\Recall\CalendarEventSyncService;
 use App\Services\Recall\Payloads\CalendarSyncEventPayload;
 use App\Services\Recall\RecallEventHandlerInterface;
 use App\Services\Recall\RecallPayloadInterface;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 
 class CalendarSyncEventHandler implements RecallEventHandlerInterface
@@ -35,18 +35,14 @@ class CalendarSyncEventHandler implements RecallEventHandlerInterface
         }
 
         foreach ($response['results'] as $event) {
-            $calendarEvent = $source->calendarEvents()->updateOrCreate([
-                'external_id' => $event['id']
-            ], [
-                'platform'    => $event['meeting_platform'],
-                'url'         => $event['meeting_url'],
-                'title'       => $event['raw']['summary'],
-                'description' => $event['raw']['description'] ?? '',
-                'starts_at'   => Carbon::parse($event['start_time']),
-                'ends_at'     => Carbon::parse($event['end_time']),
-            ]);
+            $eventDTO = EventDTO::fromArray($event);
 
-            CalendarEventChanged::dispatch($calendarEvent->id);
+            $profiles = [];
+            foreach ($event['raw']['attendees'] as $attendee) {
+                $profiles[] = ProfileDTO::fromArray($attendee);
+            }
+
+            app(CalendarEventSyncService::class)->sync($source, $eventDTO, $profiles);
         }
     }
 }

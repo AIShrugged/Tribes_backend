@@ -15,15 +15,16 @@ class CalendarEventResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'          => $this->id,
-            'platform'    => $this->platform,
-            'url'         => $this->url,
-            'title'       => $this->title,
-            'description' => $this->description,
-            'starts_at'   => $this->starts_at,
-            'ends_at'     => $this->ends_at,
-            'external_id' => $this->external_id,
-            'source_id'   => $this->source_id,
+            'id'           => $this->id,
+            'platform'     => $this->platform,
+            'url'          => $this->url,
+            'title'        => $this->title,
+            'description'  => $this->description,
+            'starts_at'    => $this->starts_at,
+            'ends_at'      => $this->ends_at,
+            'external_id'  => $this->external_id,
+            'source_id'    => $this->source_id,
+            'required_bot' => $this->required_bot,
         ];
     }
 }

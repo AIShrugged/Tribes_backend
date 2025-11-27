@@ -11,10 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('bots', function (Blueprint $table) {
-            $table->id('calendar_event_id');
-            $table->string('external_id');
-            $table->string('deduplication_key');
+        Schema::create('profiles', function (Blueprint $table) {
+            $table->id();
+            $table->string('email')->unique();
             $table->timestamps();
         });
     }
@@ -24,6 +23,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('bots');
+        Schema::dropIfExists('profiles');
     }
 };

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Domain\DTO\EventDTO;
 use App\Exceptions\AppException;
 use App\Models\Source;
+use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,7 @@ class RecallEventService implements SourceEventServiceInterface
         $response = Http::withHeader('Authorization', config('services.recall.api_token'))
             ->get(static::API_EVENTS_URL, [
                 'calendar_id' => $this->source->external_id,
+                'updated_at__gte' => Carbon::now()->toIso8601String()
             ]);
 
         $result = [];
