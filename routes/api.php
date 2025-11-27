@@ -1,9 +1,14 @@
 <?php
 
 use App\Http\Controllers\API\v1\AuthController;
+use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\CalendarEventController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
+use App\Http\Controllers\API\v1\ParticipantController;
+use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
+use App\Http\Controllers\API\v1\SourceController;
+use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -18,7 +23,7 @@ Route::group(['prefix' => 'v1'], function () {
     Route::get('google/oauth/callback', [GoogleCalendarController::class, 'callback'])
         ->name('google.oauth.callback');
 
-    Route::get('recall/webhook', [RecallWebhookController::class, 'webhook']);
+    Route::post('recall/webhook', [RecallWebhookController::class, 'webhook']);
 
     Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::group(['prefix' => 'users'], function () {
@@ -33,7 +38,21 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::group(['prefix' => 'calendar-events'], function () {
             Route::get('/', [CalendarEventController::class, 'index'])->name('calendar-events.index');
-            Route::get('/{event_id}', [CalendarEventController::class, 'show'])->name('calendar-events.show');
+            Route::get('/{calendar_event_id}', [CalendarEventController::class, 'show'])->name('calendar-events.show');
+
+            Route::post('/{calendar_event_id}/bot/require', [BotController::class, 'require']);
+
+            Route::get('/{calendar_event_id}/participants', [ParticipantController::class, 'index'])
+                ->name('calendar-events.participants.index');
+
+            Route::post('/{calendar_event_id}/participants/{participant_id}/set-profile', [ParticipantController::class, 'setProfile'])
+                ->name('calendar-events.participants.set-profile');
+
+            Route::get('/{calendar_event_id}/profiles', [ProfileController::class, 'index']);
+
+            Route::get('/{calendar_event_id}/transcript', [TranscriptController::class, 'index']);
         });
+
+        Route::get('/sources', [SourceController::class, 'index']);
     });
 });

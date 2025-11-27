@@ -12,7 +12,6 @@ class EventDTO extends BaseDTO
         public string $url,
         public string $title,
         public string $description,
-        public bool $hasBot,
     ) {
     }
 
@@ -26,7 +25,19 @@ class EventDTO extends BaseDTO
             'url'         => $this->url,
             'title'       => $this->title,
             'description' => $this->description,
-            'has_bot'     => $this->hasBot,
         ];
+    }
+
+    public static function fromArray(array $data): EventDTO
+    {
+        return new self(
+            $data['id'],
+            $data['meeting_platform'],
+            $data['start_time'],
+            $data['end_time'],
+            $data['meeting_url'],
+            $data['raw']['summary'] ?? '',
+            $data['raw']['description'] ?? '',
+        );
     }
 }

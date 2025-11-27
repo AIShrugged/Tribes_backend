@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\Sources\Auth\SourceAuthDriver;
 use App\Services\Sources\Auth\SourceAuthFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -24,5 +25,10 @@ class Source extends Model
     public function applyAuth(array $options): array
     {
         return $this->makeAuthDriver()->apply($options);
+    }
+
+    public function scopeOwned(Builder $builder, int $userId): Builder
+    {
+        return $builder->where('user_id', $userId);
     }
 }

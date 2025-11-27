@@ -15,7 +15,12 @@ use Illuminate\Support\Facades\Auth;
  */
 class CalendarEventController extends Controller
 {
-    /** @subgroup Events */
+    /**
+     * Get list of calendar events
+     *
+     * @subgroup Events
+     * @authenticated
+     */
     public function index(CalendarEventRequest $request): ApiResponse
     {
         $calendarEvents = CalendarEvent::owned(Auth::id());
@@ -29,15 +34,16 @@ class CalendarEventController extends Controller
         return ApiResponse::list(CalendarEventResource::collection($calendarEvents), $count);
     }
 
-    /** @subgroup Events */
+    /**
+     * Get specific calendar event
+     *
+     * @subgroup Events
+     * @authenticated
+     */
     public function show(CalendarEventRequest $request): ApiResponse
     {
         $calendarEvent = CalendarEvent::owned(Auth::id())
-            ->find($request->getEventId());
-
-        if (!$calendarEvent) {
-            return ApiResponse::notFound();
-        }
+            ->findOrFail($request->getEventId());
 
         return ApiResponse::success(data: CalendarEventResource::make($calendarEvent));
     }

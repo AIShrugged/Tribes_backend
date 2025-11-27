@@ -24,7 +24,7 @@ class CalendarEventRequest extends FormRequest
         }
 
         if ($this->route()->getName() === 'calendar-events.show') {
-            $rules['event_id'] = ['required', 'integer', 'exists:calendar_events,id'];
+            $rules['calendar_event_id'] = ['required', 'integer', 'exists:calendar_events,id'];
         }
 
         return $rules;
@@ -32,11 +32,11 @@ class CalendarEventRequest extends FormRequest
 
     protected function prepareForValidation()
     {
-        $this->merge(['event_id' => $this->route('event_id')]);
+        $this->merge(['calendar_event_id' => $this->route('calendar_event_id')]);
     }
 
     public function getEventId(): int
     {
-        return $this->input('event_id');
+        return $this->input('calendar_event_id');
     }
 }
