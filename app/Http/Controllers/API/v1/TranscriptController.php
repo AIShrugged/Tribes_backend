@@ -10,8 +10,20 @@ use App\Models\CalendarEvent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
+/**
+ * @group Calendar
+ * @subgroup Events
+ */
 class TranscriptController extends Controller
 {
+    /**
+     * Get transcript of calendar event
+     *
+     * @authenticated
+     *
+     * @param TranscriptRequest $request
+     * @return ApiResponse
+     */
     public function index(TranscriptRequest $request): ApiResponse
     {
         $calendarEvent = CalendarEvent::owned(Auth::id())
