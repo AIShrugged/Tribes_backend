@@ -1,6 +1,12 @@
 deploy
 .gitlab-ci.yml
 .docker
+.git
+.dockerignore
+.editorconfig
+.env.example
+.gitattributes
+.gitignore
 README.md
 Dockerfile
 docker-compose.yml
