@@ -5,6 +5,7 @@ metadata:
   labels:
     {{- include "spodial-hr-backend.labels" . | nindent 4 }}
 data:
+  FRONTEND_URL: {{ quote .Values.application.config.frontendUrl }}
   APP_NAME: {{ quote .Values.application.config.appName }}
   APP_KEY: {{ quote .Values.application.config.appKey }}
   APP_ENV: {{ quote .Values.application.config.appEnv }}

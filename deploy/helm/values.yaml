@@ -17,6 +17,7 @@ application:
   livenessProbe: {}
   readinessProbe: {}
   config:
+    frontendUrl: "frontendUrl"
     appName: "appName"
     appKey: "appKey"
     appEnv: "appEnv"
