@@ -35,10 +35,14 @@ class CalendarSyncEventHandler implements RecallEventHandlerInterface
         }
 
         foreach ($response['results'] as $event) {
+            if (!$event['meeting_platform'] || !$event['meeting_url']) {
+                continue;
+            }
+
             $eventDTO = EventDTO::fromArray($event);
 
             $profiles = [];
-            foreach ($event['raw']['attendees'] as $attendee) {
+            foreach (($event['raw']['attendees'] ?? []) as $attendee) {
                 $profiles[] = ProfileDTO::fromArray($attendee);
             }
 
