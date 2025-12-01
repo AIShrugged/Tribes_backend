@@ -17,6 +17,7 @@ use App\Models\SourceOauth;
 use App\Services\GoogleOAuthService;
 use App\Services\RecallCalendarService;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -43,11 +44,11 @@ class GoogleCalendarController extends Controller
 
     /**
      * @param GoogleCalendarRequest $request
-     * @return ApiResponse
+     * @return RedirectResponse
      * @throws \Exception
      * @hideFromAPIDocumentation
      */
-    public function callback(GoogleCalendarRequest $request): ApiResponse
+    public function callback(GoogleCalendarRequest $request): RedirectResponse
     {
         $oauthState = OAuthState::firstWhere('state', $request->getState());
 
@@ -86,7 +87,7 @@ class GoogleCalendarController extends Controller
             ]);
 
             DB::commit();
-            return ApiResponse::success(data: SourceResource::make($source));
+            return redirect(config('app.frontend_url') . '/dashboard/calendar');
         } catch (\Exception $exception) {
             DB::rollBack();
 
