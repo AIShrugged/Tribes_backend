@@ -87,7 +87,7 @@ class GoogleCalendarController extends Controller
             ]);
 
             DB::commit();
-            return redirect(config('app.frontend_url') . '/dashboard/calendar');
+            return redirect(config('app.frontend_url') . '/dashboard/calendar?attached=1');
         } catch (\Exception $exception) {
             DB::rollBack();
 
