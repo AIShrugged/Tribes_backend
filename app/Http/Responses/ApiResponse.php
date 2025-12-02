@@ -59,7 +59,7 @@ class ApiResponse implements Responsable
             true,
             'Success',
             $data,
-            headers: ['Access-Control-Expose-Headers' => 'Items-Count', ['Items-Count' => $count]]
+            headers: ['Access-Control-Expose-Headers' => 'Items-Count', 'Items-Count' => $count]
         );
     }
 
