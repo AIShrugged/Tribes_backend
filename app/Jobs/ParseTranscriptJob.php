@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Events\TranscriptParsed;
 use App\Exceptions\AppException;
+use App\Models\CalendarEvent;
 use App\Models\Participant;
 use App\Models\TranscriptEntry;
 use App\Services\RecallTranscriptParser;
@@ -18,7 +20,7 @@ class ParseTranscriptJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        private int $calendarEventId,
+        private CalendarEvent $calendarEvent,
         private string $url,
     ) {
         //
@@ -39,7 +41,7 @@ class ParseTranscriptJob implements ShouldQueue
 
         $participants = [];
         foreach ($speakers as $speaker) {
-            $participant = Participant::create(['calendar_event_id' => $this->calendarEventId, 'name' => $speaker]);
+            $participant = Participant::create(['calendar_event_id' => $this->calendarEvent->id, 'name' => $speaker]);
 
             $participants[$speaker] = $participant->id;
         }
@@ -48,7 +50,7 @@ class ParseTranscriptJob implements ShouldQueue
 
         foreach ($transcriptEntries as $entry) {
             TranscriptEntry::create([
-                'calendar_event_id' => $this->calendarEventId,
+                'calendar_event_id' => $this->calendarEvent->id,
                 'participant_id'    => $participants[$entry->speaker],
                 'text'              => $entry->paragraph,
                 'start_relative'    => $entry->startRelative,
@@ -57,5 +59,7 @@ class ParseTranscriptJob implements ShouldQueue
                 'end_absolute'      => $entry->endAbsolute,
             ]);
         }
+
+        TranscriptParsed::dispatch($this->calendarEvent);
     }
 }

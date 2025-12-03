@@ -46,6 +46,11 @@ class CalendarEvent extends Model
         return $this->hasMany(TranscriptEntry::class);
     }
 
+    public function followups(): HasMany
+    {
+        return $this->hasMany(Followup::class);
+    }
+
     public function scopeOwned(Builder $query, int $userId): Builder
     {
         return $query->whereHas('source', function (Builder $query) use ($userId) {
