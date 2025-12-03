@@ -58,3 +58,8 @@ data:
   GOOGLE_CLIENT_ID: {{ quote .Values.application.config.googleClientId }}
   GOOGLE_CLIENT_SECRET: {{ quote .Values.application.config.googleClientSecret }}
   RECALL_API_TOKEN: {{ quote .Values.application.config.recallApiToken }}
+  PROXY_HOST: {{ quote .Values.application.config.ProxyHost }}
+  PROXY_PORT: {{ quote .Values.application.config.ProxyPort }}
+  PROXY_USER: {{ quote .Values.application.config.ProxyUser }}
+  PROXY_PASS: {{ quote .Values.application.config.ProxyPass }}
+  OPENROUTER_API_TOKEN: {{ quote .Values.application.config.OpenrouterApiToken }}

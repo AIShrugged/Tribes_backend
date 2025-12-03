@@ -70,6 +70,12 @@ application:
     googleClientId: "googleClientId"
     googleClientSecret: "googleClientSecret"
     recallApiToken: "recallApiToken"    
+    proxyHost: "ProxyHost"
+    proxyPort: "ProxyPort"
+    proxyUser: "ProxyUser"
+    proxyPass: "ProxyPass"
+    openrouterApiToken: "OpenrouterApiToken"
+
 migration:
   activeDeadlineSeconds: 7200
   backoffLimit: 5
