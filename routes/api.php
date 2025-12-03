@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\CalendarEventController;
+use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
@@ -51,7 +52,13 @@ Route::group(['prefix' => 'v1'], function () {
             Route::get('/{calendar_event_id}/profiles', [ProfileController::class, 'index']);
 
             Route::get('/{calendar_event_id}/transcript', [TranscriptController::class, 'index']);
+
+            Route::get('/{calendar_event_id}/followups', [FollowupController::class, 'index'])
+                ->name('calendar-events.followups.index');
         });
+
+        Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
+            ->name('followups.show');
 
         Route::get('/sources', [SourceController::class, 'index']);
     });

@@ -32,6 +32,6 @@ class TranscriptDoneHandler implements RecallEventHandlerInterface
             throw new AppException($response->json()['message'], 'RECALL_GENERIC_ERROR');
         }
 
-        ParseTranscriptJob::dispatch($bot->calendarEvent->id, $response->json()['recordings'][0]['media_shortcuts']['transcript']['data']['download_url']);
+        ParseTranscriptJob::dispatch($bot->calendarEvent, $response->json()['recordings'][0]['media_shortcuts']['transcript']['data']['download_url']);
     }
 }
