@@ -55,10 +55,14 @@ Route::group(['prefix' => 'v1'], function () {
 
             Route::get('/{calendar_event_id}/followups', [FollowupController::class, 'index'])
                 ->name('calendar-events.followups.index');
+
+            Route::post('/{calendar_event_id}/followups/generate', [FollowupController::class, 'generate']);
         });
 
         Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
             ->name('followups.show');
+
+
 
         Route::get('/sources', [SourceController::class, 'index']);
     });
