@@ -50,6 +50,7 @@ class FollowupService
                 $json = $this->llm->chat(
                     messages: $messages,
                     model: config('ai.providers.openrouter.models.followup'),
+                    maxTokens: 4096,
                     forceJsonResponse: true
                 );
 
