@@ -2,7 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -41,7 +42,29 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'password'          => 'hashed',
         ];
+    }
+
+    public function methodologies(): HasMany
+    {
+        return $this->hasMany(Methodology::class);
+    }
+
+    public function activeMethodology(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            Methodology::class,
+            UserMethodology::class,
+            'user_id',
+            'id',
+            'id',
+            'methodology_id'
+        );
+    }
+
+    public function activeMethodologyOrDefault(): Methodology
+    {
+        return $this->activeMethodology ?? Methodology::where('is_default', true)->firstOrFail();
     }
 }

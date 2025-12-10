@@ -15,34 +15,34 @@ class FollowupService
 {
     public function __construct(
         private readonly OpenRouterClient $llm,
-        private readonly FollowupPromptRegistry $promptRegistry
     ) {
     }
 
     public function generate(
         CalendarEvent $event,
         string $scope,
-        string $type,
         ?Participant $participant = null
     ): Followup {
-        return DB::transaction(function () use ($event, $scope, $type, $participant) {
+        return DB::transaction(function () use ($event, $scope, $participant) {
+            $methodology = $event->host->activeMethodologyOrDefault();
+
             $followup = Followup::create([
                 'calendar_event_id' => $event->id,
                 'participant_id'    => $participant?->id,
+                'methodology_id'    => $methodology->id,
                 'scope'             => $scope,
-                'type'              => $type,
                 'status'            => FollowupStatus::IN_PROGRESS->value,
                 'text'              => '',
             ]);
 
             try {
-                $prompt = $this->promptRegistry->resolve($scope, $type);
 
                 $transcript = $this->buildTranscript($event);
 
                 $messages = [
-                    new MessageDTO('system', $prompt->getSystemPrompt()),
-                    new MessageDTO('user', $prompt->getUserPrompt() . $transcript),
+                    new MessageDTO('user', view('prompts.methodology_prompt', ['scheme' => $methodology->scheme])->render()),
+                    new MessageDTO('user', "Текст с методикой:\n" . $methodology->text),
+                    new MessageDTO('user', "Транскрипт встречи:\n" . $transcript),
                 ];
 
                 Log::info('messages', $messages);
@@ -50,7 +50,7 @@ class FollowupService
                 $json = $this->llm->chat(
                     messages: $messages,
                     model: config('ai.providers.openrouter.models.followup'),
-                    maxTokens: 4096,
+                    maxTokens: 8192,
                     forceJsonResponse: true
                 );
 

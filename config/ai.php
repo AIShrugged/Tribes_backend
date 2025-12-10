@@ -4,8 +4,9 @@ return [
     'providers' => [
         'openrouter' => [
             'api_token' => env('OPENROUTER_API_TOKEN'),
-            'models' => [
-                'followup' => 'google/gemini-3-pro-preview'
+            'models'    => [
+                'followup' => 'google/gemini-3-pro-preview',
+                'scheme'   => 'google/gemini-3-pro-preview',
             ]
         ]
     ]
