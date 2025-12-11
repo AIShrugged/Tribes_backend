@@ -16,9 +16,9 @@ class CalendarEvent extends Model
 {
     protected $guarded = [];
 
-    public function user(): BelongsTo
+    public function host(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->source->user();
     }
 
     public function source(): BelongsTo

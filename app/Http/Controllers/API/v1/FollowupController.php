@@ -58,7 +58,6 @@ class FollowupController extends Controller
         $followup = app(FollowupService::class)->generate(
             $calendarEvent,
             FollowupScope::SHARED->value,
-            FollowupType::STAYFITT_V1->value
         );
 
         return ApiResponse::success(

@@ -5,6 +5,7 @@ use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\CalendarEventController;
 use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
+use App\Http\Controllers\API\v1\MethodologyController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
@@ -62,7 +63,9 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
+        Route::get('/methodologies/active', [MethodologyController::class, 'active']);
 
+        Route::apiResource('methodologies', MethodologyController::class);
 
         Route::get('/sources', [SourceController::class, 'index']);
     });

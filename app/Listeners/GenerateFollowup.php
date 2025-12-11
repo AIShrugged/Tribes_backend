@@ -25,7 +25,6 @@ class GenerateFollowup
         app(FollowupService::class)->generate(
             $event->calendarEvent,
             FollowupScope::SHARED->value,
-            FollowupType::STAYFITT_V1->value
         );
     }
 }

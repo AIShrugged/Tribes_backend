@@ -22,6 +22,8 @@ class FollowupResource extends JsonResource
             'type'              => $this->type,
             'text'              => $this->text,
             'status'            => $this->status,
+            'created_at'        => $this->created_at,
+            'updated_at'        => $this->updated_at,
         ];
     }
 }

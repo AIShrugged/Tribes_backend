@@ -6,6 +6,7 @@ use App\Services\Sources\Auth\SourceAuthDriver;
 use App\Services\Sources\Auth\SourceAuthFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Source extends Model
@@ -15,6 +16,11 @@ class Source extends Model
     public function calendarEvents(): HasMany
     {
         return $this->hasMany(CalendarEvent::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function makeAuthDriver(): SourceAuthDriver
