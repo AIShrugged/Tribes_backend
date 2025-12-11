@@ -5,32 +5,12 @@ command="$1"
 
 case "$command" in
   "backend" )
-    work=true
 
-    function stop_scheduler() {
-      echo "Stopping scheduler..."
-      work=false
-      php artisan schedule:interrupt
-      sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
-      exit 0
-    }
-
-    # handle graceful shutdown
-    trap "" SIGPIPE
-    trap stop_scheduler SIGTERM SIGINT SIGHUP
-
-    if [ "$work" = "true" ]; then
-        echo "Generating docs"
-        php artisan scribe:generate  
-    fi
-
-    while $work; do
-      echo "Running backend"
-      php-fpm -R
-      sleep 1
-    done
+    php artisan scribe:generate  
+    php-fpm -R
   ;;
   "migration" )
+  
     php artisan migrate
   ;;
   "queue-worker" )
@@ -40,7 +20,7 @@ case "$command" in
     function stop_scheduler() {
       echo "Stopping scheduler..."
       work=false
-      php artisan schedule:interrupt
+      php artisan queue:restart
       sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
       exit 0
     }
