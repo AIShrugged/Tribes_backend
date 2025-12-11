@@ -3,6 +3,7 @@
 use App\Exceptions\AppException;
 use App\Http\Middleware\Authenticate;
 use App\Http\Responses\ApiResponse;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -46,4 +47,6 @@ return Application::configure(basePath: dirname(__DIR__))
             );
         });
 
+    })->withSchedule(function (Schedule $schedule) {
+        $schedule->command('telescope:prune --hours=12')->dailyAt('23:59')->timezone('Europe/Moscow');
     })->create();
