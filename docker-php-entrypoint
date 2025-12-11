@@ -20,6 +20,7 @@ case "$command" in
     trap stop_scheduler SIGTERM SIGINT SIGHUP
 
     if [ "$work" = "true" ]; then
+        echo "Generating docs"
         php artisan scribe:generate  
     fi
 
