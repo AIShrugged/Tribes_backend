@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "spodial-hr-backend.fullname" . }}-queue-worker
+  name: {{ include "spodial-hr-backend.fullname" . }}-schedule-worker
   labels:
     {{- include "spodial-hr-backend.labels" . | nindent 4 }}
 spec:
@@ -17,10 +17,10 @@ spec:
         - name: {{ include "spodial-hr-backend.fullname" . }}-application-pull-secret
       terminationGracePeriodSeconds: {{ .Values.application.gracefulShutdownSeconds | default 30 }}        
       containers:
-        - name: queue-worker
+        - name: schedule
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.application.image.pullPolicy }}
-          args: ["queue-worker"]
+          args: ["schedule"]
           env:
           - name: GRACEFUL_SHUTDOWN_SECONDS
             value: {{ quote .Values.application.gracefulShutdownSeconds }}          
