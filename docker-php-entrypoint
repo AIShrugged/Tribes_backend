@@ -5,15 +5,77 @@ command="$1"
 
 case "$command" in
   "backend" )
-    php artisan scribe:generate  
-    php-fpm -R
+    work=true
+
+    function stop_scheduler() {
+      echo "Stopping scheduler..."
+      work=false
+      php artisan schedule:interrupt
+      sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
+      exit 0
+    }
+
+    # handle graceful shutdown
+    trap "" SIGPIPE
+    trap stop_scheduler SIGTERM SIGINT SIGHUP
+
+    if [ "$work" = "true" ]; then
+        php artisan scribe:generate  
+    fi
+
+    while $work; do
+      echo "Running backend"
+      php-fpm -R
+      sleep 1
+    done
   ;;
   "migration" )
     php artisan migrate
   ;;
   "queue-worker" )
-    php artisan queue:work
-  ;;  
+
+    work=true
+
+    function stop_scheduler() {
+      echo "Stopping scheduler..."
+      work=false
+      php artisan schedule:interrupt
+      sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
+      exit 0
+    }
+
+    # handle graceful shutdown
+    trap "" SIGPIPE
+    trap stop_scheduler SIGTERM SIGINT SIGHUP
+
+    while $work; do
+      echo "Running queue"
+      php artisan queue:work
+      sleep 1
+    done  
+  ;;
+  "schedule" )
+
+    work=true
+
+    function stop_scheduler() {
+      echo "Stopping schedule..."
+      work=false
+      php artisan schedule:interrupt
+      sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
+      exit 0
+    }
+
+    # handle graceful shutdown
+    trap "" SIGPIPE
+    trap stop_scheduler SIGTERM SIGINT SIGHUP
+
+    while $work; do
+      echo "Running schedule"
+      php artisan schedule:run --verbose --no-interaction &
+      sleep 60
+    done
+  ;; 
   "nginx" )
     ln -sf /dev/stdout /var/log/nginx/access.log  
     ln -sf /dev/stdout /var/log/nginx/access.log    

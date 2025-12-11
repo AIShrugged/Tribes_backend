@@ -15,11 +15,15 @@ spec:
     spec:
       imagePullSecrets:
         - name: {{ include "spodial-hr-backend.fullname" . }}-application-pull-secret
+      terminationGracePeriodSeconds: {{ .Values.application.config.gracefulShutdownSeconds | default 30 }}        
       containers:
         - name: queue-worker
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.application.image.pullPolicy }}
           args: ["queue-worker"]
+          env:
+          - name: GRACEFUL_SHUTDOWN_SECONDS
+            value: {{ quote .Values.application.config.gracefulShutdownSeconds }}          
           envFrom:
           - configMapRef:
               name: {{ include "spodial-hr-backend.fullname" . }}-application-envs
@@ -35,6 +39,10 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/kill", "-SIGTERM", "7"]          
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

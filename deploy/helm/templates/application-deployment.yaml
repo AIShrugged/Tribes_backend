@@ -18,11 +18,15 @@ spec:
     spec:
       imagePullSecrets:
         - name: {{ include "spodial-hr-backend.fullname" . }}-application-pull-secret
+      terminationGracePeriodSeconds: {{ .Values.application.config.gracefulShutdownSeconds | default 30 }}
       containers:
         - name: application
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.application.image.pullPolicy }}
           args: ["backend"]
+          env:
+          - name: GRACEFUL_SHUTDOWN_SECONDS
+            value: {{ quote .Values.application.config.gracefulShutdownSeconds }}
           envFrom:
           - configMapRef:
               name: {{ include "spodial-hr-backend.fullname" . }}-application-envs
@@ -38,6 +42,10 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/kill", "-SIGTERM", "7"]          
         - name: nginx
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
           imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
