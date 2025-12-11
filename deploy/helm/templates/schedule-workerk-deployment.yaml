@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "spodial-hr-backend.fullname" . }}-schedule-worker
+  labels:
+    {{- include "spodial-hr-backend.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "spodial-hr-backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "spodial-hr-backend.labels" . | nindent 8 }}
+    spec:
+      imagePullSecrets:
+        - name: {{ include "spodial-hr-backend.fullname" . }}-application-pull-secret
+      terminationGracePeriodSeconds: {{ .Values.application.config.gracefulShutdownSeconds | default 30 }}        
+      containers:
+        - name: schedule
+          image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
+          imagePullPolicy: {{ .Values.application.image.pullPolicy }}
+          args: ["schedule"]
+          env:
+          - name: GRACEFUL_SHUTDOWN_SECONDS
+            value: {{ quote .Values.application.config.gracefulShutdownSeconds }}          
+          envFrom:
+          - configMapRef:
+              name: {{ include "spodial-hr-backend.fullname" . }}-application-envs
+          {{- with .Values.application.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.application.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.application.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/kill", "-SIGTERM", "7"]          
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
