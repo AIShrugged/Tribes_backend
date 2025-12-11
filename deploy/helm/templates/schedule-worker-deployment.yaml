@@ -15,7 +15,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: {{ include "spodial-hr-backend.fullname" . }}-application-pull-secret
-      terminationGracePeriodSeconds: {{ .Values.application.config.gracefulShutdownSeconds | default 30 }}        
+      terminationGracePeriodSeconds: {{ .Values.application.gracefulShutdownSeconds | default 30 }}        
       containers:
         - name: schedule
           image: "{{ .Values.application.image.registry }}/{{ .Values.application.image.repository }}:{{ .Values.application.image.tag }}"
@@ -23,7 +23,7 @@ spec:
           args: ["schedule"]
           env:
           - name: GRACEFUL_SHUTDOWN_SECONDS
-            value: {{ quote .Values.application.config.gracefulShutdownSeconds }}          
+            value: {{ quote .Values.application.gracefulShutdownSeconds }}          
           envFrom:
           - configMapRef:
               name: {{ include "spodial-hr-backend.fullname" . }}-application-envs
