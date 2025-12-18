@@ -7,6 +7,7 @@ use App\Models\Source;
 use App\Services\Recall\Payloads\CalendarUpdatePayload;
 use App\Services\Recall\RecallEventHandlerInterface;
 use App\Services\Recall\RecallPayloadInterface;
+use App\Services\RecallCalendarService;
 
 class CalendarUpdateHandler implements RecallEventHandlerInterface
 {
@@ -17,6 +18,10 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
 
         if (!$source) {
             throw new AppException('Invalid source', 'EVENT_SOURCE_NOT_FOUND');
+        }
+
+        if (!RecallCalendarService::isConnected($source->external_id)) {
+            $source->disconnect();
         }
     }
 }

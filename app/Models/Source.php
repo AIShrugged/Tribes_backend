@@ -37,4 +37,10 @@ class Source extends Model
     {
         return $builder->where('user_id', $userId);
     }
+
+    public function disconnect(): void
+    {
+        $this->is_connected = false;
+        $this->save();
+    }
 }
