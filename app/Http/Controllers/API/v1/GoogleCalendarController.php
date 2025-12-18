@@ -60,26 +60,27 @@ class GoogleCalendarController extends Controller
             DB::beginTransaction();
             $oauthDTO = app(GoogleOAuthService::class)->callback($oauthState, $request->getCode());
 
-            if (Source::firstWhere([
+            $source = Source::firstWhere([
                 'user_id'  => $oauthState->user_id,
                 'identity' => $oauthDTO->email,
                 'type'     => SourceType::GOOGLE_CALENDAR->value
-            ])) {
-                throw AppException::fromErrorClass(SourceExistsError::class);
-            }
-
-            $sourceDTO = RecallCalendarService::attach($oauthDTO, SourceType::GOOGLE_CALENDAR);
-
-            $source = Source::create([
-                'user_id'     => $oauthState->user_id,
-                'external_id' => $sourceDTO->externalId,
-                'identity'    => $sourceDTO->identity,
-                'auth_type'   => SourceAuthType::OAUTH2->value,
-                'type'        => SourceType::GOOGLE_CALENDAR->value
             ]);
 
-            SourceOauth::create([
-                'source_id'     => $source->id,
+            if ($source) {
+                RecallCalendarService::reAttach($oauthDTO, SourceType::GOOGLE_CALENDAR, $source->external_id);
+            } else {
+                $sourceDTO = RecallCalendarService::attach($oauthDTO, SourceType::GOOGLE_CALENDAR);
+
+                $source = Source::create([
+                    'user_id'     => $oauthState->user_id,
+                    'external_id' => $sourceDTO->externalId,
+                    'identity'    => $sourceDTO->identity,
+                    'auth_type'   => SourceAuthType::OAUTH2->value,
+                    'type'        => SourceType::GOOGLE_CALENDAR->value
+                ]);
+            }
+
+            SourceOauth::updateOrCreate(['source_id' => $source->id], [
                 'access_token'  => $oauthDTO->accessToken,
                 'refresh_token' => $oauthDTO->refreshToken,
                 'expires_at'    => Carbon::now()->addSeconds($oauthDTO->expiresIn),
