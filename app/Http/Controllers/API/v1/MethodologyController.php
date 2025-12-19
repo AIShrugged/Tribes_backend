@@ -36,10 +36,6 @@ class MethodologyController extends Controller
      */
     public function store(MethodologyRequest $request): ApiResponse
     {
-        if (Auth::user()->methodologies()->exists()) {
-            throw new AppException('Methodology already exists.', 'METHODOLOGY_EXISTS', 400);
-        }
-
         try {
             DB::beginTransaction();
 
