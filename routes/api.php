@@ -8,8 +8,10 @@ use App\Http\Controllers\API\v1\GoogleCalendarController;
 use App\Http\Controllers\API\v1\MethodologyController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
+use App\Http\Controllers\API\v1\OrganizationController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SourceController;
+use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -47,7 +49,8 @@ Route::group(['prefix' => 'v1'], function () {
             Route::get('/{calendar_event_id}/participants', [ParticipantController::class, 'index'])
                 ->name('calendar-events.participants.index');
 
-            Route::post('/{calendar_event_id}/participants/{participant_id}/set-profile', [ParticipantController::class, 'setProfile'])
+            Route::post('/{calendar_event_id}/participants/{participant_id}/set-profile',
+                [ParticipantController::class, 'setProfile'])
                 ->name('calendar-events.participants.set-profile');
 
             Route::get('/{calendar_event_id}/profiles', [ProfileController::class, 'index']);
@@ -63,9 +66,20 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
-        Route::get('/methodologies/active', [MethodologyController::class, 'active']);
+        Route::apiResource('teams', TeamController::class)
+            ->except(['destroy']);
+        Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
+        Route::post('teams/{team}/methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
 
-        Route::apiResource('methodologies', MethodologyController::class);
+        Route::get('/teams/{team}', [TeamController::class, 'show']);
+        Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
+        Route::post('organizations/{organization}/teams', [TeamController::class, 'store']);
+        Route::apiResource('organizations', OrganizationController::class)
+            ->except(['destroy']);
+        Route::get('organizations/{organization}/methodologies', [MethodologyController::class, 'index']);
+
+        Route::apiResource('methodologies', MethodologyController::class)
+            ->except(['index']);
 
         Route::get('/sources', [SourceController::class, 'index']);
     });

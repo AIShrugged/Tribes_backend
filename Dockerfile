@@ -9,7 +9,7 @@ RUN apk update && apk --no-cache add \
     libpq-dev=17.7-r0 \
     libzip-dev=1.11.2-r0 \
     zip=3.0-r13 \
-    gnupg=2.4.7-r0 \
+    gnupg=2.4.9-r0 \
     ca-certificates=20250911-r0 \
     nodejs=22.15.1-r0 \
     npm=10.9.1-r0

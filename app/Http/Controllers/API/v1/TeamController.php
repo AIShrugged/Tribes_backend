@@ -1,0 +1,163 @@
+<?php
+
+namespace App\Http\Controllers\API\v1;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\API\v1\MethodologyRequest;
+use App\Http\Requests\API\v1\TeamRequest;
+use App\Http\Resources\API\v1\MethodologyResource;
+use App\Http\Resources\API\v1\TeamResource;
+use App\Http\Responses\ApiResponse;
+use App\Models\Organization;
+use App\Models\Team;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+
+class TeamController extends Controller
+{
+    /**
+     * List teams
+     *
+     * @group Teams
+     *
+     * Returns a paginated list of teams for the given organization.
+     *
+     * @queryParam offset integer The number of items to skip. Example: 0
+     * @queryParam limit integer The number of items to return. Example: 25
+     *
+     * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Core Team","slug":"core-team","employee_count":12}]}
+     * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     */
+    public function index(TeamRequest $request, Organization $organization): ApiResponse
+    {
+        Gate::authorize('viewAny', [Team::class, $organization]);
+
+        $teams = $organization->teams();
+
+        $count = $teams->count();
+
+        $teams = $teams->offset($request->getOffset())
+            ->limit($request->getLimit())
+            ->get();
+
+        return ApiResponse::list(TeamResource::collection($teams), $count);
+    }
+
+    /**
+     * Create a team
+     *
+     * @group Teams
+     *
+     * Creates a new team in the given organization. A default methodology is assigned automatically.
+     *
+     * @urlParam organization integer required The organization ID. Example: 10
+     * @bodyParam name string required Team name. Example: Core Team
+     *
+     * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Core Team","slug":"core-team","employee_count":0}}
+     * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     */
+    public function store(TeamRequest $request, Organization $organization): ApiResponse
+    {
+        Gate::authorize('create', [Team::class, $organization]);
+
+        $team = $organization->teams()->create($request->getStoreData());
+
+        return ApiResponse::success(data: TeamResource::make($team));
+    }
+
+    /**
+     * Get a team
+     *
+     * @group Teams
+     *
+     * Returns a single team by ID.
+     *
+     * @urlParam team integer required The team ID. Example: 5
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Core Team","slug":"core-team","employee_count":12}}
+     * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message":"No query results for model [Team] 999"}
+     */
+    public function show(TeamRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('view', $team);
+
+        return ApiResponse::success(data: TeamResource::make($team));
+    }
+
+    /**
+     * Update a team
+     *
+     * @group Teams
+     *
+     * Updates team fields. The request payload includes the team ID and optional fields to change.
+     *
+     * @urlParam team integer required The team ID (route model binding). Example: 5
+     * @bodyParam id integer required The team ID (request payload). Example: 5
+     * @bodyParam name string Team name. Example: Platform Team
+     * @bodyParam slug string Team slug. Example: platform-team
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Platform Team","slug":"platform-team","employee_count":12}}
+     * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message":"No query results for model [Team] 999"}
+     */
+    public function update(TeamRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('update', $team);
+
+        $team = Team::findOrFail($request->getId());
+
+        $team->update($request->getUpdateData());
+
+        return ApiResponse::success(data: TeamResource::make($team->refresh()));
+    }
+
+    /**
+     * Get active team methodology
+     *
+     * @group Teams
+     *
+     * Returns the currently assigned methodology for the team.
+     *
+     * @urlParam team integer required The team ID. Example: 5
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
+     * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message":"No query results for model [Team] 999"}
+     */
+    public function activeMethodology(TeamRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('view', $team);
+
+        return ApiResponse::success(data: MethodologyResource::make($team->methodology));
+    }
+
+    /**
+     * Assign methodology to a team
+     *
+     * @group Teams
+     *
+     * Assigns a methodology to the given team and returns the updated team.
+     *
+     * @urlParam team integer required The team ID. Example: 5
+     * @bodyParam methodology_id integer required The methodology ID to assign. Example: 2
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Core Team","slug":"core-team","employee_count":12}}
+     * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message":"No query results for model [Team] 999"}
+     */
+    public function assignMethodologyForTeam(TeamRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('create', [Team::class, $team->organization]);
+
+        $team->assignMethodology($request->getMethodologyId());
+
+        return ApiResponse::success(data: TeamResource::make($team->refresh()));
+    }
+}
