@@ -9,18 +9,31 @@ use App\Http\Resources\API\v1\MethodologyResource;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\GenerateMethodologySchemeJob;
 use App\Models\Methodology;
-use App\Models\UserMethodology;
-use Illuminate\Support\Facades\Auth;
+use App\Models\Organization;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class MethodologyController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * List methodologies
+     *
+     * @group Methodologies
+     *
+     * Returns a paginated list of methodologies for the given organization.
+     *
+     * @urlParam organization integer required The organization ID. Example: 10
+     * @queryParam offset integer The number of items to skip. Example: 0
+     * @queryParam limit integer The number of items to return. Example: 25
+     *
+     * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Scrum","text":"..."}],"meta":{"count":1}}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
-    public function index(MethodologyRequest $request): ApiResponse
+    public function index(MethodologyRequest $request, Organization $organization): ApiResponse
     {
-        $methodologies = Methodology::owned(Auth::id());
+        Gate::authorize('viewAny', [Methodology::class, $organization]);
+
+        $methodologies = $organization->methodologies();
 
         $count = $methodologies->count();
 
@@ -32,21 +45,28 @@ class MethodologyController extends Controller
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Create a methodology
+     *
+     * @group Methodologies
+     *
+     * Creates a new methodology under the given organization and dispatches a background job
+     * to generate its scheme.
+     *
+     * @urlParam organization integer required The organization ID. Example: 10
+     * @bodyParam name string required The methodology name. Example: Scrum
+     * @bodyParam text string required The methodology description text. Example: "A lightweight agile framework..."
+     *
+     * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
-    public function store(MethodologyRequest $request): ApiResponse
+    public function store(MethodologyRequest $request, Organization $organization): ApiResponse
     {
+        Gate::authorize('create', [Methodology::class, $organization]);
+
         try {
             DB::beginTransaction();
 
-            $methodology = Auth::user()
-                ->activeMethodology()
-                ->create($request->getStoreData());
-
-            UserMethodology::updateOrCreate(
-                ['user_id' => Auth::id()],
-                ['methodology_id' => $methodology->id]
-            );
+            $methodology = $organization->methodologies()->create($request->getStoreData());
 
             GenerateMethodologySchemeJob::dispatch($methodology);
 
@@ -63,12 +83,23 @@ class MethodologyController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Create a methodology
+     *
+     * @group Methodologies
+     *
+     * Creates a new methodology under the given organization and dispatches a background job
+     * to generate its scheme.
+     *
+     * @urlParam organization integer required The organization ID. Example: 10
+     * @bodyParam name string required The methodology name. Example: Scrum
+     * @bodyParam text string required The methodology description text. Example: "A lightweight agile framework..."
+     *
+     * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
-    public function show(MethodologyRequest $request): ApiResponse
+    public function show(MethodologyRequest $request, Methodology $methodology): ApiResponse
     {
-        $methodology = Methodology::owned(Auth::id())
-            ->findOrFail($request->getMethodologyId());
+        Gate::authorize('view', [$methodology, $methodology->team]);
 
         return ApiResponse::success(
             data: MethodologyResource::make($methodology)
@@ -76,12 +107,26 @@ class MethodologyController extends Controller
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update a methodology
+     *
+     * @group Methodologies
+     *
+     * Updates the given methodology.
+     * This endpoint is blocked if the methodology is default or is used by follow-ups.
+     *
+     * @urlParam methodology integer required The methodology ID. Example: 1
+     * @bodyParam name string required The methodology name. Example: Kanban
+     * @bodyParam text string required The methodology description text. Example: "Visual workflow management..."
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"id":1,"name":"Kanban","text":"..."}}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message":"No query results for model [Methodology] 999"}
+     * @response 409 scenario="Locked (used by follow-ups)" {"success":false,"message":"The methodology is used by one or more follow-ups.","code":"METHODOLOGY_LOCK_UPDATE"}
+     * @response 409 scenario="Locked (default)" {"success":false,"message":"Unable to update default methodology.","code":"METHODOLOGY_LOCK_DEFAULT"}
      */
-    public function update(MethodologyRequest $request): ApiResponse
+    public function update(MethodologyRequest $request, Methodology $methodology): ApiResponse
     {
-        $methodology = Methodology::owned(Auth::id())
-            ->findOrFail($request->getMethodologyId());
+        Gate::authorize('create', [$methodology, $methodology->team]);
 
         if ($methodology->followups()->exists()) {
             throw new AppException('The methodology is used by one or more follow-ups.', 'METHODOLOGY_LOCK_UPDATE');
@@ -91,20 +136,32 @@ class MethodologyController extends Controller
             throw new AppException('Unable to update default methodology.', 'METHODOLOGY_LOCK_DEFAULT');
         }
 
-        $methodology = $methodology->update($request->getUpdateData());
+        $methodology->update($request->getUpdateData());
 
         return ApiResponse::success(
-            data: MethodologyResource::make($methodology)
+            data: MethodologyResource::make($methodology->refresh())
         );
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Delete a methodology
+     *
+     * @group Methodologies
+     *
+     * Deletes the given methodology.
+     * This endpoint is blocked if the methodology is default or is used by follow-ups.
+     *
+     * @urlParam methodology integer required The methodology ID. Example: 1
+     *
+     * @response 200 scenario="OK" {"success":true}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message":"No query results for model [Methodology] 999"}
+     * @response 409 scenario="Locked (used by follow-ups)" {"success":false,"message":"The methodology is used by one or more follow-ups.","code":"METHODOLOGY_LOCK_UPDATE"}
+     * @response 409 scenario="Locked (default)" {"success":false,"message":"Unable to delete default methodology.","code":"METHODOLOGY_LOCK_DEFAULT"}
      */
-    public function destroy(MethodologyRequest $request): ApiResponse
+    public function destroy(MethodologyRequest $request, Methodology $methodology): ApiResponse
     {
-        $methodology = Methodology::owned(Auth::id())
-            ->findOrFail($request->getMethodologyId());
+        Gate::authorize('delete', [$methodology, $methodology->team]);
 
         if ($methodology->followups()->exists()) {
             throw new AppException('The methodology is used by one or more follow-ups.', 'METHODOLOGY_LOCK_UPDATE');
@@ -117,14 +174,5 @@ class MethodologyController extends Controller
         $methodology->delete();
 
         return ApiResponse::success();
-    }
-
-    public function active(): ApiResponse
-    {
-        $methodology = Auth::user()->activeMethodologyOrDefault();
-
-        return ApiResponse::success(
-            data: MethodologyResource::make($methodology)
-        );
     }
 }

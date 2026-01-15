@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\UserRole;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -51,20 +53,37 @@ class User extends Authenticatable
         return $this->hasMany(Methodology::class);
     }
 
-    public function activeMethodology(): HasOneThrough
+    public function organizations(): BelongsToMany
     {
-        return $this->hasOneThrough(
-            Methodology::class,
-            UserMethodology::class,
-            'user_id',
-            'id',
-            'id',
-            'methodology_id'
-        );
+        return $this->belongsToMany(Organization::class)
+            ->withPivot('role');
     }
 
-    public function activeMethodologyOrDefault(): Methodology
+    public function teams(): BelongsToMany
     {
-        return $this->activeMethodology ?? Methodology::where('is_default', true)->firstOrFail();
+        return $this->belongsToMany(Team::class);
+    }
+
+    public function roleInOrganization(int|Organization $organization): ?string
+    {
+        return $this->organizations()
+            ->find($organization instanceof Organization ? $organization->id : $organization)
+            ?->pivot
+            ?->role;
+    }
+
+    public function isOrganizationMember(int|Organization $organization): bool
+    {
+        return $this->roleInOrganization($organization instanceof Organization ? $organization->id : $organization) !== null;
+    }
+
+    public function isOrganizationManager(int|Organization $organization): bool
+    {
+        return $this->roleInOrganization($organization instanceof Organization ? $organization->id : $organization) === UserRole::MANAGER->value;
+    }
+
+    public function isTeamMember(int|Team $team): bool
+    {
+        return ((bool) $this->teams()->find($team instanceof Team ? $team->id : $team) ?? false) || $this->isOrganizationManager($team->organization);
     }
 }

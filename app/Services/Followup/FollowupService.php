@@ -6,6 +6,7 @@ use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\FollowupStatus;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
+use App\Models\Methodology;
 use App\Models\Participant;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,8 @@ class FollowupService
         ?Participant $participant = null
     ): Followup {
         return DB::transaction(function () use ($event, $scope, $participant) {
-            $methodology = $event->host->activeMethodologyOrDefault();
+            //TODO: get team from the user, then use methodology assigned to it
+            $methodology = Methodology::getDefault();
 
             $followup = Followup::create([
                 'calendar_event_id' => $event->id,

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Methodology extends Model
@@ -26,5 +27,20 @@ class Methodology extends Model
     public function isDefault(): bool
     {
         return $this->is_default;
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+
+    public static function getDefault(): self
+    {
+        return self::query()->where('is_default', true)->firstOrFail();
     }
 }

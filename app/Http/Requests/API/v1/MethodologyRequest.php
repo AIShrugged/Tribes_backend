@@ -2,44 +2,43 @@
 
 namespace App\Http\Requests\API\v1;
 
+use App\Http\Requests\API\ApiResourceRequest;
 use App\Traits\PaginatedRequestTrait;
-use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class MethodologyRequest extends FormRequest
+class MethodologyRequest extends ApiResourceRequest
 {
     use PaginatedRequestTrait;
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
-    public function rules(): array
+    public function showRules(): array
     {
-        return match ($this->route()->getName()) {
-            'methodologies.index' => $this->getPaginationRules(),
-            'methodologies.show' => [
-                'methodology_id' => ['required', 'integer', 'exists:methodologies,id']
-            ],
-            'methodologies.store' => [
-                'name' => ['required', 'string', 'min:3', 'max:255'],
-                'text' => ['required', 'string', 'min:3'],
-            ],
-            'methodologies.update' => [
-                'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
-                'name'           => ['required', 'string', 'min:3', 'max:255'],
-                'text'           => ['required', 'string', 'min:3'],
-            ],
-            'methodologies.destroy' => [
-                'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
-            ]
-        };
+        return [
+            'methodology_id' => ['required', 'integer', 'exists:methodologies,id']
+        ];
     }
 
-    protected function prepareForValidation()
+    public function storeRules(): array
     {
-        $this->merge(['methodology_id' => $this->route('id')]);
+        return [
+            'name' => ['required', 'string', 'min:3', 'max:255'],
+            'text' => ['required', 'string', 'min:3'],
+        ];
+    }
+
+    public function updateRules(): array
+    {
+        return [
+            'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
+            'name'           => ['required', 'string', 'min:3', 'max:255'],
+            'text'           => ['required', 'string', 'min:3'],
+        ];
+    }
+
+    public function destroyRules(): array
+    {
+        return [
+            'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
+        ];
     }
 
     public function getMethodologyId(): int
@@ -50,9 +49,10 @@ class MethodologyRequest extends FormRequest
     public function getStoreData(): array
     {
         return [
-            'user_id' => Auth::id(),
-            'name'    => $this->input('name'),
-            'text'    => $this->input('text'),
+            'user_id'         => Auth::id(),
+            'organization_id' => $this->organization->id,
+            'name'            => $this->input('name'),
+            'text'            => $this->input('text'),
         ];
     }
 
