@@ -28,4 +28,9 @@ class OrganizationPolicy
     {
         return $user->isOrganizationManager($organization);
     }
+
+    public function delete(User $user, Organization $organization): bool
+    {
+        return $user->isOrganizationMember($organization);
+    }
 }

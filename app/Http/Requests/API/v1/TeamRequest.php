@@ -22,7 +22,6 @@ class TeamRequest extends ApiResourceRequest
     public function updateRules(): array
     {
         return [
-            'id'   => ['required', 'int', 'exists:teams,id'],
             'name' => ['sometimes', 'string', 'min:3', 'max:255'],
             'slug' => ['sometimes', 'string', 'min:3', 'max:255'],
         ];
@@ -51,6 +50,11 @@ class TeamRequest extends ApiResourceRequest
         return $this->team_id;
     }
 
+    public function getSlug(): string
+    {
+        return $this->slug ?? Str::slug($this->name);
+    }
+
     public function getStoreData(): array
     {
         return [
@@ -65,7 +69,7 @@ class TeamRequest extends ApiResourceRequest
     {
         return array_filter([
             'name' => $this->name,
-            'slug' => $this->slug ?? Str::slug($this->name),
+            'slug' => $this->getSlug(),
         ]);
     }
 }

@@ -2,15 +2,14 @@
 
 namespace App\Http\Controllers\API\v1;
 
+use App\Exceptions\AppException;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\API\v1\MethodologyRequest;
 use App\Http\Requests\API\v1\TeamRequest;
 use App\Http\Resources\API\v1\MethodologyResource;
 use App\Http\Resources\API\v1\TeamResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
 use App\Models\Team;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
 class TeamController extends Controller
@@ -98,7 +97,6 @@ class TeamController extends Controller
      * Updates team fields. The request payload includes the team ID and optional fields to change.
      *
      * @urlParam team integer required The team ID (route model binding). Example: 5
-     * @bodyParam id integer required The team ID (request payload). Example: 5
      * @bodyParam name string Team name. Example: Platform Team
      * @bodyParam slug string Team slug. Example: platform-team
      *
@@ -111,7 +109,9 @@ class TeamController extends Controller
     {
         Gate::authorize('update', $team);
 
-        $team = Team::findOrFail($request->getId());
+        if (Team::firstOrFail('slug', $request->getSlug())) {
+            throw new AppException('Team slug should be unique.', 'TEAM_ALREADY_EXIST', 400);
+        }
 
         $team->update($request->getUpdateData());
 
@@ -163,5 +163,23 @@ class TeamController extends Controller
         $team->assignMethodology($request->getMethodologyId());
 
         return ApiResponse::success(data: TeamResource::make($team->refresh()));
+    }
+
+    /**
+     * @param TeamRequest $request
+     * @param Team $team
+     * @return ApiResponse
+     *
+     * @group Teams
+     *
+     * Delete a teams with its members
+     */
+    public function destroy(TeamRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('destroy', $team);
+
+        $team->deleteCompletely();
+
+        return ApiResponse::success();
     }
 }

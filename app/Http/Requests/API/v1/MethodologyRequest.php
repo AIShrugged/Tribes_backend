@@ -22,16 +22,8 @@ class MethodologyRequest extends ApiResourceRequest
     public function updateRules(): array
     {
         return [
-            'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
-            'name'           => ['required', 'string', 'min:3', 'max:255'],
-            'text'           => ['required', 'string', 'min:3'],
-        ];
-    }
-
-    public function destroyRules(): array
-    {
-        return [
-            'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
+            'name' => ['sometimes', 'string', 'min:3', 'max:255'],
+            'text' => ['sometimes', 'string', 'min:3'],
         ];
     }
 
@@ -56,9 +48,9 @@ class MethodologyRequest extends ApiResourceRequest
 
     public function getUpdateData(): array
     {
-        return [
+        return array_filter([
             'name' => $this->input('name'),
             'text' => $this->input('text'),
-        ];
+        ]);
     }
 }

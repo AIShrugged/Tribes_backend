@@ -12,6 +12,7 @@ use App\Http\Controllers\API\v1\OrganizationController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
+use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -68,12 +69,15 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
         Route::apiResource('teams', TeamController::class)
-            ->except(['destroy', 'index']);
+            ->except(['index']);
         Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
         Route::post('methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
 
-        Route::apiResource('organizations', OrganizationController::class)
-            ->except(['destroy']);
+        Route::apiResource('teams.users', TeamUserController::class)
+            ->only(['index', 'show']);
+        Route::post('teams/{team}/users/{user}/kick', [TeamUserController::class, 'kick']);
+
+        Route::apiResource('organizations', OrganizationController::class);
 
         Route::get('organizations/{organization}/methodologies', [MethodologyController::class, 'index']);
         Route::apiResource('methodologies', MethodologyController::class)
