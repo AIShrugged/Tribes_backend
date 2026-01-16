@@ -14,7 +14,7 @@ class CalendarEventSyncService
     public function sync(Source $source, EventDTO $eventDTO, array $attendees): ?CalendarEvent
     {
         $startTime = Carbon::parse($eventDTO->startsAt)->setTimezone(config('app.timezone'));
-        $endTime   = Carbon::parse($eventDTO->endsAt)->setTimezone(config('app.timezone'));
+        $endTime = Carbon::parse($eventDTO->endsAt)->setTimezone(config('app.timezone'));
 
         if ($startTime->lte(Carbon::now())) {
             return null;
@@ -33,6 +33,14 @@ class CalendarEventSyncService
         );
 
         $this->syncAttendees($calendarEvent, $attendees);
+        $botDTO = app(RecallBotService::class)->schedule($calendarEvent);
+
+        $calendarEvent->bot()->updateOrCreate(
+            ['external_id' => $botDTO->externalId],
+            ['deduplication_key' => $botDTO->deduplicationKey]
+        );
+
+        $calendarEvent->requiredBot(true);
 
         CalendarEventChanged::dispatch($calendarEvent);
 
