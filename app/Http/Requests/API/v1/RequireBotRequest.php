@@ -14,8 +14,8 @@ class RequireBotRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'calendar_event_id'     => ['required', 'integer', 'exists:calendar_events,id'],
-            'required_bot' => ['required', 'boolean'],
+            'calendar_event_id' => ['required', 'integer', 'exists:calendar_events,id'],
+            'required_bot'      => ['required', 'boolean'],
         ];
     }
 

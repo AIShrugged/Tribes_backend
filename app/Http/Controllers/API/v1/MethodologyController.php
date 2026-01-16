@@ -174,4 +174,6 @@ class MethodologyController extends Controller
 
         return ApiResponse::success();
     }
+
+    //TODO: fix bug with bot deletion mid call, fix bug with bot change for the same event, when time change to future from before
 }
