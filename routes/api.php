@@ -66,18 +66,16 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
-        Route::apiResource('teams', TeamController::class)
-            ->except(['destroy']);
-        Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
-        Route::post('teams/{team}/methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
-
-        Route::get('/teams/{team}', [TeamController::class, 'show']);
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
-        Route::post('organizations/{organization}/teams', [TeamController::class, 'store']);
+        Route::apiResource('teams', TeamController::class)
+            ->except(['destroy', 'index']);
+        Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
+        Route::post('methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
+
         Route::apiResource('organizations', OrganizationController::class)
             ->except(['destroy']);
-        Route::get('organizations/{organization}/methodologies', [MethodologyController::class, 'index']);
 
+        Route::get('organizations/{organization}/methodologies', [MethodologyController::class, 'index']);
         Route::apiResource('methodologies', MethodologyController::class)
             ->except(['index']);
 

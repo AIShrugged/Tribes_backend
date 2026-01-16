@@ -29,9 +29,9 @@ class Methodology extends Model
         return $this->is_default;
     }
 
-    public function team(): BelongsTo
+    public function teams(): HasMany
     {
-        return $this->belongsTo(Team::class);
+        return $this->hasMany(Team::class);
     }
 
     public function organization(): BelongsTo

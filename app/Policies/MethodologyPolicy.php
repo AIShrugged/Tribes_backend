@@ -23,13 +23,15 @@ class MethodologyPolicy
      */
     public function view(User $user, Methodology $methodology): bool
     {
-        return $user->isTeamMember($methodology->team) || $user->isOrganizationManager($methodology->organization);
+        return $methodology->isDefault()
+            || $user->isMemberOfOneTeam($methodology->teams)
+            || $user->isOrganizationManager($methodology->organization);
     }
 
     /**
      * Determine whether the user can create models.
      */
-    public function create(User $user, Organization $organization): bool
+    public function create(User $user, int|Organization $organization): bool
     {
         return $user->isOrganizationManager($organization);
     }

@@ -19,7 +19,7 @@ class TeamPolicy
         return $user->isTeamMember($team);
     }
 
-    public function create(User $user, Organization $organization): bool
+    public function create(User $user, int|Organization $organization): bool
     {
         return $user->isOrganizationManager($organization);
     }

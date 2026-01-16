@@ -19,6 +19,7 @@ class MethodologyResource extends JsonResource
             'name'       => $this->name,
             'text'       => $this->text,
             'is_default' => $this->is_default,
+            'teams'      => TeamResource::collection($this->teams),
         ];
     }
 }
