@@ -14,7 +14,8 @@ class TeamRequest extends ApiResourceRequest
     public function storeRules(): array
     {
         return [
-            'name' => ['required', 'string', 'min:3', 'max:255'],
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
+            'name'            => ['required', 'string', 'min:3', 'max:255'],
         ];
     }
 
@@ -30,6 +31,7 @@ class TeamRequest extends ApiResourceRequest
     public function assignMethodologyForTeamRules(): array
     {
         return [
+            'team_id'        => ['required', 'integer', 'exists:teams,id'],
             'methodology_id' => ['required', 'integer', 'exists:methodologies,id'],
         ];
     }
@@ -39,10 +41,20 @@ class TeamRequest extends ApiResourceRequest
         return $this->methodology_id;
     }
 
+    public function getOrganizationId(): int
+    {
+        return $this->organization_id;
+    }
+
+    public function getTeamId(): int
+    {
+        return $this->team_id;
+    }
+
     public function getStoreData(): array
     {
         return [
-            'organization_id' => $this->organization->id,
+            'organization_id' => $this->organization_id,
             'name'            => $this->name,
             'slug'            => Str::slug($this->name),
             'methodology_id'  => Methodology::getDefault()->id

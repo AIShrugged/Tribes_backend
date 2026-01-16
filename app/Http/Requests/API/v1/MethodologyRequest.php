@@ -10,18 +10,12 @@ class MethodologyRequest extends ApiResourceRequest
 {
     use PaginatedRequestTrait;
 
-    public function showRules(): array
-    {
-        return [
-            'methodology_id' => ['required', 'integer', 'exists:methodologies,id']
-        ];
-    }
-
     public function storeRules(): array
     {
         return [
-            'name' => ['required', 'string', 'min:3', 'max:255'],
-            'text' => ['required', 'string', 'min:3'],
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
+            'name'            => ['required', 'string', 'min:3', 'max:255'],
+            'text'            => ['required', 'string', 'min:3'],
         ];
     }
 
@@ -46,11 +40,15 @@ class MethodologyRequest extends ApiResourceRequest
         return $this->input('methodology_id');
     }
 
+    public function getOrganizationId(): int
+    {
+        return $this->organization_id;
+    }
+
     public function getStoreData(): array
     {
         return [
-            'user_id'         => Auth::id(),
-            'organization_id' => $this->organization->id,
+            'organization_id' => $this->organization_id,
             'name'            => $this->input('name'),
             'text'            => $this->input('text'),
         ];

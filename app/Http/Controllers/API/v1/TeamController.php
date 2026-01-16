@@ -58,9 +58,11 @@ class TeamController extends Controller
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
-    public function store(TeamRequest $request, Organization $organization): ApiResponse
+    public function store(TeamRequest $request): ApiResponse
     {
-        Gate::authorize('create', [Team::class, $organization]);
+        Gate::authorize('create', [Team::class, $request->getOrganizationId()]);
+
+        $organization = Organization::findOrFail($request->getOrganizationId());
 
         $team = $organization->teams()->create($request->getStoreData());
 
@@ -152,8 +154,10 @@ class TeamController extends Controller
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      * @response 404 scenario="Not Found" {"message":"No query results for model [Team] 999"}
      */
-    public function assignMethodologyForTeam(TeamRequest $request, Team $team): ApiResponse
+    public function assignMethodologyForTeam(TeamRequest $request): ApiResponse
     {
+        $team = Team::findOrFail($request->getTeamId());
+
         Gate::authorize('create', [Team::class, $team->organization]);
 
         $team->assignMethodology($request->getMethodologyId());

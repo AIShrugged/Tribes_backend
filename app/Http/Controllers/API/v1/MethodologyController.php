@@ -10,6 +10,7 @@ use App\Http\Responses\ApiResponse;
 use App\Jobs\GenerateMethodologySchemeJob;
 use App\Models\Methodology;
 use App\Models\Organization;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -59,12 +60,14 @@ class MethodologyController extends Controller
      * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
-    public function store(MethodologyRequest $request, Organization $organization): ApiResponse
+    public function store(MethodologyRequest $request): ApiResponse
     {
-        Gate::authorize('create', [Methodology::class, $organization]);
+        Gate::authorize('create', [Methodology::class, $request->getOrganizationId()]);
 
         try {
             DB::beginTransaction();
+
+            $organization = Organization::findOrFail($request->getOrganizationId());
 
             $methodology = $organization->methodologies()->create($request->getStoreData());
 
@@ -99,7 +102,7 @@ class MethodologyController extends Controller
      */
     public function show(MethodologyRequest $request, Methodology $methodology): ApiResponse
     {
-        Gate::authorize('view', [$methodology, $methodology->team]);
+        Gate::authorize('view', $methodology);
 
         return ApiResponse::success(
             data: MethodologyResource::make($methodology)

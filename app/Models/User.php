@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
@@ -61,7 +62,8 @@ class User extends Authenticatable
 
     public function teams(): BelongsToMany
     {
-        return $this->belongsToMany(Team::class);
+        return $this->belongsToMany(Team::class)
+            ->withPivot('created_at');
     }
 
     public function roleInOrganization(int|Organization $organization): ?string
@@ -84,6 +86,21 @@ class User extends Authenticatable
 
     public function isTeamMember(int|Team $team): bool
     {
-        return ((bool) $this->teams()->find($team instanceof Team ? $team->id : $team) ?? false) || $this->isOrganizationManager($team->organization);
+        return ((bool)$this->teams()->find($team instanceof Team ? $team->id : $team) ?? false) || $this->isOrganizationManager($team->organization);
+    }
+
+    /**
+     * @param Team[]|int[] $teams
+     * @return bool
+     */
+    public function isMemberOfOneTeam(Collection|array $teams): bool
+    {
+        foreach ($teams as $team) {
+            if ($this->isTeamMember($team)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
