@@ -123,4 +123,20 @@ class OrganizationController extends Controller
 
         return ApiResponse::success(data: OrganizationResource::make($organization->refresh()));
     }
+
+    /**
+     * @param OrganizationRequest $request
+     * @param Organization $organization
+     * @return ApiResponse
+     *
+     * @group Organizations
+     *
+     * Delete an organization with its teams and members
+     */
+    public function destroy(OrganizationRequest $request, Organization $organization): ApiResponse
+    {
+        $organization->deleteCompletely();
+
+        return ApiResponse::success();
+    }
 }

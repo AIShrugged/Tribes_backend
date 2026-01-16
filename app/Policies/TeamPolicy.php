@@ -28,4 +28,9 @@ class TeamPolicy
     {
         return $user->isOrganizationManager($team->organization);
     }
+
+    public function destroy(User $user, Team $team): bool
+    {
+        return $user->isOrganizationManager($team->organization);
+    }
 }

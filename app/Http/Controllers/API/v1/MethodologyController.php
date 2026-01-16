@@ -34,7 +34,11 @@ class MethodologyController extends Controller
     {
         Gate::authorize('viewAny', [Methodology::class, $organization]);
 
-        $methodologies = $organization->methodologies();
+        $methodologies = $organization->methodologies()
+            ->orWhere(function ($q) {
+                $q->whereNull('organization_id')
+                    ->where('is_default', true);
+            });
 
         $count = $methodologies->count();
 
@@ -53,7 +57,6 @@ class MethodologyController extends Controller
      * Creates a new methodology under the given organization and dispatches a background job
      * to generate its scheme.
      *
-     * @urlParam organization integer required The organization ID. Example: 10
      * @bodyParam name string required The methodology name. Example: Scrum
      * @bodyParam text string required The methodology description text. Example: "A lightweight agile framework..."
      *
@@ -86,18 +89,11 @@ class MethodologyController extends Controller
     }
 
     /**
-     * Create a methodology
+     * Get specific methodology
      *
      * @group Methodologies
      *
-     * Creates a new methodology under the given organization and dispatches a background job
-     * to generate its scheme.
-     *
-     * @urlParam organization integer required The organization ID. Example: 10
-     * @bodyParam name string required The methodology name. Example: Scrum
-     * @bodyParam text string required The methodology description text. Example: "A lightweight agile framework..."
-     *
-     * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
+     * @response 200 scenario="OK" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
     public function show(MethodologyRequest $request, Methodology $methodology): ApiResponse
@@ -129,10 +125,10 @@ class MethodologyController extends Controller
      */
     public function update(MethodologyRequest $request, Methodology $methodology): ApiResponse
     {
-        Gate::authorize('create', [$methodology, $methodology->team]);
+        Gate::authorize('create', $methodology->organization);
 
-        if ($methodology->followups()->exists()) {
-            throw new AppException('The methodology is used by one or more follow-ups.', 'METHODOLOGY_LOCK_UPDATE');
+        if ($methodology->followups()->exists() || $methodology->teams()->exists()) {
+            throw new AppException('The methodology is in use by teams or followups.', 'METHODOLOGY_LOCK_UPDATE');
         }
 
         if ($methodology->isDefault()) {
@@ -164,10 +160,10 @@ class MethodologyController extends Controller
      */
     public function destroy(MethodologyRequest $request, Methodology $methodology): ApiResponse
     {
-        Gate::authorize('delete', [$methodology, $methodology->team]);
+        Gate::authorize('delete', $methodology);
 
-        if ($methodology->followups()->exists()) {
-            throw new AppException('The methodology is used by one or more follow-ups.', 'METHODOLOGY_LOCK_UPDATE');
+        if ($methodology->followups()->exists() || $methodology->teams()->exists()) {
+            throw new AppException('The methodology is in use by teams or followups.', 'METHODOLOGY_LOCK_UPDATE');
         }
 
         if ($methodology->isDefault()) {
