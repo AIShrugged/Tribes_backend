@@ -3,7 +3,7 @@
     "display_name": "Total Score",
     "frontend_component_type": "chart-donut",
     "min_value": 0,
-    "value": 0,
+    "current_value": 0,
     "max_value": 72
   },
   "metrics": [
@@ -11,13 +11,14 @@
       "display_name": "Pre-Call Preparation",
       "frontend_component_type": "linear-progress",
       "min_value": 0,
+      "current_value": 0,
       "max_value": 4,
-      "value": [
+      "submetrics": [
         {
           "display_name": "Client Research & Goal Setting",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         }
       ]
@@ -26,56 +27,66 @@
       "display_name": "First Meeting: Structure & Scenario",
       "frontend_component_type": "linear-progress",
       "min_value": 0,
+      "current_value": 0,
       "max_value": 20,
-      "value": [
+      "submetrics": [
         {
           "display_name": "Small Talk (Opening & Rapport)",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
           "display_name": "Agenda Setting (Reglament)",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
           "display_name": "Loyalty Building (Trust & Credibility)",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
-          "display_name": "Situational Questions",
-          "frontend_component_type": "digit-result",
+          "display_name": "Needs Identification (SPIN Methodology)",
+          "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
-          "max_value": 4
-        },
-        {
-          "display_name": "Problem Questions",
-          "frontend_component_type": "digit-result",
-          "min_value": 0,
-          "value": 0,
-          "max_value": 4
-        },
-        {
-          "display_name": "Implication Questions",
-          "frontend_component_type": "digit-result",
-          "min_value": 0,
-          "value": 0,
-          "max_value": 4
-        },
-        {
-          "display_name": "Need-Payoff Questions",
-          "frontend_component_type": "digit-result",
-          "min_value": 0,
-          "value": 0,
-          "max_value": 4
+          "current_value": 0,
+          "max_value": 16,
+          "submetrics": [
+            {
+              "display_name": "Situational Questions",
+              "frontend_component_type": "digit-result",
+              "min_value": 0,
+              "current_value": 0,
+              "max_value": 4
+            },
+            {
+              "display_name": "Problem Questions",
+              "frontend_component_type": "digit-result",
+              "min_value": 0,
+              "current_value": 0,
+              "max_value": 4
+            },
+            {
+              "display_name": "Implication Questions",
+              "frontend_component_type": "digit-result",
+              "min_value": 0,
+              "current_value": 0,
+              "max_value": 4
+            },
+            {
+              "display_name": "Need-Payoff Questions",
+              "frontend_component_type": "digit-result",
+              "min_value": 0,
+              "current_value": 0,
+              "max_value": 4
+            }
+          ]
         }
       ]
     },
@@ -83,13 +94,14 @@
       "display_name": "Product Presentation (Demo)",
       "frontend_component_type": "linear-progress",
       "min_value": 0,
+      "current_value": 0,
       "max_value": 4,
-      "value": [
+      "submetrics": [
         {
           "display_name": "Value Proposition Alignment",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         }
       ]
@@ -98,20 +110,21 @@
       "display_name": "Proposal & Next Steps",
       "frontend_component_type": "linear-progress",
       "min_value": 0,
+      "current_value": 0,
       "max_value": 8,
-      "value": [
+      "submetrics": [
         {
           "display_name": "Proposal Discussion",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
           "display_name": "Commitment to Next Steps",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         }
       ]
@@ -120,27 +133,28 @@
       "display_name": "Objection Handling",
       "frontend_component_type": "linear-progress",
       "min_value": 0,
+      "current_value": 0,
       "max_value": 12,
-      "value": [
+      "submetrics": [
         {
           "display_name": "Algorithm Adherence",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
           "display_name": "Effectiveness of Response",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
           "display_name": "Proactive Objection Prevention",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         }
       ]
@@ -149,20 +163,21 @@
       "display_name": "Language & Communication",
       "frontend_component_type": "linear-progress",
       "min_value": 0,
+      "current_value": 0,
       "max_value": 8,
-      "value": [
+      "submetrics": [
         {
           "display_name": "Clarity & Conciseness",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         },
         {
           "display_name": "Active Listening & Empathy",
           "frontend_component_type": "linear-progress",
           "min_value": 0,
-          "value": 0,
+          "current_value": 0,
           "max_value": 4
         }
       ]
