@@ -2,7 +2,6 @@
 
 namespace App\Services\Followup;
 
-use App\Enums\FollowupScope;
 use App\Enums\FollowupType;
 use App\Services\Followup\Prompts\SharedStayfittV1Prompt;
 use InvalidArgumentException;
@@ -13,10 +12,10 @@ class FollowupPromptRegistry
      * @var array<string, array<int, class-string<FollowupPromptInterface>>>
      */
     private array $map = [
-        FollowupScope::SHARED->value   => [
+        'shared'   => [
             FollowupType::STAYFITT_V1->value => SharedStayfittV1Prompt::class,
         ],
-        FollowupScope::PERSONAL->value => [
+        'personal' => [
         ],
     ];
 

@@ -15,10 +15,31 @@ class Followup extends Model
         return $this->belongsTo(CalendarEvent::class);
     }
 
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function methodology(): BelongsTo
+    {
+        return $this->belongsTo(Methodology::class);
+    }
+
     public function scopeOwned(Builder $query, int $userId): Builder
     {
-        return $query->whereHas('calendarEvent.source', function (Builder $query) use ($userId) {
-            $query->where('user_id', $userId);
+        return $query->where(function (Builder $q) use ($userId) {
+            // Фоллоуапы пользователя
+            $q->where('user_id', $userId)
+                // ИЛИ фоллоуапы команд, где пользователь - менеджер организации
+                ->orWhereHas('team.organization.users', function (Builder $query) use ($userId) {
+                    $query->where('users.id', $userId)
+                        ->where('organization_user.role', 'manager');
+                });
         });
     }
 }

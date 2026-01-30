@@ -50,21 +50,26 @@ Route::group(['prefix' => 'v1'], function () {
             Route::get('/{calendar_event_id}/participants', [ParticipantController::class, 'index'])
                 ->name('calendar-events.participants.index');
 
-            Route::post('/{calendar_event_id}/participants/{participant_id}/set-profile',
-                [ParticipantController::class, 'setProfile'])
+            Route::post(
+                '/{calendar_event_id}/participants/{participant_id}/set-profile',
+                [ParticipantController::class, 'setProfile']
+            )
                 ->name('calendar-events.participants.set-profile');
 
             Route::get('/{calendar_event_id}/profiles', [ProfileController::class, 'index']);
 
             Route::get('/{calendar_event_id}/transcript', [TranscriptController::class, 'index']);
 
-            Route::get('/{calendar_event_id}/followups', [FollowupController::class, 'index'])
-                ->name('calendar-events.followups.index');
+            Route::get('{calendar_event_id}/followup', [FollowupController::class, 'eventShow'])
+                ->name('calendar-events.followup');
 
             Route::post('/{calendar_event_id}/followups/generate', [FollowupController::class, 'generate']);
         });
 
-        Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
+        Route::get('teams/{team}/followups', [FollowupController::class, 'index'])
+            ->name('teams.followups.index');
+
+        Route::get('/followups/{followup}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
