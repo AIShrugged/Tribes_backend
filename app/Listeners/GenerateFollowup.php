@@ -2,10 +2,9 @@
 
 namespace App\Listeners;
 
-use App\Enums\FollowupScope;
-use App\Enums\FollowupType;
 use App\Events\TranscriptParsed;
-use App\Services\Followup\FollowupService;
+use App\Jobs\GenerateFollowupJob;
+use Illuminate\Support\Facades\Log;
 
 class GenerateFollowup
 {
@@ -22,9 +21,21 @@ class GenerateFollowup
      */
     public function handle(TranscriptParsed $event): void
     {
-        app(FollowupService::class)->generate(
-            $event->calendarEvent,
-            FollowupScope::SHARED->value,
-        );
+        $calendarEvent = $event->calendarEvent;
+        $user = $calendarEvent->source->user;
+
+        // Получить все команды пользователя
+        $teams = $user->teams;
+
+        // Если нет команд - не создавать followup'ы
+        if ($teams->isEmpty()) {
+            Log::info("User {$user->id} has no teams, skipping followup generation");
+            return;
+        }
+
+        // Запустить Job для каждой команды параллельно
+        foreach ($teams as $team) {
+            GenerateFollowupJob::dispatch($calendarEvent, $team, $user);
+        }
     }
 }

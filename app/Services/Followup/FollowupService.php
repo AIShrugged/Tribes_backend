@@ -7,7 +7,8 @@ use App\Enums\FollowupStatus;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Methodology;
-use App\Models\Participant;
+use App\Models\Team;
+use App\Models\User;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,18 +22,18 @@ class FollowupService
 
     public function generate(
         CalendarEvent $event,
-        string $scope,
-        ?Participant $participant = null
+        Team $team,
+        User $user
     ): Followup {
-        return DB::transaction(function () use ($event, $scope, $participant) {
-            //TODO: get team from the user, then use methodology assigned to it
-            $methodology = Methodology::getDefault();
+        return DB::transaction(function () use ($event, $team, $user) {
+            // Получить методологию команды или дефолтную
+            $methodology = $team->methodology ?? Methodology::getDefault();
 
             $followup = Followup::create([
                 'calendar_event_id' => $event->id,
-                'participant_id'    => $participant?->id,
+                'team_id'           => $team->id,
+                'user_id'           => $user->id,
                 'methodology_id'    => $methodology->id,
-                'scope'             => $scope,
                 'status'            => FollowupStatus::IN_PROGRESS->value,
                 'text'              => '',
             ]);
@@ -63,6 +64,12 @@ class FollowupService
             } catch (\Throwable $e) {
                 $followup->update([
                     'status' => FollowupStatus::FAILED->value,
+                ]);
+
+                Log::error('Followup generation failed', [
+                    'followup_id' => $followup->id,
+                    'team_id' => $team->id,
+                    'error' => $e->getMessage()
                 ]);
             }
 

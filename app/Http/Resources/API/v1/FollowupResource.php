@@ -17,9 +17,9 @@ class FollowupResource extends JsonResource
         return [
             'id'                => $this->id,
             'calendar_event_id' => $this->calendar_event_id,
-            'participant_id'    => $this->participant_id,
-            'scope'             => $this->scope,
-            'type'              => $this->type,
+            'team_id'           => $this->team_id,
+            'user_id'           => $this->user_id,
+            'methodology_id'    => $this->methodology_id,
             'text'              => $this->text,
             'status'            => $this->status,
             'created_at'        => $this->created_at,
