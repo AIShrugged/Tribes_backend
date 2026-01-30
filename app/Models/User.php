@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\UserRole;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
@@ -13,7 +14,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use Notifiable, HasApiTokens;
+    use HasFactory, Notifiable, HasApiTokens;
 
     /**
      * The attributes that are mass assignable.
@@ -66,6 +67,11 @@ class User extends Authenticatable
             ->withPivot('created_at');
     }
 
+    public function followups(): HasMany
+    {
+        return $this->hasMany(Followup::class);
+    }
+
     public function roleInOrganization(int|Organization $organization): ?string
     {
         return $this->organizations()
@@ -86,7 +92,7 @@ class User extends Authenticatable
 
     public function isTeamMember(int|Team $team): bool
     {
-        return ((bool)$this->teams()->find($team instanceof Team ? $team->id : $team) ?? false) || $this->isOrganizationManager($team->organization);
+        return ((bool)$this->teams()->find($team instanceof Team ? $team->id : $team) ?? false) || $this->isOrganizationManager($team->organization_id);
     }
 
     /**
