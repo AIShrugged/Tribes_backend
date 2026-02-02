@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\CalendarEventController;
+use App\Http\Controllers\API\v1\EmailVerificationController;
 use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
 use App\Http\Controllers\API\v1\MethodologyController;
@@ -24,6 +25,12 @@ Route::group(['prefix' => 'v1'], function () {
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::post('auth/logout', [AuthController::class, 'logout'])
         ->middleware('auth:sanctum');
+
+    Route::get('auth/email/verify/{token}', [EmailVerificationController::class, 'verify'])
+        ->name('auth.email.verify');
+    Route::post('auth/email/resend', [EmailVerificationController::class, 'resend'])
+        ->middleware(['auth:sanctum', 'throttle:6,1'])
+        ->name('auth.email.resend');
 
     Route::get('google/oauth/callback', [GoogleCalendarController::class, 'callback'])
         ->name('google.oauth.callback');
