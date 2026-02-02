@@ -41,9 +41,9 @@ class FollowupController extends Controller
         );
     }
 
-    public function eventShow(FollowupRequest $request, CalendarEvent $event): ApiResponse
+    public function eventShow(FollowupRequest $request, CalendarEvent $calendarEvent): ApiResponse
     {
-        $followup = $event->followups()->owned(Auth::id())->latest()->firstOrFail();
+        $followup = $calendarEvent->followups()->owned(Auth::id())->latest()->firstOrFail();
 
         Gate::authorize('view', $followup);
 
