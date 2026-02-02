@@ -15,15 +15,15 @@ class FollowupResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'                => $this->id,
-            'calendar_event_id' => $this->calendar_event_id,
-            'team_id'           => $this->team_id,
-            'user_id'           => $this->user_id,
-            'methodology_id'    => $this->methodology_id,
-            'text'              => $this->text,
-            'status'            => $this->status,
-            'created_at'        => $this->created_at,
-            'updated_at'        => $this->updated_at,
+            'id'             => $this->id,
+            'calendar_event' => CalendarEventResource::make($this->calendarEvent),
+            'team_id'        => $this->team_id,
+            'user'           => UserResource::make($this->user),
+            'methodology_id' => $this->methodology_id,
+            'text'           => $this->text,
+            'status'         => $this->status,
+            'created_at'     => $this->created_at,
+            'updated_at'     => $this->updated_at,
         ];
     }
 }
