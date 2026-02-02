@@ -60,7 +60,7 @@ Route::group(['prefix' => 'v1'], function () {
 
             Route::get('/{calendar_event_id}/transcript', [TranscriptController::class, 'index']);
 
-            Route::get('{calendar_event_id}/followup', [FollowupController::class, 'eventShow'])
+            Route::get('{calendarEvent}/followup', [FollowupController::class, 'eventShow'])
                 ->name('calendar-events.followup');
 
             Route::post('/{calendar_event_id}/followups/generate', [FollowupController::class, 'generate']);
