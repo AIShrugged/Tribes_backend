@@ -30,7 +30,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_sends_email_successfully()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'status' => 'success',
                 'job_id' => 'job-123',
             ], 200),
@@ -52,7 +52,7 @@ class UnisenderGoProviderTest extends TestCase
         $this->assertNotNull($email->sent_at);
 
         Http::assertSent(function ($request) {
-            return $request->url() === 'https://api.unisender.com/email/send.json'
+            return $request->url() === 'https://api.unisender.com/ru/transactional/api/v1/email/send.json'
                 && $request->hasHeader('X-API-KEY', 'test-api-key')
                 && $request['message']['recipients'][0]['email'] === 'recipient@example.com'
                 && $request['message']['subject'] === 'Test Subject'
@@ -65,7 +65,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_sends_email_without_from_name()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'status' => 'success',
                 'job_id' => 'job-123',
             ], 200),
@@ -93,7 +93,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_sends_email_to_multiple_recipients()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'status' => 'success',
                 'job_id' => 'job-123',
             ], 200),
@@ -122,7 +122,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_sends_email_with_attachments()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'status' => 'success',
                 'job_id' => 'job-123',
             ], 200),
@@ -160,7 +160,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_marks_email_as_failed_on_api_error()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'message' => 'Invalid API key',
             ], 401),
         ]);
@@ -184,7 +184,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_marks_email_as_failed_on_network_error()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => function () {
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => function () {
                 throw new \Exception('Connection timeout');
             },
         ]);
@@ -207,7 +207,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_creates_email_model_before_sending()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'status' => 'success',
                 'job_id' => 'job-123',
             ], 200),
@@ -239,7 +239,7 @@ class UnisenderGoProviderTest extends TestCase
     public function it_stores_correct_payload_in_database()
     {
         Http::fake([
-            'https://api.unisender.com/email/send.json' => Http::response([
+            'https://api.unisender.com/ru/transactional/api/v1/email/send.json' => Http::response([
                 'status' => 'success',
                 'job_id' => 'job-123',
             ], 200),

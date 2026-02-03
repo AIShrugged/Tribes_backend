@@ -147,4 +147,16 @@ return [
 
     'email_verification_expiry' => env('EMAIL_VERIFICATION_EXPIRY_MINUTES', 30),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Team Invitation Expiry
+    |--------------------------------------------------------------------------
+    |
+    | This value determines how many hours the team invitation token
+    | will be valid before expiring.
+    |
+    */
+
+    'team_invite_expiry' => env('TEAM_INVITE_EXPIRY_HOURS', 24),
+
 ];
