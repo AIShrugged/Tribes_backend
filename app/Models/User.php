@@ -96,6 +96,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if user directly belongs to a team (without considering organization manager role).
+     */
+    public function belongsToTeam(int|Team $team): bool
+    {
+        $teamId = $team instanceof Team ? $team->id : $team;
+
+        return $this->teams()->where('teams.id', $teamId)->exists();
+    }
+
+    /**
      * @param Team[]|int[] $teams
      * @return bool
      */

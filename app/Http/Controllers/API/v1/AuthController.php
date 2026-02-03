@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AuthRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
+use App\Services\TeamInvitationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -15,8 +16,11 @@ use Knuckles\Scribe\Attributes\Group;
 #[Group('Authentication')]
 class AuthController extends Controller
 {
-    public function register(AuthRequest $request, EmailVerificationService $emailVerificationService): JsonResponse
-    {
+    public function register(
+        AuthRequest $request,
+        EmailVerificationService $emailVerificationService,
+        TeamInvitationService $teamInvitationService
+    ): JsonResponse {
         $user = User::where('email', $request->getEmail())->first();
 
         if ($user) {
@@ -26,13 +30,42 @@ class AuthController extends Controller
         $user = User::create($request->validated());
         $token = $user->createToken('authToken')->plainTextToken;
 
-        // Send verification email
-        $emailVerificationService->sendVerificationEmail($user);
+        // Handle invite token if provided
+        $inviteAccepted = false;
+        $teamId = null;
+        $organizationId = null;
 
-        return response()->json([
+        if ($inviteToken = $request->getInviteToken()) {
+            $invite = $teamInvitationService->getInviteByToken($inviteToken);
+
+            if ($invite && $invite->isPending() && !$invite->isExpired() && $invite->email === $user->email) {
+                $teamInvitationService->acceptInvite($invite, $user);
+                $inviteAccepted = true;
+                $teamId = $invite->team_id;
+                $organizationId = $invite->organization_id;
+
+                // Mark email as verified when registering via invite
+                $user->markEmailAsVerified();
+            }
+        }
+
+        // Send verification email only if not registered via invite
+        if (!$inviteAccepted) {
+            $emailVerificationService->sendVerificationEmail($user);
+        }
+
+        $response = [
             'token' => $token,
-            'email_verification_sent' => true,
-        ], 201);
+            'email_verification_sent' => !$inviteAccepted,
+        ];
+
+        if ($inviteAccepted) {
+            $response['invite_accepted'] = true;
+            $response['team_id'] = $teamId;
+            $response['organization_id'] = $organizationId;
+        }
+
+        return response()->json($response, 201);
     }
 
     public function login(AuthRequest $request): JsonResponse

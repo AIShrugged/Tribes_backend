@@ -13,6 +13,7 @@ use App\Http\Controllers\API\v1\OrganizationController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
+use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
@@ -36,6 +37,9 @@ Route::group(['prefix' => 'v1'], function () {
         ->name('google.oauth.callback');
 
     Route::post('recall/webhook', [RecallWebhookController::class, 'webhook']);
+
+    Route::get('invites/accept/{token}', [TeamInviteController::class, 'accept'])
+        ->name('invites.accept');
 
     Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::group(['prefix' => 'users'], function () {
@@ -88,6 +92,10 @@ Route::group(['prefix' => 'v1'], function () {
         Route::apiResource('teams.users', TeamUserController::class)
             ->only(['index', 'show']);
         Route::post('teams/{team}/users/{user}/kick', [TeamUserController::class, 'kick']);
+
+        Route::get('teams/{team}/invites', [TeamInviteController::class, 'index']);
+        Route::post('teams/{team}/invites', [TeamInviteController::class, 'store']);
+        Route::delete('teams/{team}/invites/{invite}', [TeamInviteController::class, 'destroy']);
 
         Route::apiResource('organizations', OrganizationController::class);
 
