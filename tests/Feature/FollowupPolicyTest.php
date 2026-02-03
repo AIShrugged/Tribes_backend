@@ -118,9 +118,9 @@ class FollowupPolicyTest extends TestCase
             'data' => [
                 '*' => [
                     'id',
-                    'calendar_event_id',
+                    'calendar_event',
                     'team_id',
-                    'user_id',
+                    'user',
                     'methodology_id',
                     'status',
                     'text',
@@ -142,7 +142,9 @@ class FollowupPolicyTest extends TestCase
             'data' => [
                 'id' => $this->followup->id,
                 'team_id' => $this->team->id,
-                'user_id' => $this->user->id,
+                'user' => [
+                    'id' => $this->user->id,
+                ]
             ]
         ]);
     }

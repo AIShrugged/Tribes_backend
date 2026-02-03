@@ -2,6 +2,7 @@
 
 use App\Exceptions\AppException;
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Console\Scheduling\Schedule;
@@ -26,7 +27,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(ThrottleRequests::class);
         $middleware->api(SubstituteBindings::class);
-        $middleware->alias(['auth' => Authenticate::class]);
+        $middleware->alias([
+            'auth' => Authenticate::class,
+            'verified' => EnsureEmailIsVerified::class,
+        ]);
         $middleware->trustProxies(['*'],
             SymfonyRequest::HEADER_X_FORWARDED_FOR |
             SymfonyRequest::HEADER_X_FORWARDED_HOST |
@@ -61,4 +65,5 @@ return Application::configure(basePath: dirname(__DIR__))
 
     })->withSchedule(function (Schedule $schedule) {
         $schedule->command('telescope:prune --hours=12')->dailyAt('23:59')->timezone('Europe/Moscow');
+        $schedule->command('email:cleanup-verifications')->daily();
     })->create();

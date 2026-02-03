@@ -123,4 +123,28 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | This URL is used for redirects from backend to frontend, such as after
+    | email verification. Set this to your frontend application URL.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Email Verification Expiry
+    |--------------------------------------------------------------------------
+    |
+    | This value determines how many minutes the email verification token
+    | will be valid before expiring.
+    |
+    */
+
+    'email_verification_expiry' => env('EMAIL_VERIFICATION_EXPIRY_MINUTES', 30),
+
 ];

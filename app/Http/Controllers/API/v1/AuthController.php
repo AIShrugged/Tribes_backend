@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AuthRequest;
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -14,7 +15,7 @@ use Knuckles\Scribe\Attributes\Group;
 #[Group('Authentication')]
 class AuthController extends Controller
 {
-    public function register(AuthRequest $request): JsonResponse
+    public function register(AuthRequest $request, EmailVerificationService $emailVerificationService): JsonResponse
     {
         $user = User::where('email', $request->getEmail())->first();
 
@@ -25,7 +26,13 @@ class AuthController extends Controller
         $user = User::create($request->validated());
         $token = $user->createToken('authToken')->plainTextToken;
 
-        return response()->json(['token' => $token], 201);
+        // Send verification email
+        $emailVerificationService->sendVerificationEmail($user);
+
+        return response()->json([
+            'token' => $token,
+            'email_verification_sent' => true,
+        ], 201);
     }
 
     public function login(AuthRequest $request): JsonResponse
