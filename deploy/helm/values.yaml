@@ -76,6 +76,12 @@ application:
     proxyUser: "ProxyUser"
     proxyPass: "ProxyPass"
     openrouterApiToken: "OpenrouterApiToken"
+    unisenderGoApiUrl: "https://go2.unisender.ru"
+    unisenderGoApiKey: "defaultApiKey"
+    unisenderGoBackendId: "defaultBackendId"
+    emailFromAddress: "no-reply@example.com"
+    emailFromDomain: "example.com"
+    emailFromName: "Example"
 
 migration:
   activeDeadlineSeconds: 7200

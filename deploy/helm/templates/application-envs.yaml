@@ -63,3 +63,9 @@ data:
   PROXY_USER: {{ quote .Values.application.config.proxyUser }}
   PROXY_PASS: {{ quote .Values.application.config.proxyPass }}
   OPENROUTER_API_TOKEN: {{ quote .Values.application.config.openrouterApiToken }}
+  UNISENDER_GO_API_URL: {{ quote .Values.application.config.unisenderGoApiUrl }}
+  UNISENDER_GO_API_KEY: {{ quote .Values.application.config.unisenderGoApiKey }}
+  UNISENDER_GO_BACKEND_ID: {{ quote .Values.application.config.unisenderGoBackendId }}
+  EMAIL_FROM_ADDRESS: {{ quote .Values.application.config.emailFromAddress }}
+  EMAIL_FROM_DOMAIN: {{ quote .Values.application.config.emailFromDomain }}
+  EMAIL_FROM_NAME: {{ quote .Values.application.config.emailFromName }}
