@@ -16,14 +16,18 @@ class MethodologyRequest extends ApiResourceRequest
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'name'            => ['required', 'string', 'min:3', 'max:255'],
             'text'            => ['required', 'string', 'min:3'],
+            'team_ids'        => ['nullable', 'array'],
+            'team_ids.*'      => ['integer', 'exists:teams,id'],
         ];
     }
 
     public function updateRules(): array
     {
         return [
-            'name' => ['sometimes', 'string', 'min:3', 'max:255'],
-            'text' => ['sometimes', 'string', 'min:3'],
+            'name'       => ['sometimes', 'string', 'min:3', 'max:255'],
+            'text'       => ['sometimes', 'string', 'min:3'],
+            'team_ids'   => ['nullable', 'array'],
+            'team_ids.*' => ['integer', 'exists:teams,id'],
         ];
     }
 
@@ -52,5 +56,10 @@ class MethodologyRequest extends ApiResourceRequest
             'name' => $this->input('name'),
             'text' => $this->input('text'),
         ]);
+    }
+
+    public function getTeamIds(): ?array
+    {
+        return $this->input('team_ids');
     }
 }

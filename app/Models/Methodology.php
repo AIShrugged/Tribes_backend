@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Exceptions\AppException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -42,5 +43,30 @@ class Methodology extends Model
     public static function getDefault(): self
     {
         return self::query()->where('is_default', true)->firstOrFail();
+    }
+
+    /**
+     * Sync teams for this methodology.
+     * Assigns specified teams, resets previously assigned teams not in the list to default.
+     */
+    public function syncTeams(array $teamIds): void
+    {
+        $invalidCount = Team::whereIn('id', $teamIds)
+            ->where('organization_id', '!=', $this->organization_id)
+            ->count();
+
+        if ($invalidCount > 0) {
+            throw new AppException('Some teams do not belong to this organization.', 'METHODOLOGY_ORG_MISMATCH');
+        }
+
+        // Reset teams that were assigned to this methodology but are not in the new list
+        $this->teams()->whereNotIn('id', $teamIds)
+            ->update(['methodology_id' => self::getDefault()->id]);
+
+        // Assign the new teams
+        if (!empty($teamIds)) {
+            Team::whereIn('id', $teamIds)
+                ->update(['methodology_id' => $this->id]);
+        }
     }
 }
