@@ -38,6 +38,7 @@ return [
         'unisender_go' => [
             'api_key' => env('UNISENDER_GO_API_KEY', 'test-api-key'),
             'api_url' => env('UNISENDER_GO_API_URL', 'https://go1.unisender.ru/ru/transactional/api/v1'),
+            'backend_id' => env('UNISENDER_GO_BACKEND_ID', '0') //unique unisender trait, should not be dependency injected
         ],
     ],
 ];
