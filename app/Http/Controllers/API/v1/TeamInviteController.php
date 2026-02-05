@@ -132,7 +132,7 @@ class TeamInviteController extends Controller
 
         if (!$user) {
             // User not found - redirect to registration page
-            $url = config('app.frontend_url') . '/register?' . http_build_query([
+            $url = config('app.frontend_url') . '/auth/register?' . http_build_query([
                 'invite' => $token,
                 'email' => $invite->email,
             ]);
