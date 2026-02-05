@@ -86,7 +86,9 @@ class UnisenderGoProvider extends AbstractEmailProvider
         if ($dto->fromName) {
             $message['from_name'] = $dto->fromName;
         }
-
+        
+        $message['options']['custom_backend_id'] = config('email.providers.unisender_go.backend_id');
+        $message['headers']['X-UNISENDER-GO-Global-Language'] = 'en'; //TODO: should be defiend by user settings
         $payload = ['message' => $message];
 
         // Add attachments if present
