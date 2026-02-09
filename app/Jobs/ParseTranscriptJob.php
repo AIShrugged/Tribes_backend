@@ -20,7 +20,7 @@ class ParseTranscriptJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        private CalendarEvent $calendarEvent,
+        public CalendarEvent $calendarEvent,
         private string $url,
     ) {
         //

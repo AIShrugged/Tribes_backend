@@ -47,6 +47,16 @@ class Team extends Model
         return $this->belongsToMany(User::class);
     }
 
+    public function followups(): HasMany
+    {
+        return $this->hasMany(Followup::class);
+    }
+
+    public function invites(): HasMany
+    {
+        return $this->hasMany(Invite::class);
+    }
+
     public function getEmployeeCountAttribute(): int
     {
         return $this->users->count();

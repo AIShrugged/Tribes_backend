@@ -5,6 +5,7 @@ use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\CalendarEventController;
 use App\Http\Controllers\API\v1\ChatController;
 use App\Http\Controllers\API\v1\ChatMessageController;
+use App\Http\Controllers\API\v1\EmailVerificationController;
 use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\FollowupExportController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\API\v1\OrganizationController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
+use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
@@ -28,10 +30,19 @@ Route::group(['prefix' => 'v1'], function () {
     Route::post('auth/logout', [AuthController::class, 'logout'])
         ->middleware('auth:sanctum');
 
+    Route::get('auth/email/verify/{token}', [EmailVerificationController::class, 'verify'])
+        ->name('auth.email.verify');
+    Route::post('auth/email/resend', [EmailVerificationController::class, 'resend'])
+        ->middleware(['auth:sanctum', 'throttle:6,1'])
+        ->name('auth.email.resend');
+
     Route::get('google/oauth/callback', [GoogleCalendarController::class, 'callback'])
         ->name('google.oauth.callback');
 
     Route::post('recall/webhook', [RecallWebhookController::class, 'webhook']);
+
+    Route::get('invites/accept/{token}', [TeamInviteController::class, 'accept'])
+        ->name('invites.accept');
 
     Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::group(['prefix' => 'users'], function () {
@@ -53,21 +64,26 @@ Route::group(['prefix' => 'v1'], function () {
             Route::get('/{calendar_event_id}/participants', [ParticipantController::class, 'index'])
                 ->name('calendar-events.participants.index');
 
-            Route::post('/{calendar_event_id}/participants/{participant_id}/set-profile',
-                [ParticipantController::class, 'setProfile'])
+            Route::post(
+                '/{calendar_event_id}/participants/{participant_id}/set-profile',
+                [ParticipantController::class, 'setProfile']
+            )
                 ->name('calendar-events.participants.set-profile');
 
             Route::get('/{calendar_event_id}/profiles', [ProfileController::class, 'index']);
 
             Route::get('/{calendar_event_id}/transcript', [TranscriptController::class, 'index']);
 
-            Route::get('/{calendar_event_id}/followups', [FollowupController::class, 'index'])
-                ->name('calendar-events.followups.index');
+            Route::get('{calendarEvent}/followup', [FollowupController::class, 'eventShow'])
+                ->name('calendar-events.followup');
 
             Route::post('/{calendar_event_id}/followups/generate', [FollowupController::class, 'generate']);
         });
 
-        Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
+        Route::get('teams/{team}/followups', [FollowupController::class, 'index'])
+            ->name('teams.followups.index');
+
+        Route::get('/followups/{followup}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
@@ -79,6 +95,10 @@ Route::group(['prefix' => 'v1'], function () {
         Route::apiResource('teams.users', TeamUserController::class)
             ->only(['index', 'show']);
         Route::post('teams/{team}/users/{user}/kick', [TeamUserController::class, 'kick']);
+
+        Route::get('teams/{team}/invites', [TeamInviteController::class, 'index']);
+        Route::post('teams/{team}/invites', [TeamInviteController::class, 'store']);
+        Route::delete('teams/{team}/invites/{invite}', [TeamInviteController::class, 'destroy']);
 
         Route::apiResource('organizations', OrganizationController::class);
 

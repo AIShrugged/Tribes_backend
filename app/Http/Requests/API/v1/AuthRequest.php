@@ -15,6 +15,7 @@ class AuthRequest extends FormRequest
 
         if ($this->route()->getName() === 'auth.register') {
             $data['name'] = 'required|string';
+            $data['invite'] = 'nullable|string';
         }
 
         return $data;
@@ -28,5 +29,10 @@ class AuthRequest extends FormRequest
     public function getPass(): string
     {
         return $this->input('password');
+    }
+
+    public function getInviteToken(): ?string
+    {
+        return $this->input('invite');
     }
 }

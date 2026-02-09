@@ -76,10 +76,14 @@ class MethodologyController extends Controller
 
             GenerateMethodologySchemeJob::dispatch($methodology);
 
+            if ($request->getTeamIds() !== null) {
+                $methodology->syncTeams($request->getTeamIds());
+            }
+
             DB::commit();
 
             return ApiResponse::success(
-                data: MethodologyResource::make($methodology)
+                data: MethodologyResource::make($methodology->refresh())
             );
         } catch (\Exception $e) {
             DB::rollBack();
@@ -127,15 +131,24 @@ class MethodologyController extends Controller
     {
         Gate::authorize('create', $methodology->organization);
 
-        if ($methodology->followups()->exists() || $methodology->teams()->exists()) {
-            throw new AppException('The methodology is in use by teams or followups.', 'METHODOLOGY_LOCK_UPDATE');
-        }
-
         if ($methodology->isDefault()) {
             throw new AppException('Unable to update default methodology.', 'METHODOLOGY_LOCK_DEFAULT');
         }
 
-        $methodology->update($request->getUpdateData());
+        $updateData = $request->getUpdateData();
+
+        // Lock name/text changes if methodology is actively used
+        if (!empty($updateData) && ($methodology->followups()->exists() || $methodology->teams()->exists())) {
+            throw new AppException('The methodology is in use by teams or followups.', 'METHODOLOGY_LOCK_UPDATE');
+        }
+
+        if (!empty($updateData)) {
+            $methodology->update($updateData);
+        }
+
+        if ($request->getTeamIds() !== null) {
+            $methodology->syncTeams($request->getTeamIds());
+        }
 
         return ApiResponse::success(
             data: MethodologyResource::make($methodology->refresh())

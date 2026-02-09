@@ -2,7 +2,9 @@
 
 use App\Exceptions\AppException;
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Responses\ApiResponse;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -12,6 +14,8 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -23,7 +27,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(ThrottleRequests::class);
         $middleware->api(SubstituteBindings::class);
-        $middleware->alias(['auth' => Authenticate::class]);
+        $middleware->alias([
+            'auth' => Authenticate::class,
+            'verified' => EnsureEmailIsVerified::class,
+        ]);
         $middleware->trustProxies(['*'],
             SymfonyRequest::HEADER_X_FORWARDED_FOR |
             SymfonyRequest::HEADER_X_FORWARDED_HOST |
@@ -47,6 +54,16 @@ return Application::configure(basePath: dirname(__DIR__))
             );
         });
 
+        $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiResponse::error(
+                    message: 'Not Found',
+                    status: 404
+                );
+            }
+        });
+
     })->withSchedule(function (Schedule $schedule) {
         $schedule->command('telescope:prune --hours=12')->dailyAt('23:59')->timezone('Europe/Moscow');
+        $schedule->command('email:cleanup-verifications')->daily();
     })->create();

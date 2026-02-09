@@ -20,6 +20,7 @@ class MethodologyResource extends JsonResource
             'text'       => $this->text,
             'is_default' => $this->is_default,
             'teams'      => TeamResource::collection($this->teams),
+            'organization_id' => $this->organization_id
         ];
     }
 }
