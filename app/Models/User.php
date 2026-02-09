@@ -54,6 +54,11 @@ class User extends Authenticatable
         return $this->hasMany(Methodology::class);
     }
 
+    public function chats(): HasMany
+    {
+        return $this->hasMany(Chat::class);
+    }
+
     public function organizations(): BelongsToMany
     {
         return $this->belongsToMany(Organization::class)

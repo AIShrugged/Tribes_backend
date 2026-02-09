@@ -3,7 +3,10 @@
 use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\CalendarEventController;
+use App\Http\Controllers\API\v1\ChatController;
+use App\Http\Controllers\API\v1\ChatMessageController;
 use App\Http\Controllers\API\v1\FollowupController;
+use App\Http\Controllers\API\v1\FollowupExportController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
 use App\Http\Controllers\API\v1\MethodologyController;
 use App\Http\Controllers\API\v1\ParticipantController;
@@ -84,5 +87,13 @@ Route::group(['prefix' => 'v1'], function () {
             ->except(['index']);
 
         Route::get('/sources', [SourceController::class, 'index']);
+
+        // Wanda Chat
+        Route::apiResource('chats', ChatController::class);
+        Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
+        Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
+
+        // Followup Export
+        Route::get('followups/{followup}/export', [FollowupExportController::class, 'export']);
     });
 });
