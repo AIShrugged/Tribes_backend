@@ -7,6 +7,7 @@ return [
             'models'    => [
                 'followup' => 'google/gemini-3-pro-preview',
                 'scheme'   => 'google/gemini-3-pro-preview',
+                'wanda'    => 'google/gemini-3-pro-preview',
             ]
         ]
     ]
