@@ -25,3 +25,5 @@ Thumbs.db
 /.scribe
 /public/vendor/scribe
 CLAUDE.md
+.claude
+.claude/*
