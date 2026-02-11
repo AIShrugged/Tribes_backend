@@ -51,6 +51,16 @@ class CalendarEvent extends Model
         return $this->hasMany(Followup::class);
     }
 
+    public function meetingSummary(): HasOne
+    {
+        return $this->hasOne(MeetingSummary::class);
+    }
+
+    public function meetingTasks(): HasMany
+    {
+        return $this->hasMany(MeetingTask::class);
+    }
+
     public function scopeOwned(Builder $query, int $userId): Builder
     {
         return $query->whereHas('source', function (Builder $query) use ($userId) {

@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'enabled' => env('PROXY_ENABLED', true),
     'host' => env('PROXY_HOST', '127.0.0.1'),
     'port' => env('PROXY_PORT', 80),
     'user' => env('PROXY_USER', 'root'),

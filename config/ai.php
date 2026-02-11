@@ -5,9 +5,12 @@ return [
         'openrouter' => [
             'api_token' => env('OPENROUTER_API_TOKEN'),
             'models'    => [
-                'followup' => 'google/gemini-3-pro-preview',
-                'scheme'   => 'google/gemini-3-pro-preview',
-                'wanda'    => 'google/gemini-3-pro-preview',
+                'followup'        => 'google/gemini-3-pro-preview',
+                'scheme'          => 'google/gemini-3-pro-preview',
+                'wanda'           => 'google/gemini-3-pro-preview',
+                'meeting_summary' => 'google/gemini-3-pro-preview',
+                'meeting_tasks'   => 'google/gemini-3-pro-preview',
+                'insight'         => 'google/gemini-3-pro-preview',
             ]
         ]
     ]
