@@ -17,6 +17,7 @@ class FollowupService
 {
     public function __construct(
         private readonly OpenRouterClient $llm,
+        private readonly TranscriptBuilderService $transcriptBuilder,
     ) {
     }
 
@@ -40,7 +41,7 @@ class FollowupService
 
             try {
 
-                $transcript = $this->buildTranscript($event);
+                $transcript = $this->transcriptBuilder->build($event);
 
                 $messages = [
                     new MessageDTO('user', view('prompts.methodology_prompt', ['scheme' => $methodology->scheme])->render()),
@@ -77,21 +78,4 @@ class FollowupService
         });
     }
 
-    private function buildTranscript(CalendarEvent $event): string
-    {
-        $query = $event->transcriptEntries()
-            ->orderBy('start_absolute');
-
-
-        return $query->get()
-            ->map(function ($entry) {
-                return sprintf(
-                    "%s %s: %s",
-                    $entry->start_relative,
-                    $entry->participant?->name ?? 'Unknown',
-                    $entry->text,
-                );
-            })
-            ->implode("\n");
-    }
 }
