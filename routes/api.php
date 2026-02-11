@@ -16,6 +16,9 @@ use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamUserController;
+use App\Http\Controllers\API\v1\MeetingSummaryController;
+use App\Http\Controllers\API\v1\InsightController;
+use App\Http\Controllers\API\v1\MeetingTaskController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -65,10 +68,23 @@ Route::group(['prefix' => 'v1'], function () {
                 ->name('calendar-events.followups.index');
 
             Route::post('/{calendar_event_id}/followups/generate', [FollowupController::class, 'generate']);
+
+            Route::get('/{calendar_event_id}/meeting-summary', [MeetingSummaryController::class, 'show'])
+                ->name('calendar-events.meeting-summary.show');
+            Route::post('/{calendar_event_id}/meeting-summary/generate', [MeetingSummaryController::class, 'generate'])
+                ->name('calendar-events.meeting-summary.generate');
+
+            Route::get('/{calendar_event_id}/tasks', [MeetingTaskController::class, 'index'])
+                ->name('calendar-events.tasks.index');
+            Route::post('/{calendar_event_id}/tasks/generate', [MeetingTaskController::class, 'generate'])
+                ->name('calendar-events.tasks.generate');
         });
 
         Route::get('/followups/{followup_id}', [FollowupController::class, 'show'])
             ->name('followups.show');
+
+        Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
+            ->name('tasks.show');
 
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
         Route::apiResource('teams', TeamController::class)
@@ -95,5 +111,13 @@ Route::group(['prefix' => 'v1'], function () {
 
         // Followup Export
         Route::get('followups/{followup}/export', [FollowupExportController::class, 'export']);
+
+        // Insight — user profiling and memory
+        Route::group(['prefix' => 'insight'], function () {
+            Route::get('profiles/{email}', [InsightController::class, 'profile']);
+            Route::delete('profiles/{email}', [InsightController::class, 'forget']);
+            Route::get('profiles/{email}/short-term', [InsightController::class, 'shortTerm']);
+            Route::get('relationships', [InsightController::class, 'relationship']);
+        });
     });
 });
