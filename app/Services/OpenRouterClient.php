@@ -45,9 +45,19 @@ class OpenRouterClient
             $data['response_format'] = ['type' => 'json_object'];
         }
 
-        $response = Http::withProxy()
-            ->timeout(self::RESPONSE_TIMEOUT_SECONDS)
-            ->connectTimeout(self::RESPONSE_TIMEOUT_SECONDS)
+        $options = ['timeout' => self::RESPONSE_TIMEOUT_SECONDS];
+
+        if (config('proxy.enabled')) {
+            $options['proxy'] = sprintf(
+                'http://%s:%s@%s:%s',
+                urlencode(config('proxy.user')),
+                urlencode(config('proxy.pass')),
+                config('proxy.host'),
+                config('proxy.port')
+            );
+        }
+
+        $response = Http::withOptions($options)
             ->withHeaders(['Authorization' => 'Bearer ' . config('ai.providers.openrouter.api_token')])
             ->post(self::URL, $data);
 
