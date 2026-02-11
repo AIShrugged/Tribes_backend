@@ -30,7 +30,7 @@ class FollowupExportController extends Controller
             abort(403, 'Access denied');
         }
 
-        $exporter = $this->exporterFactory->make($request->getExportFormat());
+        $exporter = $this->exporterFactory->make($request->input('format'));
 
         $content = $exporter->export($followup);
         $fileName = $exporter->getFileName($followup);

@@ -26,9 +26,4 @@ class FollowupExportRequest extends ApiResourceRequest
     {
         return $this->followup_id;
     }
-
-    public function getExportFormat(): string
-    {
-        return $this->format;
-    }
 }

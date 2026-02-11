@@ -18,6 +18,7 @@ use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamUserController;
+use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
 use App\Http\Controllers\API\v1\InsightController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
@@ -43,6 +44,9 @@ Route::group(['prefix' => 'v1'], function () {
         ->name('google.oauth.callback');
 
     Route::post('recall/webhook', [RecallWebhookController::class, 'webhook']);
+
+    // Telegram bot webhook
+    Route::post('telegram/webhook', [TelegramBotController::class, 'webhook']);
 
     Route::get('invites/accept/{token}', [TeamInviteController::class, 'accept'])
         ->name('invites.accept');
