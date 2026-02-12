@@ -15,10 +15,9 @@ return new class extends Migration
 
         // Auto-link existing profiles to users by matching email
         DB::statement('
-            UPDATE profiles p
-            SET user_id = u.id
-            FROM users u
-            WHERE p.email = u.email
+            UPDATE profiles
+            SET user_id = (SELECT id FROM users WHERE users.email = profiles.email)
+            WHERE EXISTS (SELECT 1 FROM users WHERE users.email = profiles.email)
         ');
     }
 

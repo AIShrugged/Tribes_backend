@@ -12,10 +12,13 @@ use Illuminate\Support\Facades\Log;
 class AgentService
 {
     private const MAX_ITERATIONS = 10;
+
     private const MODEL = 'anthropic/claude-3.5-sonnet';
+
     private const STOP_KEY_PREFIX = 'telegram_agent_stop_';
 
     private ToolRegistry $toolRegistry;
+
     private MemoryService $memoryService;
 
     public function __construct(
@@ -31,7 +34,7 @@ class AgentService
      */
     public function requestStop(int $telegramUserId): void
     {
-        Cache::put(self::STOP_KEY_PREFIX . $telegramUserId, true, 60);
+        Cache::put(self::STOP_KEY_PREFIX.$telegramUserId, true, 60);
         Log::info('Stop requested for telegram user', ['telegram_user_id' => $telegramUserId]);
     }
 
@@ -40,7 +43,7 @@ class AgentService
      */
     private function isStopRequested(int $telegramUserId): bool
     {
-        return Cache::get(self::STOP_KEY_PREFIX . $telegramUserId, false);
+        return Cache::get(self::STOP_KEY_PREFIX.$telegramUserId, false);
     }
 
     /**
@@ -48,7 +51,7 @@ class AgentService
      */
     private function clearStopFlag(int $telegramUserId): void
     {
-        Cache::forget(self::STOP_KEY_PREFIX . $telegramUserId);
+        Cache::forget(self::STOP_KEY_PREFIX.$telegramUserId);
     }
 
     /**
@@ -94,7 +97,7 @@ class AgentService
         if ($telegramChatId) {
             TelegramChatMessage::create([
                 'telegram_chat_id' => $telegramChatId,
-                'telegram_user_id' => $telegramUser->id,
+                'telegram_user_id' => $telegramUser->telegram_user_id,
                 'role' => 'user',
                 'content' => $userMessage,
             ]);
@@ -122,7 +125,8 @@ class AgentService
                     'iteration' => $iteration,
                 ]);
                 $this->clearStopFlag($telegramUserId);
-                return "⛔️ Processing stopped by your request.";
+
+                return '⛔️ Processing stopped by your request.';
             }
 
             $iteration++;
@@ -144,7 +148,7 @@ class AgentService
 
                 $assistantMessage = $response['choices'][0]['message'] ?? null;
 
-                if (!$assistantMessage) {
+                if (! $assistantMessage) {
                     Log::error('No assistant message in response');
                     break;
                 }
@@ -153,7 +157,7 @@ class AgentService
                 $messages[] = $assistantMessage;
 
                 // Check for tool calls
-                if (!empty($assistantMessage['tool_calls'])) {
+                if (! empty($assistantMessage['tool_calls'])) {
                     Log::info('Tool calls detected', [
                         'count' => count($assistantMessage['tool_calls']),
                     ]);
@@ -171,7 +175,7 @@ class AgentService
 
                         $tool = $this->toolRegistry->get($toolName);
 
-                        if (!$tool) {
+                        if (! $tool) {
                             $toolResult = [
                                 'success' => false,
                                 'error' => "Tool '{$toolName}' not found",
@@ -231,11 +235,13 @@ class AgentService
 
         if ($iteration >= self::MAX_ITERATIONS) {
             Log::warning('Agent loop reached max iterations');
+
             return "Sorry, I couldn't complete your request within the maximum number of steps.";
         }
 
-        if (!$finalAnswer) {
+        if (! $finalAnswer) {
             Log::warning('No final answer generated');
+
             return "Sorry, I couldn't generate a response.";
         }
 

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\TelegramChatMessage;
+use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\MemoryService;
 use App\Services\Agent\Tools\GetTranscriptTool;
@@ -17,6 +19,7 @@ use Telegram\Bot\Exceptions\TelegramSDKException;
 class TelegramBotController extends Controller
 {
     private Api $telegram;
+
     private AgentService $agentService;
 
     public function __construct()
@@ -27,12 +30,12 @@ class TelegramBotController extends Controller
 
     private function initializeAgentService(): AgentService
     {
-        $toolRegistry = new ToolRegistry();
-        $toolRegistry->register(new GetUserInfoTool());
-        $toolRegistry->register(new GetTranscriptTool());
-        $toolRegistry->register(new SearchMeetingsTool());
+        $toolRegistry = new ToolRegistry;
+        $toolRegistry->register(new GetUserInfoTool);
+        $toolRegistry->register(new GetTranscriptTool);
+        $toolRegistry->register(new SearchMeetingsTool);
 
-        $memoryService = new MemoryService();
+        $memoryService = new MemoryService;
 
         return new AgentService($toolRegistry, $memoryService);
     }
@@ -49,35 +52,63 @@ class TelegramBotController extends Controller
                 $chatId = $message->getChat()->getId();
                 $chatType = $message->getChat()->getType();
                 $text = $message->getText();
-                $userId = $message->getFrom()->getId();
-                $username = $message->getFrom()->getUsername();
-                $isGroup = in_array($chatType, ['group', 'supergroup']);
+                $userId = $message->getFrom()?->getId();
+                $username = $message->getFrom()?->getUsername();
+
+                // Skip system messages (new_chat_member, left_chat_member, etc.) without text
+                if ($text === null || trim($text) === '') {
+                    Log::info('Telegram system event received (no text)', [
+                        'chat_id' => $chatId,
+                        'chat_type' => $chatType,
+                        'new_chat_member' => $message->getNewChatMember()?->getUsername(),
+                        'left_chat_member' => $message->getLeftChatMember()?->getUsername(),
+                    ]);
+
+                    return response()->json(['ok' => true]);
+                }
+
+                // Skip messages without user info
+                if (! $userId) {
+                    Log::info('Telegram message without user info', [
+                        'chat_id' => $chatId,
+                        'text' => $text,
+                    ]);
+
+                    return response()->json(['ok' => true]);
+                }
+
+                // Find or create telegram user and save ALL messages (before mention check)
+                $telegramUser = TelegramUser::findOrCreateByTelegramId($userId, $username);
+
+                // Save incoming user message (save ALL messages, not just mentions)
+                TelegramChatMessage::create([
+                    'telegram_chat_id' => $chatId,
+                    'telegram_user_id' => $telegramUser->telegram_user_id,
+                    'role' => 'user',
+                    'content' => $text,
+                ]);
+
+                // Only respond when bot is mentioned
+                $botUsername = config('telegram.bot_username');
+                if (! $botUsername || ! $this->isBotMentioned($text, $botUsername)) {
+                    return response()->json(['ok' => true]);
+                }
 
                 // Check whitelist (empty = allow all)
-                if (!$this->isUserAllowed($userId)) {
-                    $this->telegram->sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "В доступе отказано. Данный функционал ориентирован на пользователей с иным уровнем статуса и назначения, нежели тот, к которому вы относитесь.",
-                    ]);
-                    Log::info('Unauthorized user message', [
+                if (! $this->isUserAllowed($userId)) {
+                    Log::info('Unauthorized user message (ignored)', [
                         'chat_id' => $chatId,
                         'user_id' => $userId,
                         'username' => $username,
                         'text' => $text,
                     ]);
+
                     return response()->json(['ok' => true]);
                 }
 
-                // In group chats, only respond when bot is mentioned
-                if ($isGroup) {
-                    $botUsername = config('telegram.bot_username');
-                    if (!$botUsername || !$this->isBotMentioned($text, $botUsername)) {
-                        return response()->json(['ok' => true]);
-                    }
-                    $text = trim($this->removeMention($text, $botUsername));
-                    if (empty($text)) {
-                        return response()->json(['ok' => true]);
-                    }
+                $text = trim($this->removeMention($text, $botUsername));
+                if (empty($text)) {
+                    return response()->json(['ok' => true]);
                 }
 
                 Log::info('Telegram message received', [
@@ -91,10 +122,20 @@ class TelegramBotController extends Controller
                 // Handle /stop command
                 if ($text === '/stop') {
                     $this->agentService->requestStop($userId);
+                    $stopMessage = '⛔️ Stop signal sent. Current processing will be interrupted.';
                     $this->telegram->sendMessage([
                         'chat_id' => $chatId,
-                        'text' => "⛔️ Stop signal sent. Current processing will be interrupted.",
+                        'text' => $stopMessage,
                     ]);
+
+                    // Save bot response
+                    TelegramChatMessage::create([
+                        'telegram_chat_id' => $chatId,
+                        'telegram_user_id' => $telegramUser->telegram_user_id,
+                        'role' => 'assistant',
+                        'content' => $stopMessage,
+                    ]);
+
                     return response()->json(['ok' => true]);
                 }
 
@@ -106,6 +147,14 @@ class TelegramBotController extends Controller
                     'chat_id' => $chatId,
                     'text' => $response,
                 ]);
+
+                // Save bot response
+                TelegramChatMessage::create([
+                    'telegram_chat_id' => $chatId,
+                    'telegram_user_id' => $telegramUser->telegram_user_id,
+                    'role' => 'assistant',
+                    'content' => $response,
+                ]);
             }
 
             return response()->json(['ok' => true]);
@@ -115,7 +164,18 @@ class TelegramBotController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return response()->json(['error' => $e->getMessage()], 500);
+            // Always return 200 OK to Telegram to avoid retries
+            return response()->json(['ok' => true]);
+        } catch (\Throwable $e) {
+            Log::error('Telegram webhook unexpected error', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            // Always return 200 OK to Telegram to avoid retries
+            return response()->json(['ok' => true]);
         }
     }
 
@@ -127,16 +187,17 @@ class TelegramBotController extends Controller
         }
 
         $allowedIds = array_map('trim', explode(',', $allowedUsers));
+
         return in_array((string) $userId, $allowedIds);
     }
 
     private function isBotMentioned(string $text, string $botUsername): bool
     {
-        return str_contains(mb_strtolower($text), '@' . mb_strtolower($botUsername));
+        return str_contains(mb_strtolower($text), '@'.mb_strtolower($botUsername));
     }
 
     private function removeMention(string $text, string $botUsername): string
     {
-        return preg_replace('/@' . preg_quote($botUsername, '/') . '/i', '', $text);
+        return preg_replace('/@'.preg_quote($botUsername, '/').'/i', '', $text);
     }
 }
