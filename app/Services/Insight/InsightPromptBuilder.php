@@ -115,6 +115,98 @@ PROMPT;
     }
 
     /**
+     * Prompt for extracting behavioral insights from a Telegram conversation (single user).
+     */
+    public function buildTelegramExtractionPrompt(
+        string $conversationText,
+        string $email,
+        string $userName,
+        string $processedDate,
+    ): string {
+        $categories = implode(', ', InsightCategory::values());
+
+        return <<<PROMPT
+You are an expert behavioral analyst. Analyze the Telegram conversation below and extract behavioral insights about the user.
+
+## User Info
+Name: {$userName}
+Email: {$email}
+Conversation Date: {$processedDate}
+
+## Instructions
+1. Only extract facts about the USER (role: "User") — the Assistant messages are provided for context only.
+2. Extract only facts clearly supported by the conversation — do not guess.
+3. Each fact must be a single, specific, atomic observation.
+4. Confidence: 0.9 = very clear, 0.7 = likely, 0.5 = possible but uncertain.
+5. For short_term, capture only what appears to be true NOW based on this conversation.
+
+## Categories
+{$categories}
+
+Category definitions:
+- communication_style: tone, language patterns, how they express themselves in text
+- work_patterns: work habits, how they describe their tasks and responsibilities
+- strengths: things the person appears good at, with evidence from conversation
+- development_areas: challenges or growth areas, with evidence from conversation
+- goals_motivations: current goals, concerns, what drives them
+- psychological_profile: personality traits, emotional patterns, stress indicators
+
+## Required JSON Output Format
+```json
+{
+  "participants": [
+    {
+      "email": "{$email}",
+      "name": "{$userName}",
+      "items": [
+        {
+          "category": "communication_style",
+          "fact": "Writes in short, direct sentences without formalities",
+          "confidence": 0.9
+        }
+      ],
+      "short_term": [
+        {
+          "context_type": "emotional_state",
+          "content": {
+            "mood": "focused",
+            "energy_level": "high",
+            "stress_indicators": []
+          }
+        },
+        {
+          "context_type": "current_projects",
+          "content": {
+            "active": ["project name"],
+            "recently_completed": []
+          }
+        },
+        {
+          "context_type": "recent_decisions",
+          "content": {
+            "decisions": ["decided to postpone feature X"]
+          }
+        }
+      ]
+    }
+  ],
+  "relationships": []
+}
+```
+
+If no meaningful behavioral insights can be extracted, return:
+```json
+{"participants": [], "relationships": []}
+```
+
+Return ONLY valid JSON. No markdown, no explanation.
+
+## Conversation
+{$conversationText}
+PROMPT;
+    }
+
+    /**
      * Prompt for evolving a long-term profile category with new facts.
      */
     public function buildEvolutionPrompt(

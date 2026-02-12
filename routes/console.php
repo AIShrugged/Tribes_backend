@@ -21,3 +21,9 @@ Schedule::call(fn() => app(InsightMaintenanceService::class)->runMonthlyRebuild(
     ->monthly()
     ->name('insight:monthly-rebuild')
     ->withoutOverlapping();
+
+// Enrich Insight profiles from Telegram chat history
+Schedule::command('insight:process-telegram')
+    ->everyFourHours()
+    ->name('insight:process-telegram')
+    ->withoutOverlapping();

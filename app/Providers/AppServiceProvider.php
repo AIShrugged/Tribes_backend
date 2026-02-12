@@ -36,6 +36,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Http::macro('withProxy', function () {
+            if (! config('proxy.enabled', true)) {
+                return Http::withOptions([]);
+            }
+
             return Http::withOptions([
                 'proxy' => sprintf(
                     'http://%s:%s@%s:%s',
