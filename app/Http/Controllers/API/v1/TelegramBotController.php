@@ -7,8 +7,12 @@ use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\MemoryService;
+use App\Services\Agent\Tools\GetRelationshipInsightTool;
+use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetUserInfoTool;
+use App\Services\Agent\Tools\GetUserInsightsTool;
+use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
 use App\Services\Agent\Tools\SearchMeetingsTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Http\Request;
@@ -34,6 +38,10 @@ class TelegramBotController extends Controller
         $toolRegistry->register(new GetUserInfoTool);
         $toolRegistry->register(new GetTranscriptTool);
         $toolRegistry->register(new SearchMeetingsTool);
+        $toolRegistry->register(new GetTeamMembersTool);
+        $toolRegistry->register(new GetUserInsightsTool);
+        $toolRegistry->register(new GetUserShortTermMemoryTool);
+        $toolRegistry->register(new GetRelationshipInsightTool);
 
         $memoryService = new MemoryService;
 
@@ -88,9 +96,10 @@ class TelegramBotController extends Controller
                     'content' => $text,
                 ]);
 
-                // Only respond when bot is mentioned
+                // Only respond when bot is mentioned (except in private chats)
                 $botUsername = config('telegram.bot_username');
-                if (! $botUsername || ! $this->isBotMentioned($text, $botUsername)) {
+                $isPrivateChat = $chatType === 'private';
+                if (! $isPrivateChat && (! $botUsername || ! $this->isBotMentioned($text, $botUsername))) {
                     return response()->json(['ok' => true]);
                 }
 
@@ -106,8 +115,12 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
-                $text = trim($this->removeMention($text, $botUsername));
-                if (empty($text)) {
+                // Remove mention if present (in group chats)
+                if (! $isPrivateChat && $botUsername) {
+                    $text = trim($this->removeMention($text, $botUsername));
+                }
+
+                if (empty(trim($text))) {
                     return response()->json(['ok' => true]);
                 }
 

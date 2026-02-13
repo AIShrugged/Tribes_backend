@@ -69,6 +69,10 @@ class AgentService
         $updateMemoryTool = new Tools\UpdateMemoryTool($telegramUserId);
         $this->toolRegistry->register($updateMemoryTool);
 
+        // Register ExecuteSqlQueryTool for this user
+        $executeSqlQueryTool = new Tools\ExecuteSqlQueryTool($telegramUserId);
+        $this->toolRegistry->register($executeSqlQueryTool);
+
         // Register GetChatHistoryTool for this chat
         if ($telegramChatId) {
             $getChatHistoryTool = new Tools\GetChatHistoryTool($telegramChatId);
@@ -280,13 +284,11 @@ Today is {$currentDate}, {$currentTime} (MSK, Moscow Time, UTC+3).
 
 ## Your Capabilities
 
-You can use the available tools to:
-- Get information about users in the system
-- Search for meetings and calendar events
-- Retrieve meeting transcripts
-- Access various data from the platform
-- **Retrieve chat history** to recall what was discussed earlier in this conversation
-- **Update your long-term memory about the user**
+You have access to various tools that allow you to:
+- Retrieve and analyze data from the platform
+- Access user information, teams, meetings, and transcripts
+- Execute database queries to get specific information
+- Manage conversation history and memory about users
 
 ## Memory Management - IMPORTANT
 
