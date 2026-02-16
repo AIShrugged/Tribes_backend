@@ -20,7 +20,6 @@ class InsightService
 
     /**
      * Full pipeline: extract from transcript → persist items → trigger evolution.
-     * Called from ExtractInsightItemsListener.
      */
     public function processTranscript(CalendarEvent $event): array
     {
@@ -30,60 +29,59 @@ class InsightService
     /**
      * Get context string for injecting into Wanda Bot prompts.
      */
-    public function getContextForQuery(string $email, string $query): string
+    public function getContextForQuery(int $profileId, string $query): string
     {
-        return $this->retrieval->getContextForQuery($email, $query);
+        return $this->retrieval->getContextForQuery($profileId, $query);
     }
 
     /**
-     * Get the full structured profile for an email.
+     * Get the full structured profile for a profile_id.
      */
-    public function getFullProfile(string $email): array
+    public function getFullProfile(int $profileId): array
     {
-        return $this->retrieval->getFullProfile($email);
+        return $this->retrieval->getFullProfile($profileId);
     }
 
     /**
-     * Get active short-term context (current state) for an email.
+     * Get active short-term context for a profile_id.
      */
-    public function getShortTermContext(string $email): array
+    public function getShortTermContext(int $profileId): array
     {
-        return $this->retrieval->getShortTermContext($email);
+        return $this->retrieval->getShortTermContext($profileId);
     }
 
     /**
-     * Get relationship dynamics between two people.
+     * Get relationship dynamics between two profiles.
      */
-    public function getRelationship(string $emailA, string $emailB): ?array
+    public function getRelationship(int $profileIdA, int $profileIdB): ?array
     {
-        return $this->retrieval->getRelationship($emailA, $emailB);
+        return $this->retrieval->getRelationship($profileIdA, $profileIdB);
     }
 
     /**
-     * Trigger a full profile rebuild from all items for an email.
-     * Used by maintenance jobs.
+     * Trigger a full profile rebuild from all items for a profile_id.
      */
-    public function rebuildProfile(string $email): void
+    public function rebuildProfile(int $profileId): void
     {
-        $this->evolution->rebuildFromAllItems($email);
+        $this->evolution->rebuildFromAllItems($profileId);
     }
 
     /**
-     * Delete all insight data for an email (GDPR / forget request).
+     * Delete all insight data for a profile_id (GDPR / forget request).
      */
-    public function forget(string $email): void
+    public function forget(int $profileId): void
     {
-        InsightItem::where('email', $email)->delete();
-        InsightShortTerm::where('email', $email)->delete();
+        InsightItem::where('profile_id', $profileId)->delete();
+        InsightShortTerm::where('profile_id', $profileId)->delete();
 
-        $profileIds = InsightProfile::where('email', $email)->pluck('id');
-        InsightProfileHistory::whereIn('insight_profile_id', $profileIds)->delete();
-        InsightProfile::where('email', $email)->delete();
+        $insightProfileIds = InsightProfile::where('profile_id', $profileId)->pluck('id');
+        InsightProfileHistory::whereIn('insight_profile_id', $insightProfileIds)->delete();
+        InsightProfile::where('profile_id', $profileId)->delete();
 
-        InsightRelationship::where('email_a', $email)
-            ->orWhere('email_b', $email)
+        InsightRelationship::where('profile_id_a', $profileId)
+            ->orWhere('profile_id_b', $profileId)
             ->delete();
 
-        InsightSource::where('email', $email)->delete();
+        InsightSource::where('profile_id', $profileId)->delete();
     }
 }

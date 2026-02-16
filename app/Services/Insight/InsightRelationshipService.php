@@ -5,6 +5,7 @@ namespace App\Services\Insight;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Models\CalendarEvent;
 use App\Models\InsightRelationship;
+use App\Models\Profile;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
@@ -20,9 +21,9 @@ class InsightRelationshipService
     /**
      * Process all pair relationships for a meeting.
      *
-     * @param  string[]  $emails
+     * @param  int[]  $profileIds
      */
-    public function processFromEvent(CalendarEvent $event, array $emails): void
+    public function processFromEvent(CalendarEvent $event, array $profileIds): void
     {
         $transcript = $this->transcriptBuilder->build($event);
 
@@ -30,31 +31,42 @@ class InsightRelationshipService
             return;
         }
 
-        $pairs = $this->buildPairs($emails);
+        $profiles = Profile::whereIn('id', array_unique($profileIds))
+            ->get()
+            ->keyBy('id');
 
-        foreach ($pairs as [$emailA, $emailB]) {
-            $this->evolvePair($emailA, $emailB, $transcript, $event);
+        $pairs = $this->buildPairs(array_unique($profileIds));
+
+        foreach ($pairs as [$idA, $idB]) {
+            $profileA = $profiles[$idA] ?? null;
+            $profileB = $profiles[$idB] ?? null;
+
+            if (!$profileA || !$profileB) {
+                continue;
+            }
+
+            $this->evolvePair($profileA, $profileB, $transcript, $event);
         }
     }
 
     /**
      * Evolve the relationship record for a specific pair.
      */
-    public function evolvePair(string $emailA, string $emailB, string $transcript, CalendarEvent $event): void
+    public function evolvePair(Profile $profileA, Profile $profileB, string $transcript, CalendarEvent $event): void
     {
-        [$a, $b] = InsightRelationship::sortEmails($emailA, $emailB);
+        [$idA, $idB] = InsightRelationship::sortIds($profileA->id, $profileB->id);
 
-        $existing = InsightRelationship::findPair($a, $b);
+        $existing = InsightRelationship::findPair($idA, $idB);
 
-        $observation = $this->extractPairObservation($a, $b, $transcript, $event);
+        $observation = $this->extractPairObservation($profileA, $profileB, $transcript, $event);
 
         if ($observation === null) {
             return;
         }
 
         $updatedDynamics = $this->callEvolutionLLM(
-            nameA:               $a,
-            nameB:               $b,
+            identifierA:         $profileA->channel_identifier,
+            identifierB:         $profileB->channel_identifier,
             existingDynamics:    $existing?->dynamics ?? [],
             newObservation:      $observation['observation'],
             newRelationshipType: $observation['relationship_type'],
@@ -65,7 +77,7 @@ class InsightRelationshipService
         }
 
         InsightRelationship::updateOrCreate(
-            ['email_a' => $a, 'email_b' => $b],
+            ['profile_id_a' => $idA, 'profile_id_b' => $idB],
             [
                 'dynamics'            => $updatedDynamics,
                 'relationship_type'   => $updatedDynamics['relationship_type'] ?? 'neutral',
@@ -76,18 +88,18 @@ class InsightRelationshipService
     }
 
     /**
-     * Build unique ordered pairs from email list.
+     * Build unique ordered pairs from profile ID list.
      *
-     * @return array<array{string, string}>
+     * @param  int[]  $profileIds
+     * @return array<array{int, int}>
      */
-    private function buildPairs(array $emails): array
+    private function buildPairs(array $profileIds): array
     {
         $pairs = [];
-        $emails = array_unique($emails);
 
-        for ($i = 0; $i < count($emails); $i++) {
-            for ($j = $i + 1; $j < count($emails); $j++) {
-                [$a, $b] = InsightRelationship::sortEmails($emails[$i], $emails[$j]);
+        for ($i = 0; $i < count($profileIds); $i++) {
+            for ($j = $i + 1; $j < count($profileIds); $j++) {
+                [$a, $b] = InsightRelationship::sortIds($profileIds[$i], $profileIds[$j]);
                 $pairs[] = [$a, $b];
             }
         }
@@ -95,15 +107,18 @@ class InsightRelationshipService
         return $pairs;
     }
 
-    private function extractPairObservation(string $emailA, string $emailB, string $transcript, CalendarEvent $event): ?array
+    private function extractPairObservation(Profile $profileA, Profile $profileB, string $transcript, CalendarEvent $event): ?array
     {
-        try {
-            $meetingDate = $event->starts_at ? \Carbon\Carbon::parse($event->starts_at)->toDateString() : 'Unknown';
-            $prompt = <<<PROMPT
-Analyze the following meeting transcript and describe the interaction between exactly TWO people identified by their emails.
+        $identifierA = $profileA->channel_identifier;
+        $identifierB = $profileB->channel_identifier;
+        $meetingDate = $event->starts_at ? \Carbon\Carbon::parse($event->starts_at)->toDateString() : 'Unknown';
 
-Person A email: {$emailA}
-Person B email: {$emailB}
+        try {
+            $prompt = <<<PROMPT
+Analyze the following meeting transcript and describe the interaction between exactly TWO people.
+
+Person A: {$identifierA}
+Person B: {$identifierB}
 
 Meeting: {$event->title}
 Date: {$meetingDate}
@@ -124,9 +139,9 @@ Transcript:
 PROMPT;
 
             $json = $this->llm->chat(
-                messages:         [new MessageDTO('user', $prompt)],
-                model:            config('ai.providers.openrouter.models.insight'),
-                maxTokens:        2048,
+                messages:          [new MessageDTO('user', $prompt)],
+                model:             config('ai.providers.openrouter.models.insight'),
+                maxTokens:         2048,
                 forceJsonResponse: true,
             );
 
@@ -139,34 +154,34 @@ PROMPT;
             return $data;
         } catch (\Throwable $e) {
             Log::error('InsightRelationshipService: pair observation failed', [
-                'email_a' => $emailA,
-                'email_b' => $emailB,
-                'error'   => $e->getMessage(),
+                'profile_id_a' => $profileA->id,
+                'profile_id_b' => $profileB->id,
+                'error'        => $e->getMessage(),
             ]);
             return null;
         }
     }
 
     private function callEvolutionLLM(
-        string $nameA,
-        string $nameB,
+        string $identifierA,
+        string $identifierB,
         array $existingDynamics,
         string $newObservation,
         string $newRelationshipType,
     ): ?array {
         try {
             $prompt = $this->promptBuilder->buildRelationshipEvolutionPrompt(
-                nameA:               $nameA,
-                nameB:               $nameB,
+                nameA:               $identifierA,
+                nameB:               $identifierB,
                 existingDynamics:    $existingDynamics,
                 newObservation:      $newObservation,
                 newRelationshipType: $newRelationshipType,
             );
 
             $json = $this->llm->chat(
-                messages:         [new MessageDTO('user', $prompt)],
-                model:            config('ai.providers.openrouter.models.insight'),
-                maxTokens:        1024,
+                messages:          [new MessageDTO('user', $prompt)],
+                model:             config('ai.providers.openrouter.models.insight'),
+                maxTokens:         1024,
                 forceJsonResponse: true,
             );
 
@@ -175,9 +190,9 @@ PROMPT;
             return is_array($data) ? $data : null;
         } catch (\Throwable $e) {
             Log::error('InsightRelationshipService: evolution LLM failed', [
-                'email_a' => $nameA,
-                'email_b' => $nameB,
-                'error'   => $e->getMessage(),
+                'identifier_a' => $identifierA,
+                'identifier_b' => $identifierB,
+                'error'        => $e->getMessage(),
             ]);
             return null;
         }

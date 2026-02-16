@@ -5,6 +5,7 @@ namespace App\Services\Recall;
 use App\Domain\DTO\EventDTO;
 use App\Events\CalendarEventChanged;
 use App\Models\CalendarEvent;
+use App\Models\Channel;
 use App\Models\Profile;
 use App\Models\Source;
 use Carbon\Carbon;
@@ -49,12 +50,22 @@ class CalendarEventSyncService
 
     protected function syncAttendees(CalendarEvent $calendarEvent, array $attendees): void
     {
-        $profiles = [];
+        $gcChannelId = Channel::idFor('google_calendar');
 
-        foreach ($attendees as $attendee) {
-            $profiles[] = Profile::firstOrCreate(['email' => $attendee->email]);
+        if (!$gcChannelId) {
+            return;
         }
 
-        $calendarEvent->profiles()->sync($profiles);
+        $profileIds = [];
+
+        foreach ($attendees as $attendee) {
+            $profile = Profile::firstOrCreate([
+                'channel_id'         => $gcChannelId,
+                'channel_identifier' => $attendee->email,
+            ]);
+            $profileIds[] = $profile->id;
+        }
+
+        $calendarEvent->profiles()->sync($profileIds);
     }
 }

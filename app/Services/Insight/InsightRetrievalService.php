@@ -3,7 +3,6 @@
 namespace App\Services\Insight;
 
 use App\Domain\DTO\AI\MessageDTO;
-use App\Enums\InsightCategory;
 use App\Models\InsightProfile;
 use App\Models\InsightRelationship;
 use App\Models\InsightShortTerm;
@@ -12,8 +11,6 @@ use Illuminate\Support\Facades\Log;
 
 class InsightRetrievalService
 {
-    private const MAX_CONTEXT_TOKENS = 2000;
-
     public function __construct(
         private readonly OpenRouterClient $llm,
         private readonly InsightPromptBuilder $promptBuilder,
@@ -21,11 +18,10 @@ class InsightRetrievalService
 
     /**
      * Get formatted memory context for injecting into a Wanda Bot prompt.
-     * Tiered: categories → summaries → drill down if needed.
      */
-    public function getContextForQuery(string $email, string $query): string
+    public function getContextForQuery(int $profileId, string $query): string
     {
-        $availableCategories = InsightProfile::where('email', $email)
+        $availableCategories = InsightProfile::where('profile_id', $profileId)
             ->where('source_count', '>=', 3)
             ->pluck('category')
             ->map(fn($cat) => $cat->value)
@@ -41,12 +37,12 @@ class InsightRetrievalService
             return '';
         }
 
-        $profiles = InsightProfile::where('email', $email)
+        $profiles = InsightProfile::where('profile_id', $profileId)
             ->whereIn('category', $relevantCategories)
             ->get()
             ->keyBy(fn($p) => $p->category->value);
 
-        $shortTerm = InsightShortTerm::where('email', $email)
+        $shortTerm = InsightShortTerm::where('profile_id', $profileId)
             ->active()
             ->get();
 
@@ -54,25 +50,26 @@ class InsightRetrievalService
     }
 
     /**
-     * Get the full profile for an email (all ready categories).
+     * Get the full structured profile for a profile_id.
      */
-    public function getFullProfile(string $email): array
+    public function getFullProfile(int $profileId): array
     {
-        $profiles = InsightProfile::where('email', $email)
+        $profiles = InsightProfile::where('profile_id', $profileId)
             ->get()
             ->keyBy(fn($p) => $p->category->value);
 
-        $shortTerm = InsightShortTerm::where('email', $email)
+        $shortTerm = InsightShortTerm::where('profile_id', $profileId)
             ->active()
+            ->orderByDesc('created_at')
             ->get()
             ->groupBy(fn($s) => $s->context_type->value);
 
-        $relationships = InsightRelationship::where('email_a', $email)
-            ->orWhere('email_b', $email)
+        $relationships = InsightRelationship::where('profile_id_a', $profileId)
+            ->orWhere('profile_id_b', $profileId)
             ->get();
 
         return [
-            'email'         => $email,
+            'profile_id'    => $profileId,
             'is_ready'      => $profiles->filter(fn($p) => $p->isReady())->isNotEmpty(),
             'profiles'      => $profiles->map(fn($p) => [
                 'category'     => $p->category->value,
@@ -87,20 +84,20 @@ class InsightRetrievalService
                 'expires_at'   => $s->expires_at->toDateString(),
             ])->first())->values(),
             'relationships' => $relationships->map(fn($r) => [
-                'with'             => $r->email_a === $email ? $r->email_b : $r->email_a,
-                'type'             => $r->relationship_type->value,
-                'dynamics'         => $r->dynamics,
+                'with'              => $r->profile_id_a === $profileId ? $r->profile_id_b : $r->profile_id_a,
+                'type'              => $r->relationship_type->value,
+                'dynamics'          => $r->dynamics,
                 'interaction_count' => $r->interaction_count,
             ])->values(),
         ];
     }
 
     /**
-     * Get short-term context (current state) for an email.
+     * Get short-term context for a profile_id.
      */
-    public function getShortTermContext(string $email): array
+    public function getShortTermContext(int $profileId): array
     {
-        return InsightShortTerm::where('email', $email)
+        return InsightShortTerm::where('profile_id', $profileId)
             ->active()
             ->orderByDesc('created_at')
             ->get()
@@ -110,19 +107,19 @@ class InsightRetrievalService
     }
 
     /**
-     * Get relationship between two people.
+     * Get relationship between two profiles.
      */
-    public function getRelationship(string $emailA, string $emailB): ?array
+    public function getRelationship(int $profileIdA, int $profileIdB): ?array
     {
-        $rel = InsightRelationship::findPair($emailA, $emailB);
+        $rel = InsightRelationship::findPair($profileIdA, $profileIdB);
 
         if (!$rel) {
             return null;
         }
 
         return [
-            'email_a'           => $rel->email_a,
-            'email_b'           => $rel->email_b,
+            'profile_id_a'      => $rel->profile_id_a,
+            'profile_id_b'      => $rel->profile_id_b,
             'type'              => $rel->relationship_type->value,
             'dynamics'          => $rel->dynamics,
             'interaction_count' => $rel->interaction_count,
@@ -136,9 +133,9 @@ class InsightRetrievalService
             $prompt = $this->promptBuilder->buildCategorySelectionPrompt($query, $available);
 
             $json = $this->llm->chat(
-                messages:         [new MessageDTO('user', $prompt)],
-                model:            config('ai.providers.openrouter.models.insight'),
-                maxTokens:        256,
+                messages:          [new MessageDTO('user', $prompt)],
+                model:             config('ai.providers.openrouter.models.insight'),
+                maxTokens:         256,
                 forceJsonResponse: true,
             );
 
@@ -155,7 +152,7 @@ class InsightRetrievalService
         }
     }
 
-    private function formatContext($profiles, $shortTerm): string
+    private function formatContext(Collection $profiles, Collection $shortTerm): string
     {
         if ($profiles->isEmpty() && $shortTerm->isEmpty()) {
             return '';

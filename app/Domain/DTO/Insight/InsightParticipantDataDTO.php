@@ -9,7 +9,7 @@ class InsightParticipantDataDTO
      * @param  InsightShortTermDataDTO[] $shortTerm
      */
     public function __construct(
-        public readonly string $email,
+        public readonly string $identifier,
         public readonly string $name,
         public readonly array $items,
         public readonly array $shortTerm,
@@ -18,8 +18,8 @@ class InsightParticipantDataDTO
     public static function fromArray(array $data): self
     {
         return new self(
-            email:     $data['email'],
-            name:      $data['name'] ?? '',
+            identifier: $data['identifier'],
+            name:       $data['name'] ?? '',
             items:     array_map(
                 fn($i) => InsightItemDataDTO::fromArray($i),
                 $data['items'] ?? []

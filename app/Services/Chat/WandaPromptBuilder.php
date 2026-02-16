@@ -66,7 +66,7 @@ participants (id BIGINT PK, calendar_event_id BIGINT FK->calendar_events.id, pro
 transcript_entries (id BIGINT PK, calendar_event_id BIGINT FK->calendar_events.id, participant_id BIGINT FK->participants.id, text TEXT, start_relative DOUBLE, end_relative DOUBLE)
 followups (id BIGINT PK, calendar_event_id BIGINT FK->calendar_events.id, methodology_id BIGINT, scope VARCHAR, text TEXT, status VARCHAR 'done'|'in_progress'|'failed', created_at TIMESTAMP)
 methodologies (id BIGINT PK, organization_id BIGINT, name VARCHAR, scheme_version VARCHAR)
-profiles (id BIGINT PK, email VARCHAR)
+profiles (id BIGINT PK, channel_id BIGINT FK->channels.id, channel_identifier VARCHAR, user_id BIGINT nullable FK->users.id)
 
 ## Ключевые связи:
 - Цепочка владения followup: followups → calendar_events → sources → users

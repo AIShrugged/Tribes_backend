@@ -13,16 +13,16 @@ class UpdateInsightRelationshipsListener implements ShouldQueue
 
     public function handle(InsightItemsExtracted $event): void
     {
-        $emails = collect($event->sources)->pluck('email')->toArray();
+        $profileIds = collect($event->sources)->pluck('profile_id')->toArray();
 
-        if (count($emails) < 2) {
+        if (count($profileIds) < 2) {
             return;
         }
 
         try {
             app(InsightRelationshipService::class)->processFromEvent(
                 $event->calendarEvent,
-                $emails,
+                $profileIds,
             );
         } catch (\Throwable $e) {
             Log::error('UpdateInsightRelationshipsListener: failed', [

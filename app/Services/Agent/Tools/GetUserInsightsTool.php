@@ -2,6 +2,8 @@
 
 namespace App\Services\Agent\Tools;
 
+use App\Models\Channel;
+use App\Models\Profile;
 use App\Models\User;
 use App\Services\Insight\InsightRetrievalService;
 
@@ -40,7 +42,7 @@ class GetUserInsightsTool implements ToolInterface
         $parameters = $parameters ?? [];
 
         $userId = $parameters['user_id'] ?? null;
-        $email = $parameters['email'] ?? null;
+        $email  = $parameters['email'] ?? null;
 
         if (! $userId && ! $email) {
             return [
@@ -62,12 +64,42 @@ class GetUserInsightsTool implements ToolInterface
             ];
         }
 
+        $profile = $this->resolveProfile($user);
+
+        if (! $profile) {
+            return [
+                'success' => true,
+                'data' => null,
+                'message' => 'No insight profile found for this user',
+            ];
+        }
+
         $retrievalService = app(InsightRetrievalService::class);
-        $profile = $retrievalService->getFullProfile($user->email);
+        $data = $retrievalService->getFullProfile($profile->id);
 
         return [
             'success' => true,
-            'data' => $profile,
+            'data' => $data,
         ];
+    }
+
+    /**
+     * Resolve a Profile from a User.
+     * Prefers the profile linked via user_id; falls back to google_calendar channel (email).
+     */
+    private function resolveProfile(User $user): ?Profile
+    {
+        $profile = Profile::where('user_id', $user->id)->first();
+
+        if (! $profile) {
+            $gcChannelId = Channel::idFor('google_calendar');
+            if ($gcChannelId) {
+                $profile = Profile::where('channel_id', $gcChannelId)
+                    ->where('channel_identifier', $user->email)
+                    ->first();
+            }
+        }
+
+        return $profile;
     }
 }
