@@ -62,6 +62,7 @@ class TelegramBotController extends Controller
                 $text = $message->getText();
                 $userId = $message->getFrom()?->getId();
                 $username = $message->getFrom()?->getUsername();
+                $messageThreadId = $message->get('message_thread_id');
 
                 // Skip system messages (new_chat_member, left_chat_member, etc.) without text
                 if ($text === null || trim($text) === '') {
@@ -136,10 +137,14 @@ class TelegramBotController extends Controller
                 if ($text === '/stop') {
                     $this->agentService->requestStop($userId);
                     $stopMessage = '⛔️ Stop signal sent. Current processing will be interrupted.';
-                    $this->telegram->sendMessage([
+                    $sendParams = [
                         'chat_id' => $chatId,
                         'text' => $stopMessage,
-                    ]);
+                    ];
+                    if ($messageThreadId) {
+                        $sendParams['message_thread_id'] = $messageThreadId;
+                    }
+                    $this->telegram->sendMessage($sendParams);
 
                     // Save bot response
                     TelegramChatMessage::create([
@@ -156,10 +161,14 @@ class TelegramBotController extends Controller
                 $response = $this->agentService->processMessage($userId, $text, $username, $chatId);
 
                 // Send response back to chat
-                $this->telegram->sendMessage([
+                $sendParams = [
                     'chat_id' => $chatId,
                     'text' => $response,
-                ]);
+                ];
+                if ($messageThreadId) {
+                    $sendParams['message_thread_id'] = $messageThreadId;
+                }
+                $this->telegram->sendMessage($sendParams);
 
                 // Save bot response
                 TelegramChatMessage::create([
