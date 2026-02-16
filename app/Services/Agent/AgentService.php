@@ -231,6 +231,23 @@ class AgentService
                             'tool_call_id' => $toolCallId,
                             'content' => $this->truncateToolResult($toolResult, $toolName),
                         ];
+
+                        // Validate tool result and add feedback if issues detected (Pattern 3)
+                        $validation = $this->validateToolResult($toolResult, $toolName, $toolArgs);
+                        if ($validation['requires_reflection']) {
+                            $this->addValidationFeedback($messages, $validation, $toolName);
+
+                            Log::info('Tool validation detected issues', [
+                                'tool' => $toolName,
+                                'issues' => $validation['issues'],
+                            ]);
+                        }
+                    }
+
+                    // Detect repetitive failures after processing all tool calls
+                    $repetitionDetection = $this->detectRepetitiveFailures($messages);
+                    if ($repetitionDetection['stuck']) {
+                        $this->addRepetitionWarning($messages, $repetitionDetection);
                     }
 
                     // Continue loop to let LLM process tool results
@@ -421,6 +438,216 @@ class AgentService
         return true;
     }
 
+    /**
+     * Validate tool result for common issues (Pattern 3: Validation Rules)
+     * Returns validation result with hints for the LLM if issues detected.
+     */
+    private function validateToolResult(mixed $toolResult, string $toolName, array $toolArgs): array
+    {
+        $issues = [];
+
+        // Check 1: Explicit failure
+        if (is_array($toolResult) && isset($toolResult['success']) && $toolResult['success'] === false) {
+            $error = $toolResult['error'] ?? 'Unknown error';
+            $issues[] = "Tool returned explicit failure: {$error}";
+
+            // Provide hints based on tool type
+            if ($toolName === 'search_meetings' && str_contains($error, 'not found')) {
+                $issues[] = 'Hint: Try broader search parameters or verify the search criteria';
+            }
+
+            if ($toolName === 'get_transcript' && str_contains($error, 'not available')) {
+                $issues[] = 'Hint: Meeting might not have been recorded, or transcript is still processing';
+            }
+        }
+
+        // Check 2: Empty results
+        if (is_array($toolResult)) {
+            // Check for empty arrays in common result fields
+            $dataFields = ['data', 'results', 'items', 'transcript', 'entries', 'meetings'];
+            foreach ($dataFields as $field) {
+                if (isset($toolResult[$field]) && is_array($toolResult[$field]) && empty($toolResult[$field])) {
+                    $issues[] = "Tool returned empty {$field} array";
+
+                    // Context-specific hints
+                    if ($toolName === 'search_meetings') {
+                        $issues[] = 'Hint: Empty results might mean wrong user_id, date range, or the data truly doesn\'t exist. Consider verifying parameters.';
+                    }
+                }
+            }
+        }
+
+        // Check 3: Missing expected fields
+        $expectedFieldsByTool = [
+            'get_transcript' => ['event', 'transcript'],
+            'search_meetings' => ['success'],
+            'get_user_info' => ['id', 'name'],
+        ];
+
+        if (isset($expectedFieldsByTool[$toolName]) && is_array($toolResult)) {
+            foreach ($expectedFieldsByTool[$toolName] as $expectedField) {
+                if (! isset($toolResult[$expectedField])) {
+                    $issues[] = "Tool result missing expected field: {$expectedField}";
+                }
+            }
+        }
+
+        // Check 4: Null or empty result
+        if ($toolResult === null || $toolResult === '' || $toolResult === []) {
+            $issues[] = 'Tool returned null/empty result';
+        }
+
+        return [
+            'valid' => empty($issues),
+            'issues' => $issues,
+            'requires_reflection' => ! empty($issues),
+        ];
+    }
+
+    /**
+     * Add validation feedback to messages to help LLM reflect on tool failure
+     */
+    private function addValidationFeedback(array &$messages, array $validation, string $toolName): void
+    {
+        if (! $validation['requires_reflection']) {
+            return;
+        }
+
+        $feedbackContent = "⚠️ Tool Validation Alert for '{$toolName}':\n\n";
+        foreach ($validation['issues'] as $issue) {
+            $feedbackContent .= "- {$issue}\n";
+        }
+        $feedbackContent .= "\nConsider: Should you investigate this issue or try a different approach?";
+
+        // Add as a system-style message hint (will be part of the context)
+        Log::info('Validation feedback generated', [
+            'tool' => $toolName,
+            'issues_count' => count($validation['issues']),
+        ]);
+
+        // We add this as additional context in the last tool message
+        // by enriching it with validation notes
+        $lastMessageIndex = count($messages) - 1;
+        if ($lastMessageIndex >= 0 && isset($messages[$lastMessageIndex]['role']) && $messages[$lastMessageIndex]['role'] === 'tool') {
+            $originalContent = $messages[$lastMessageIndex]['content'];
+            $decoded = json_decode($originalContent, true);
+
+            if (is_array($decoded)) {
+                $decoded['_validation_feedback'] = $feedbackContent;
+                $messages[$lastMessageIndex]['content'] = json_encode($decoded);
+            }
+        }
+    }
+
+    /**
+     * Detect if agent is stuck in a repetitive failure loop
+     * Returns array with detection result and suggestions
+     */
+    private function detectRepetitiveFailures(array $messages): array
+    {
+        // Extract last N tool calls
+        $recentToolCalls = [];
+        $lookbackLimit = 6; // Check last 6 tool calls
+
+        foreach (array_reverse($messages) as $message) {
+            if (count($recentToolCalls) >= $lookbackLimit) {
+                break;
+            }
+
+            if (isset($message['tool_calls'])) {
+                foreach ($message['tool_calls'] as $toolCall) {
+                    $recentToolCalls[] = [
+                        'tool' => $toolCall['function']['name'] ?? 'unknown',
+                        'args' => $toolCall['function']['arguments'] ?? '{}',
+                    ];
+                }
+            }
+        }
+
+        if (count($recentToolCalls) < 3) {
+            return ['stuck' => false];
+        }
+
+        // Check for exact repetition (same tool + same args)
+        $callSignatures = [];
+        foreach ($recentToolCalls as $call) {
+            $signature = $call['tool'].'::'.md5($call['args']);
+            $callSignatures[] = $signature;
+        }
+
+        // Count occurrences
+        $signatureCounts = array_count_values($callSignatures);
+        $maxRepetitions = max($signatureCounts);
+
+        if ($maxRepetitions >= 3) {
+            // Same call repeated 3+ times
+            $repeatedSignature = array_search($maxRepetitions, $signatureCounts);
+            $repeatedCall = null;
+
+            foreach ($recentToolCalls as $call) {
+                if ($call['tool'].'::'.md5($call['args']) === $repeatedSignature) {
+                    $repeatedCall = $call;
+                    break;
+                }
+            }
+
+            return [
+                'stuck' => true,
+                'pattern' => 'exact_repetition',
+                'tool' => $repeatedCall['tool'] ?? 'unknown',
+                'repetitions' => $maxRepetitions,
+                'suggestion' => "The tool '{$repeatedCall['tool']}' has been called {$maxRepetitions} times with the same parameters. This suggests you're stuck in a loop. Try a completely different approach or tool.",
+            ];
+        }
+
+        // Check for same tool different args (strategy not working)
+        $toolNames = array_map(fn ($call) => $call['tool'], $recentToolCalls);
+        $toolCounts = array_count_values($toolNames);
+        $maxToolRepetitions = max($toolCounts);
+
+        if ($maxToolRepetitions >= 4) {
+            $repeatedTool = array_search($maxToolRepetitions, $toolCounts);
+
+            return [
+                'stuck' => true,
+                'pattern' => 'same_tool_different_params',
+                'tool' => $repeatedTool,
+                'repetitions' => $maxToolRepetitions,
+                'suggestion' => "The tool '{$repeatedTool}' has been tried {$maxToolRepetitions} times with different parameters but still not working. Consider using a different tool or asking the user for clarification.",
+            ];
+        }
+
+        return ['stuck' => false];
+    }
+
+    /**
+     * Add repetition warning to messages if agent is stuck
+     */
+    private function addRepetitionWarning(array &$messages, array $detection): void
+    {
+        if (! $detection['stuck']) {
+            return;
+        }
+
+        Log::warning('Repetitive failure pattern detected', [
+            'pattern' => $detection['pattern'],
+            'tool' => $detection['tool'],
+            'repetitions' => $detection['repetitions'],
+        ]);
+
+        // Add warning to last tool message
+        $lastMessageIndex = count($messages) - 1;
+        if ($lastMessageIndex >= 0 && isset($messages[$lastMessageIndex]['role']) && $messages[$lastMessageIndex]['role'] === 'tool') {
+            $originalContent = $messages[$lastMessageIndex]['content'];
+            $decoded = json_decode($originalContent, true);
+
+            if (is_array($decoded)) {
+                $decoded['_repetition_warning'] = "🔄 REPETITION DETECTED: {$detection['suggestion']}";
+                $messages[$lastMessageIndex]['content'] = json_encode($decoded);
+            }
+        }
+    }
+
     private function getSystemPrompt(string $memoryContext): string
     {
         $now = now()->timezone('Europe/Moscow');
@@ -479,6 +706,39 @@ This user wants me to call them John. The user is a backend developer. The user 
 - Be concise but complete
 - Confirm briefly what you've saved
 
+## Reflection and Self-Checking - CRITICAL
+
+After executing ANY tool, you MUST verify the result before proceeding:
+
+**Questions to ask yourself:**
+1. Did the tool execute successfully?
+2. Does the result make logical sense?
+3. Is the result complete and useful for answering the user's question?
+4. Are there any contradictions or inconsistencies?
+5. Do I have enough information, or do I need more?
+
+**If something seems wrong:**
+- Don't just accept the result — investigate why it failed or returned unexpected data
+- Consider alternative approaches: different tool, different parameters, different strategy
+- If a tool returns empty results, ask yourself: "Is this because there's truly no data, or did I use wrong parameters?"
+- If a tool fails, ask yourself: "Why did it fail? What can I do differently?"
+
+**Example - Good Reflection:**
+Tool: search_meetings(user_id=123) → Returns: []
+
+❌ BAD: "No meetings found."
+
+✅ GOOD: "Empty result. This is unusual. Let me verify:
+- Is user_id=123 correct? Let me check with get_user_info first.
+- Maybe the date range is wrong? Let me try a broader search.
+- Maybe there are meetings but they're filtered out?"
+
+**Self-Correction Pattern:**
+1. Execute tool
+2. Check result quality
+3. If something is off → investigate and retry with corrections
+4. Only proceed when confident the result is correct
+
 ## Guidelines
 
 - Use tools when you need specific information to answer questions
@@ -486,6 +746,7 @@ This user wants me to call them John. The user is a backend developer. The user 
 - Adapt your communication style based on what you know about the user
 - When you use tools, explain what information you found
 - **CRITICAL**: Update your memory whenever you learn something important about the user
+- **CRITICAL**: Always verify tool results before trusting them
 
 PROMPT;
     }
