@@ -22,7 +22,11 @@ class OpenRouterClient
         bool $forceJsonResponse = false
     ): string {
         $payloadMessages = array_map(
-            static function (MessageDTO $message): array {
+            static function (MessageDTO|array $message): array {
+                if (is_array($message)) {
+                    return $message;
+                }
+
                 if (method_exists($message, 'toArray')) {
                     return $message->toArray();
                 }

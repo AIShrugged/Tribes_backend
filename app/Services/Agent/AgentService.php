@@ -17,6 +17,18 @@ class AgentService
 
     private const STOP_KEY_PREFIX = 'telegram_agent_stop_';
 
+    /** Maximum characters for a single tool result before truncation */
+    private const MAX_TOOL_RESULT_CHARS = 15000;
+
+    /** Approximate model context window in tokens (Claude 3.5 Sonnet = 200K) */
+    private const MODEL_CONTEXT_LIMIT = 200000;
+
+    /** Start masking aggressively when context exceeds this fraction of limit */
+    private const TOKEN_BUDGET_WARNING_THRESHOLD = 0.8;
+
+    /** Force-stop the loop when context exceeds this fraction of limit */
+    private const TOKEN_BUDGET_CRITICAL_THRESHOLD = 0.9;
+
     private ToolRegistry $toolRegistry;
 
     private MemoryService $memoryService;
@@ -141,6 +153,19 @@ class AgentService
             ]);
 
             try {
+                // Observation masking: replace old tool outputs with placeholders
+                if ($iteration > 1) {
+                    $this->maskOldToolResults($messages);
+                }
+
+                // Token budget check: mask aggressively or abort if critical
+                if (! $this->enforceTokenBudget($messages, $systemPrompt)) {
+                    Log::warning('Agent loop terminated by token budget', ['iteration' => $iteration]);
+
+                    // Try to get whatever the LLM can produce with remaining context
+                    break;
+                }
+
                 // Call LLM
                 $response = OpenRouterClient::chatWithTools(
                     $messages,
@@ -200,11 +225,11 @@ class AgentService
                             }
                         }
 
-                        // Add tool result to messages
+                        // Add tool result to messages (with truncation for large results)
                         $messages[] = [
                             'role' => 'tool',
                             'tool_call_id' => $toolCallId,
-                            'content' => json_encode($toolResult),
+                            'content' => $this->truncateToolResult($toolResult, $toolName),
                         ];
                     }
 
@@ -265,6 +290,135 @@ class AgentService
         ]);
 
         return $finalAnswer;
+    }
+
+    /**
+     * Estimate token count for messages array (rough: 1 token ≈ 4 chars)
+     */
+    private function estimateTokens(array $messages, ?string $systemPrompt = null): int
+    {
+        $chars = strlen($systemPrompt ?? '');
+
+        foreach ($messages as $message) {
+            $content = $message['content'] ?? '';
+            $chars += is_string($content) ? strlen($content) : strlen(json_encode($content));
+
+            if (! empty($message['tool_calls'])) {
+                $chars += strlen(json_encode($message['tool_calls']));
+            }
+        }
+
+        return (int) ceil($chars / 4);
+    }
+
+    /**
+     * Truncate a tool result if it exceeds the max size.
+     * Returns JSON string ready to be used as message content.
+     */
+    private function truncateToolResult(mixed $toolResult, string $toolName): string
+    {
+        $encoded = json_encode($toolResult);
+
+        if (strlen($encoded) <= self::MAX_TOOL_RESULT_CHARS) {
+            return $encoded;
+        }
+
+        Log::info('Truncating large tool result', [
+            'tool' => $toolName,
+            'original_size' => strlen($encoded),
+            'max_size' => self::MAX_TOOL_RESULT_CHARS,
+        ]);
+
+        // For transcript tool — keep metadata, truncate entries
+        if ($toolName === 'get_transcript' && is_array($toolResult) && isset($toolResult['transcript'])) {
+            $entries = $toolResult['transcript'];
+            $totalEntries = count($entries);
+
+            // Keep first 10 and last 10 entries
+            $kept = 20;
+            if ($totalEntries > $kept) {
+                $head = array_slice($entries, 0, 10);
+                $tail = array_slice($entries, -10);
+                $toolResult['transcript'] = array_merge(
+                    $head,
+                    [['speaker' => 'SYSTEM', 'text' => "[...{$totalEntries} entries total, " . ($totalEntries - $kept) . " omitted...]", 'timestamp' => null]],
+                    $tail,
+                );
+                $toolResult['_truncated'] = true;
+                $toolResult['_total_entries'] = $totalEntries;
+            }
+
+            return json_encode($toolResult);
+        }
+
+        // Generic truncation — cut in the middle
+        $half = (int) (self::MAX_TOOL_RESULT_CHARS / 2);
+
+        return substr($encoded, 0, $half)
+            . "\n\n...[TRUNCATED: original size " . strlen($encoded) . " chars]...\n\n"
+            . substr($encoded, -$half);
+    }
+
+    /**
+     * Mask old tool results in messages to free up context space.
+     * Keeps only the last $keepRecent tool results verbatim, replaces older ones with placeholders.
+     */
+    private function maskOldToolResults(array &$messages, int $keepRecent = 2): void
+    {
+        // Find all tool message indices
+        $toolIndices = [];
+        foreach ($messages as $i => $msg) {
+            if (($msg['role'] ?? '') === 'tool') {
+                $toolIndices[] = $i;
+            }
+        }
+
+        // Keep only the last N, mask the rest
+        $toMask = array_slice($toolIndices, 0, max(0, count($toolIndices) - $keepRecent));
+
+        foreach ($toMask as $i) {
+            $originalSize = strlen($messages[$i]['content'] ?? '');
+            if ($originalSize > 200) { // Don't mask tiny results
+                $messages[$i]['content'] = json_encode([
+                    '_masked' => true,
+                    '_note' => 'Previous tool output omitted for brevity. Result was processed in earlier iteration.',
+                    '_original_size' => $originalSize,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Enforce token budget: aggressively mask if approaching limit, return false if critical.
+     */
+    private function enforceTokenBudget(array &$messages, ?string $systemPrompt): bool
+    {
+        $estimatedTokens = $this->estimateTokens($messages, $systemPrompt);
+        $warningLimit = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_WARNING_THRESHOLD);
+        $criticalLimit = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_CRITICAL_THRESHOLD);
+
+        if ($estimatedTokens > $criticalLimit) {
+            // Last resort: mask everything except the very last tool result
+            $this->maskOldToolResults($messages, 1);
+            $estimatedTokens = $this->estimateTokens($messages, $systemPrompt);
+
+            if ($estimatedTokens > $criticalLimit) {
+                Log::warning('Token budget critical — forcing loop end', [
+                    'estimated_tokens' => $estimatedTokens,
+                    'critical_limit' => $criticalLimit,
+                ]);
+
+                return false;
+            }
+        } elseif ($estimatedTokens > $warningLimit) {
+            Log::info('Token budget warning — masking old tool results', [
+                'estimated_tokens' => $estimatedTokens,
+                'warning_limit' => $warningLimit,
+            ]);
+            $this->maskOldToolResults($messages, 1);
+        }
+
+        return true;
     }
 
     private function getSystemPrompt(string $memoryContext): string
