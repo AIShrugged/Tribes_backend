@@ -4,7 +4,9 @@ namespace App\Services\Insight;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Domain\DTO\Insight\InsightExtractedDataDTO;
+use App\Models\Channel;
 use App\Models\InsightSource;
+use App\Models\Profile;
 use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\OpenRouterClient;
@@ -25,32 +27,37 @@ class InsightTelegramService
 
     /**
      * Process all eligible Telegram users and enrich their Insight profiles.
-     * Returns count of users processed.
      */
     public function processAll(): int
     {
-        $telegramUsers = TelegramUser::with('user')
-            ->whereNotNull('user_id')
-            ->get();
+        $telegramChannelId = Channel::idFor('telegram');
+
+        if (!$telegramChannelId) {
+            Log::warning('InsightTelegramService: telegram channel not found');
+            return 0;
+        }
 
         $processed = 0;
 
-        foreach ($telegramUsers as $telegramUser) {
-            $email = $telegramUser->user?->email;
-            if (! $email) {
+        foreach (TelegramUser::lazy() as $telegramUser) {
+            $profile = Profile::where('channel_id', $telegramChannelId)
+                ->where('channel_identifier', (string) $telegramUser->telegram_user_id)
+                ->first();
+
+            if (!$profile) {
                 continue;
             }
 
             try {
-                $wasProcessed = $this->processUser($telegramUser, $email);
+                $wasProcessed = $this->processUser($telegramUser, $profile);
                 if ($wasProcessed) {
                     $processed++;
                 }
             } catch (\Throwable $e) {
                 Log::error('InsightTelegramService: error processing user', [
                     'telegram_user_id' => $telegramUser->telegram_user_id,
-                    'email' => $email,
-                    'error' => $e->getMessage(),
+                    'profile_id'       => $profile->id,
+                    'error'            => $e->getMessage(),
                 ]);
             }
         }
@@ -63,40 +70,46 @@ class InsightTelegramService
      */
     public function processOne(int $telegramUserId): bool
     {
-        $telegramUser = TelegramUser::with('user')->find($telegramUserId);
+        $telegramChannelId = Channel::idFor('telegram');
 
-        if (! $telegramUser) {
+        if (!$telegramChannelId) {
+            Log::warning('InsightTelegramService: telegram channel not found');
+            return false;
+        }
+
+        $telegramUser = TelegramUser::find($telegramUserId);
+
+        if (!$telegramUser) {
             Log::warning('InsightTelegramService: TelegramUser not found', [
                 'telegram_user_id' => $telegramUserId,
             ]);
             return false;
         }
 
-        $email = $telegramUser->user?->email;
-        if (! $email) {
-            Log::info('InsightTelegramService: no linked user account', [
+        $profile = Profile::where('channel_id', $telegramChannelId)
+            ->where('channel_identifier', (string) $telegramUserId)
+            ->first();
+
+        if (!$profile) {
+            Log::info('InsightTelegramService: no telegram profile found', [
                 'telegram_user_id' => $telegramUserId,
             ]);
             return false;
         }
 
-        return $this->processUser($telegramUser, $email);
+        return $this->processUser($telegramUser, $profile);
     }
 
-    private function processUser(TelegramUser $telegramUser, string $email): bool
+    private function processUser(TelegramUser $telegramUser, Profile $profile): bool
     {
-        $telegramUserId = $telegramUser->telegram_user_id;
-
-        // Find last processed source for this user
-        $lastSource = InsightSource::where('email', $email)
+        $lastSource = InsightSource::where('profile_id', $profile->id)
             ->where('source_type', self::SOURCE_TYPE)
             ->orderByDesc('source_id')
             ->first();
 
         $lastMessageId = $lastSource?->source_id ?? 0;
 
-        // Get new messages since last processing (all roles for context)
-        $newMessages = TelegramChatMessage::where('telegram_user_id', $telegramUserId)
+        $newMessages = TelegramChatMessage::where('telegram_user_id', $telegramUser->telegram_user_id)
             ->where('id', '>', $lastMessageId)
             ->orderBy('id')
             ->get();
@@ -105,35 +118,33 @@ class InsightTelegramService
             return false;
         }
 
-        // Count only user messages for threshold check
         $userMessageCount = $newMessages->where('role', 'user')->count();
 
-        if (! $this->shouldProcess($userMessageCount, $lastSource)) {
+        if (!$this->shouldProcess($userMessageCount, $lastSource)) {
             Log::info('InsightTelegramService: threshold not met, skipping', [
-                'email' => $email,
+                'profile_id'         => $profile->id,
                 'user_message_count' => $userMessageCount,
-                'last_processed_at' => $lastSource?->processed_at,
+                'last_processed_at'  => $lastSource?->processed_at,
             ]);
             return false;
         }
 
         Log::info('InsightTelegramService: processing user', [
-            'email' => $email,
-            'message_count' => $newMessages->count(),
+            'profile_id'         => $profile->id,
+            'message_count'      => $newMessages->count(),
             'user_message_count' => $userMessageCount,
         ]);
 
-        // Extract insights via LLM
-        $extractedData = $this->callLLM($email, $telegramUser, $newMessages);
+        $userName        = $telegramUser->telegram_username ?? 'User';
+        $extractedData   = $this->callLLM($profile, $userName, $newMessages);
 
         if ($extractedData === null || empty($extractedData->participants)) {
-            Log::info('InsightTelegramService: no insights extracted', ['email' => $email]);
+            Log::info('InsightTelegramService: no insights extracted', ['profile_id' => $profile->id]);
             return false;
         }
 
-        // Persist and evolve
         $lastId = $newMessages->max('id');
-        $this->persist($email, $lastId, $extractedData);
+        $this->persist($profile, $lastId, $extractedData);
 
         return true;
     }
@@ -148,7 +159,6 @@ class InsightTelegramService
             return false;
         }
 
-        // Check time since last processing
         $hoursSinceLast = $lastSource
             ? $lastSource->processed_at?->diffInHours(now()) ?? self::MIN_HOURS_SINCE_LAST
             : self::MIN_HOURS_SINCE_LAST;
@@ -156,38 +166,40 @@ class InsightTelegramService
         return $hoursSinceLast >= self::MIN_HOURS_SINCE_LAST;
     }
 
-    private function callLLM(string $email, TelegramUser $telegramUser, Collection $messages): ?InsightExtractedDataDTO
+    private function callLLM(Profile $profile, string $userName, Collection $messages): ?InsightExtractedDataDTO
     {
-        $userName = $telegramUser->user->name ?? $telegramUser->telegram_username ?? 'User';
         $conversationText = $this->buildConversationText($messages);
+
+        // Use channel_identifier as the identifier in the prompt (telegram_user_id for telegram)
+        $identifier = $profile->channel_identifier;
 
         try {
             $prompt = $this->promptBuilder->buildTelegramExtractionPrompt(
                 conversationText: $conversationText,
-                email: $email,
-                userName: $userName,
-                processedDate: now()->toDateString(),
+                identifier:       $identifier,
+                userName:         $userName,
+                processedDate:    now()->toDateString(),
             );
 
             $json = $this->llm->chat(
-                messages: [new MessageDTO('user', $prompt)],
-                model: config('ai.providers.openrouter.models.insight'),
-                maxTokens: 4096,
+                messages:          [new MessageDTO('user', $prompt)],
+                model:             config('ai.providers.openrouter.models.insight'),
+                maxTokens:         4096,
                 forceJsonResponse: true,
             );
 
             $data = json_decode($json, true);
 
-            if (! isset($data['participants'])) {
-                Log::warning('InsightTelegramService: unexpected LLM response', ['email' => $email]);
+            if (!isset($data['participants'])) {
+                Log::warning('InsightTelegramService: unexpected LLM response', ['profile_id' => $profile->id]);
                 return null;
             }
 
             return InsightExtractedDataDTO::fromArray($data);
         } catch (\Throwable $e) {
             Log::error('InsightTelegramService: LLM call failed', [
-                'email' => $email,
-                'error' => $e->getMessage(),
+                'profile_id' => $profile->id,
+                'error'      => $e->getMessage(),
             ]);
             return null;
         }
@@ -203,46 +215,45 @@ class InsightTelegramService
         })->implode("\n");
     }
 
-    private function persist(string $email, int $lastMessageId, InsightExtractedDataDTO $data): void
+    private function persist(Profile $profile, int $lastMessageId, InsightExtractedDataDTO $data): void
     {
         $participant = $data->participants[0];
 
-        // Create source record (tracks up to which message was processed)
+        // create() instead of firstOrCreate(): processUser() already verified new messages
+        // exist by querying messages after the last processed source_id, so there is no
+        // risk of duplicate sources for this profile+type+lastMessageId combination.
         $source = InsightSource::create([
-            'email' => $email,
-            'source_type' => self::SOURCE_TYPE,
-            'source_id' => $lastMessageId,
+            'profile_id'   => $profile->id,
+            'source_type'  => self::SOURCE_TYPE,
+            'source_id'    => $lastMessageId,
             'processed_at' => now(),
         ]);
 
-        // Persist atomic facts (long-term)
         foreach ($participant->items as $item) {
             $source->items()->create([
-                'email' => $email,
-                'category' => $item->category,
-                'fact' => $item->fact,
+                'profile_id' => $profile->id,
+                'category'   => $item->category,
+                'fact'       => $item->fact,
                 'confidence' => $item->confidence,
             ]);
         }
 
-        // Persist short-term memory
         foreach ($participant->shortTerm as $shortTerm) {
             $ttlDays = $shortTerm->contextType === 'emotional_state' ? 7 : 30;
 
             $source->shortTermMemories()->create([
-                'email' => $email,
+                'profile_id'   => $profile->id,
                 'context_type' => $shortTerm->contextType,
-                'content' => $shortTerm->content,
-                'expires_at' => now()->addDays($ttlDays),
+                'content'      => $shortTerm->content,
+                'expires_at'   => now()->addDays($ttlDays),
             ]);
         }
 
-        // Trigger long-term profile evolution
-        $this->evolutionService->evolveFromSource($email, $source);
+        $this->evolutionService->evolveFromSource($source);
 
         Log::info('InsightTelegramService: persisted insights', [
-            'email' => $email,
-            'items_count' => count($participant->items),
+            'profile_id'      => $profile->id,
+            'items_count'     => count($participant->items),
             'short_term_count' => count($participant->shortTerm),
             'last_message_id' => $lastMessageId,
         ]);

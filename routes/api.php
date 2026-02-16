@@ -138,9 +138,9 @@ Route::group(['prefix' => 'v1'], function () {
 
         // Insight — user profiling and memory
         Route::group(['prefix' => 'insight'], function () {
-            Route::get('profiles/{email}', [InsightController::class, 'profile']);
-            Route::delete('profiles/{email}', [InsightController::class, 'forget']);
-            Route::get('profiles/{email}/short-term', [InsightController::class, 'shortTerm']);
+            Route::get('profiles/{profile}', [InsightController::class, 'profile']);
+            Route::delete('profiles/{profile}', [InsightController::class, 'forget']);
+            Route::get('profiles/{profile}/short-term', [InsightController::class, 'shortTerm']);
             Route::get('relationships', [InsightController::class, 'relationship']);
         });
     });

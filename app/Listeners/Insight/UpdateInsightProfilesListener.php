@@ -17,12 +17,12 @@ class UpdateInsightProfilesListener implements ShouldQueue
 
         foreach ($event->sources as $source) {
             try {
-                $evolution->evolveFromSource($source->email, $source);
+                $evolution->evolveFromSource($source);
             } catch (\Throwable $e) {
                 Log::error('UpdateInsightProfilesListener: failed to evolve profile', [
-                    'email'     => $source->email,
-                    'source_id' => $source->id,
-                    'error'     => $e->getMessage(),
+                    'profile_id' => $source->profile_id,
+                    'source_id'  => $source->id,
+                    'error'      => $e->getMessage(),
                 ]);
             }
         }

@@ -9,7 +9,7 @@ class InsightPromptBuilder
     /**
      * Prompt for extracting atomic facts per participant from a transcript.
      *
-     * @param  array<string, string>  $participantMap  name => email
+     * @param  array<string, string>  $participantMap  name => channel_identifier
      */
     public function buildExtractionPrompt(
         string $transcript,
@@ -18,7 +18,7 @@ class InsightPromptBuilder
         string $meetingDate,
     ): string {
         $participantList = collect($participantMap)
-            ->map(fn($email, $name) => "- \"{$name}\" => {$email}")
+            ->map(fn($identifier, $name) => "- \"{$name}\" => {$identifier}")
             ->implode("\n");
 
         $categories = implode(', ', InsightCategory::values());
@@ -30,10 +30,10 @@ You are an expert behavioral analyst. Analyze the meeting transcript and extract
 Title: {$meetingTitle}
 Date: {$meetingDate}
 
-## Known Participants (name => email)
+## Known Participants (name => identifier)
 {$participantList}
 
-Only extract insights for participants whose emails are listed above.
+Only extract insights for participants whose identifiers are listed above.
 If a speaker is not in the list, skip them.
 
 ## Categories
@@ -53,14 +53,14 @@ Category definitions:
 3. Confidence: 0.9 = very clear, 0.7 = likely, 0.5 = possible but uncertain.
 4. For short_term, capture only what is true RIGHT NOW based on this meeting.
 5. Relationships: only include pairs that had meaningful interaction in this meeting.
-6. Use only the provided emails as identifiers.
+6. Use only the provided identifiers — do not invent new ones.
 
 ## Required JSON Output Format
 ```json
 {
   "participants": [
     {
-      "email": "person@example.com",
+      "identifier": "person@example.com",
       "name": "Person Name",
       "items": [
         {
@@ -119,7 +119,7 @@ PROMPT;
      */
     public function buildTelegramExtractionPrompt(
         string $conversationText,
-        string $email,
+        string $identifier,
         string $userName,
         string $processedDate,
     ): string {
@@ -130,7 +130,7 @@ You are an expert behavioral analyst. Analyze the Telegram conversation below an
 
 ## User Info
 Name: {$userName}
-Email: {$email}
+Identifier: {$identifier}
 Conversation Date: {$processedDate}
 
 ## Instructions
@@ -156,7 +156,7 @@ Category definitions:
 {
   "participants": [
     {
-      "email": "{$email}",
+      "identifier": "{$identifier}",
       "name": "{$userName}",
       "items": [
         {

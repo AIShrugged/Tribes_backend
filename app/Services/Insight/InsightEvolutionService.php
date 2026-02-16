@@ -21,9 +21,9 @@ class InsightEvolutionService
     /**
      * Evolve all long-term profile categories for a participant based on new items from a source.
      */
-    public function evolveFromSource(string $email, InsightSource $source): void
+    public function evolveFromSource(InsightSource $source): void
     {
-        $newItems = InsightItem::where('email', $email)
+        $newItems = InsightItem::where('profile_id', $source->profile_id)
             ->where('insight_source_id', $source->id)
             ->where('is_archived', false)
             ->get();
@@ -32,27 +32,26 @@ class InsightEvolutionService
             return;
         }
 
-        // Group items by category and evolve each one
         $byCategory = $newItems->groupBy(fn($item) => $item->category->value);
 
         foreach ($byCategory as $category => $items) {
-            $this->evolveCategory($email, $category, $items->pluck('fact')->toArray());
+            $this->evolveCategory($source->profile_id, $category, $items->pluck('fact')->toArray());
         }
     }
 
     /**
-     * Evolve a single category profile for a given email.
+     * Evolve a single category profile for a given profile_id.
      *
      * @param  string[]  $newFacts
      */
-    public function evolveCategory(string $email, string $category, array $newFacts): void
+    public function evolveCategory(int $profileId, string $category, array $newFacts): void
     {
         if (empty($newFacts)) {
             return;
         }
 
         $profile = InsightProfile::firstOrCreate(
-            ['email' => $email, 'category' => $category],
+            ['profile_id' => $profileId, 'category' => $category],
             ['content' => [], 'version' => 1, 'source_count' => 0],
         );
 
@@ -62,15 +61,17 @@ class InsightEvolutionService
             return;
         }
 
-        // Save history before updating
-        InsightProfileHistory::create([
-            'insight_profile_id' => $profile->id,
-            'email'              => $profile->email,
-            'category'           => $profile->category,
-            'content'            => $profile->content,
-            'version'            => $profile->version,
-            'created_at'         => now(),
-        ]);
+        // Only save history when there is existing content to preserve.
+        // Skipping on first creation avoids a useless empty-content history entry.
+        if (!$profile->wasRecentlyCreated() && !empty($profile->content)) {
+            InsightProfileHistory::create([
+                'insight_profile_id' => $profile->id,
+                'category'           => $profile->category,
+                'content'            => $profile->content,
+                'version'            => $profile->version,
+                'created_at'         => now(),
+            ]);
+        }
 
         $profile->update([
             'content'         => $updatedContent,
@@ -83,15 +84,15 @@ class InsightEvolutionService
     /**
      * Full profile rebuild from all items — used by maintenance jobs.
      */
-    public function rebuildFromAllItems(string $email): void
+    public function rebuildFromAllItems(int $profileId): void
     {
-        $allItems = InsightItem::where('email', $email)
+        $allItems = InsightItem::where('profile_id', $profileId)
             ->where('is_archived', false)
             ->get()
             ->groupBy(fn($item) => $item->category->value);
 
         foreach ($allItems as $category => $items) {
-            $profile = InsightProfile::where('email', $email)
+            $profile = InsightProfile::where('profile_id', $profileId)
                 ->where('category', $category)
                 ->first();
 
@@ -99,25 +100,24 @@ class InsightEvolutionService
                 continue;
             }
 
-            // Reset content and rebuild from scratch
             $profile->update(['content' => []]);
-            $this->evolveCategory($email, $category, $items->pluck('fact')->toArray());
+            $this->evolveCategory($profileId, $category, $items->pluck('fact')->toArray());
         }
     }
 
-    private function callLLM(InsightProfile $profile, string $category, array $newFacts): ?array
+    private function callLLM(InsightProfile $insightProfile, string $category, array $newFacts): ?array
     {
         try {
             $prompt = $this->promptBuilder->buildEvolutionPrompt(
                 category:        $category,
-                existingContent: $profile->content ?? [],
+                existingContent: $insightProfile->content ?? [],
                 newFacts:        $newFacts,
             );
 
             $json = $this->llm->chat(
-                messages:         [new MessageDTO('user', $prompt)],
-                model:            config('ai.providers.openrouter.models.insight'),
-                maxTokens:        2048,
+                messages:          [new MessageDTO('user', $prompt)],
+                model:             config('ai.providers.openrouter.models.insight'),
+                maxTokens:         2048,
                 forceJsonResponse: true,
             );
 
@@ -125,8 +125,8 @@ class InsightEvolutionService
 
             if (!is_array($data)) {
                 Log::warning('InsightEvolutionService: invalid JSON from LLM', [
-                    'email'    => $profile->email,
-                    'category' => $category,
+                    'profile_id' => $insightProfile->profile_id,
+                    'category'   => $category,
                 ]);
                 return null;
             }
@@ -134,9 +134,9 @@ class InsightEvolutionService
             return $data;
         } catch (\Throwable $e) {
             Log::error('InsightEvolutionService: LLM call failed', [
-                'email'    => $profile->email,
-                'category' => $category,
-                'error'    => $e->getMessage(),
+                'profile_id' => $insightProfile->profile_id,
+                'category'   => $category,
+                'error'      => $e->getMessage(),
             ]);
             return null;
         }

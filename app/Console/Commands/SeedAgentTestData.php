@@ -504,7 +504,7 @@ class SeedAgentTestData extends Command
         CalendarEvent::whereIn('id', $eventIds)->delete();
         Source::whereIn('id', $sourceIds)->delete();
 
-        Profile::whereIn('email', $testUsers->pluck('email'))->delete();
+        Profile::whereIn('user_id', $testUserIds)->delete();
 
         DB::table('team_user')->whereIn('user_id', $testUserIds)->delete();
         DB::table('organization_user')->whereIn('user_id', $testUserIds)->delete();

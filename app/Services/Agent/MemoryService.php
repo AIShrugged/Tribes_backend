@@ -3,9 +3,10 @@
 namespace App\Services\Agent;
 
 use App\Enums\InsightCategory;
-use App\Enums\InsightContextType;
+use App\Models\Channel;
 use App\Models\InsightProfile;
 use App\Models\InsightShortTerm;
+use App\Models\Profile;
 use App\Models\TelegramUser;
 use Illuminate\Support\Collection;
 
@@ -16,26 +17,33 @@ class MemoryService
      */
     public function composeMemoryContext(TelegramUser $telegramUser): string
     {
-        // 1. Check if user has linked account
-        $email = $telegramUser->user?->email;
-        if (! $email) {
-            return "## Previous Context\n\nNo user account linked. Memory unavailable.";
+        // 1. Resolve telegram profile (works for both linked and unlinked users)
+        $telegramChannelId = Channel::idFor('telegram');
+
+        $profile = $telegramChannelId
+            ? Profile::where('channel_id', $telegramChannelId)
+                ->where('channel_identifier', (string) $telegramUser->telegram_user_id)
+                ->first()
+            : null;
+
+        if (! $profile) {
+            return "## Previous Context\n\nNo previous memories. First interaction.";
         }
 
-        // 2. Read ShortTerm memory (all context types)
-        $shortTermMemories = InsightShortTerm::where('email', $email)
+        // 3. Read ShortTerm memory (all context types)
+        $shortTermMemories = InsightShortTerm::where('profile_id', $profile->id)
             ->active()
             ->get();
 
-        // 3. Read Profile categories (long-term characteristics)
-        $profiles = InsightProfile::where('email', $email)
+        // 4. Read Profile categories (long-term characteristics)
+        $profiles = InsightProfile::where('profile_id', $profile->id)
             ->whereIn('category', [
                 InsightCategory::COMMUNICATION_STYLE,
                 InsightCategory::GOALS_MOTIVATIONS,
             ])
             ->get();
 
-        // 4. Format combined context
+        // 5. Format combined context
         return $this->formatContext($shortTermMemories, $profiles);
     }
 

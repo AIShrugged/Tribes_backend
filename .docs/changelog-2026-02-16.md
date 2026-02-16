@@ -260,3 +260,123 @@
 - Экономию ресурсов (снижение расхода токенов на 40-60%)
 - Надежность (предотвращение зацикливаний и галлюцинаций)
 - Масштабируемость (стабильная работа на длинных диалогах)
+
+---
+
+# Чейнджлог: Миграция на мультиканальную идентификацию и приведение Insight-пайплайна к profile_id
+
+**Дата:** 16 февраля 2026
+**Ветка:** `local_changelog`
+
+---
+
+## 🎯 Суть изменений
+
+Система insights была переведена с email-адреса как идентификатора пользователя на числовой `profile_id`. Это не просто переименование поля — это смена архитектурной модели: один человек теперь может иметь несколько профилей в разных каналах (Zoom, Telegram, Google Calendar), и все insights корректно агрегируются вокруг одной записи.
+
+---
+
+## 🗄️ Новая Структура БД
+
+### Таблица `channels`
+Справочник источников данных о людях:
+
+| id | name |
+|----|------|
+| 1 | google_calendar |
+| 2 | telegram |
+| 3 | zoom |
+
+### Таблица `profiles` (переработана)
+
+**Было:**
+```
+profiles: id, user_id, email, timestamps
+```
+
+**Стало:**
+```
+profiles: id, user_id (nullable FK→users), channel_id (FK→channels), channel_identifier, timestamps
+UNIQUE(channel_id, channel_identifier)
+```
+
+- `user_id` — опциональная ссылка на зарегистрированного пользователя. Профиль может существовать до регистрации.
+- `channel_id` + `channel_identifier` — однозначно идентифицируют человека в конкретном канале:
+  - Google Calendar: `channel_identifier` = email
+  - Telegram: `channel_identifier` = `telegram_user_id`
+  - Zoom: `channel_identifier` = email участника
+
+### Все Insight-таблицы
+
+Во всех таблицах колонка `email` заменена на `profile_id` (FK → `profiles.id`):
+
+| Таблица | Было | Стало |
+|---------|------|-------|
+| `insight_items` | `email` | `profile_id` |
+| `insight_short_term` | `email` | `profile_id` |
+| `insight_profiles` | `email` | `profile_id` |
+| `insight_profile_history` | `email` (лишний) | удалён |
+| `insight_relationships` | `email_a`, `email_b` | `profile_id_a`, `profile_id_b` |
+
+В `insight_relationships` добавлен `UNIQUE(LEAST(a,b), GREATEST(a,b))` — пара A↔B и B↔A хранится как одна запись, исключая дубли при любом порядке.
+
+---
+
+## 🔄 Логика Приведения Кода
+
+Все сервисы, которые раньше принимали `string $email` и делали `WHERE email = ?`, переписаны по единой схеме:
+
+```
+1. Определить канал:   Channel::idFor('telegram' | 'google_calendar')
+2. Найти профиль:      Profile::where('channel_id', $id)->where('channel_identifier', $value)->first()
+3. Работать с данными: InsightXxx::where('profile_id', $profile->id)->...
+```
+
+**Затронутые сервисы:**
+
+- `CalendarEventSyncService` — поиск профилей участников Zoom-встреч
+- `InsightExtractionService` — запись insights по итогам встречи
+- `InsightTelegramService` — обработка переписки из Telegram
+- `InsightRetrievalService` — чтение профиля, short-term памяти, отношений
+- `InsightEvolutionService` — эволюция долгосрочных характеристик
+- `MemoryService` — формирование контекста памяти для Telegram-агента
+
+**Дополнительно:**
+
+- `Channel::idFor(string $name)` — новый статический хелпер с memoization. Заменил 5+ повторных `Channel::where(...)->value('id')` по всей кодовой базе.
+- `InsightParticipantDataDTO::$identifier` (переименовано из `$email`) — DTO точно отражает семантику: это не всегда email, а идентификатор в конкретном канале. Обновлён JSON-контракт с LLM.
+
+---
+
+## 💼 Бизнес-Смысл
+
+### Почему email не работал как идентификатор
+
+Email — это атрибут пользователя в конкретной системе (Google), а не универсальный идентификатор человека. Проблемы:
+
+- Telegram-пользователь не всегда имеет email, совпадающий с корпоративным
+- Один человек мог иметь разные email в Zoom и Google Calendar
+- При смене email вся история insights терялась
+- Невозможно хранить insights для людей, которые ещё не зарегистрированы в системе
+
+### Что даёт profile_id
+
+**Знания накапливаются независимо от регистрации.** Участник встречи Zoom получает профиль и insights сразу — даже если он никогда не откроет веб-интерфейс. Когда он придёт в Telegram, его профиль можно слинковать (`user_id`), и агент сразу будет знать о нём всё.
+
+**Один человек — одна история.** Insights из Zoom, Telegram и Google Calendar агрегируются вокруг одного `profile_id`. Система видит полную картину человека, а не разрозненные фрагменты по каналам.
+
+**Отношения между людьми — без дублей.** `insight_relationships` теперь хранит пару (A, B) ровно один раз, независимо от порядка запроса. Раньше можно было создать дубль A→B и B→A с разными данными.
+
+**Молчащие баги стали невозможны.** Старая схема не падала при отсутствии email — она просто тихо не находила данные и возвращала пустоту. Новая схема с FK и UNIQUE-индексами делает аномалии структурно невозможными.
+
+---
+
+## 🐛 Устранённые Молчащие Баги
+
+После миграции схемы без правки кода вся система продолжала работать без ошибок — но ничего не делала. Исправлены:
+
+1. **Участники Zoom не линковались** — `syncAttendees()` искал по удалённой колонке `email`; теперь ищет по `channel_id + channel_identifier`.
+2. **Агент не видел память** — `MemoryService` запрашивал insights по `email`; теперь резолвит через `profile_id`.
+3. **Insights не записывались** — `InsightExtractionService` вызывал `.toArray()` на Eloquent-коллекции, разрушая объекты; исправлено на `.all()`.
+4. **API отдавал устаревшую short-term память** — отсутствовал `orderByDesc('created_at')`; добавлен.
+5. **Пустые записи в истории** — `InsightEvolutionService` писал пустую версию при первом создании профиля; добавлена проверка `wasRecentlyCreated()`.

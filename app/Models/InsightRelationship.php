@@ -4,28 +4,37 @@ namespace App\Models;
 
 use App\Enums\InsightRelationshipType;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class InsightRelationship extends Model
 {
     protected $guarded = [];
 
     protected $casts = [
-        'dynamics'          => 'array',
-        'relationship_type' => InsightRelationshipType::class,
+        'dynamics'            => 'array',
+        'relationship_type'   => InsightRelationshipType::class,
         'last_interaction_at' => 'datetime',
     ];
 
-    public static function findPair(string $emailA, string $emailB): ?self
+    public function profileA(): BelongsTo
     {
-        [$a, $b] = self::sortEmails($emailA, $emailB);
-
-        return self::where('email_a', $a)->where('email_b', $b)->first();
+        return $this->belongsTo(Profile::class, 'profile_id_a');
     }
 
-    public static function sortEmails(string $emailA, string $emailB): array
+    public function profileB(): BelongsTo
     {
-        return strcmp($emailA, $emailB) <= 0
-            ? [$emailA, $emailB]
-            : [$emailB, $emailA];
+        return $this->belongsTo(Profile::class, 'profile_id_b');
+    }
+
+    public static function findPair(int $profileIdA, int $profileIdB): ?self
+    {
+        [$a, $b] = self::sortIds($profileIdA, $profileIdB);
+
+        return self::where('profile_id_a', $a)->where('profile_id_b', $b)->first();
+    }
+
+    public static function sortIds(int $a, int $b): array
+    {
+        return $a <= $b ? [$a, $b] : [$b, $a];
     }
 }

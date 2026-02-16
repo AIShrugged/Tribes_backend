@@ -2,6 +2,8 @@
 
 namespace App\Services\Agent\Tools;
 
+use App\Models\Channel;
+use App\Models\Profile;
 use App\Models\User;
 use App\Services\Insight\InsightRetrievalService;
 
@@ -47,30 +49,23 @@ class GetRelationshipInsightTool implements ToolInterface
     {
         $parameters = $parameters ?? [];
 
-        $emailA = $parameters['email_a'] ?? null;
-        $emailB = $parameters['email_b'] ?? null;
+        $emailA  = $parameters['email_a'] ?? null;
+        $emailB  = $parameters['email_b'] ?? null;
         $userIdA = $parameters['user_id_a'] ?? null;
         $userIdB = $parameters['user_id_b'] ?? null;
 
-        // Resolve emails from user IDs if needed
-        if (! $emailA && $userIdA) {
-            $user = User::find($userIdA);
-            $emailA = $user?->email;
-        }
-        if (! $emailB && $userIdB) {
-            $user = User::find($userIdB);
-            $emailB = $user?->email;
-        }
+        $profileIdA = $this->resolveProfileId($emailA, $userIdA);
+        $profileIdB = $this->resolveProfileId($emailB, $userIdB);
 
-        if (! $emailA || ! $emailB) {
+        if (! $profileIdA || ! $profileIdB) {
             return [
                 'success' => false,
-                'error' => 'Two people must be specified (via email_a/email_b or user_id_a/user_id_b)',
+                'error' => 'Could not resolve insight profiles for both people. Provide valid email_a/email_b or user_id_a/user_id_b.',
             ];
         }
 
         $retrievalService = app(InsightRetrievalService::class);
-        $relationship = $retrievalService->getRelationship($emailA, $emailB);
+        $relationship = $retrievalService->getRelationship($profileIdA, $profileIdB);
 
         if (! $relationship) {
             return [
@@ -84,5 +79,38 @@ class GetRelationshipInsightTool implements ToolInterface
             'success' => true,
             'data' => $relationship,
         ];
+    }
+
+    /**
+     * Resolve a profile_id from optional email or user_id.
+     * Prefers user_id → linked profile; falls back to google_calendar channel (email).
+     */
+    private function resolveProfileId(?string $email, ?int $userId): ?int
+    {
+        if ($userId) {
+            $user = User::find($userId);
+            if ($user) {
+                $profile = Profile::where('user_id', $user->id)->first();
+                if ($profile) {
+                    return $profile->id;
+                }
+                // Fallback: match by email via google_calendar channel
+                $email = $email ?? $user->email;
+            }
+        }
+
+        if ($email) {
+            $gcChannelId = Channel::idFor('google_calendar');
+            if ($gcChannelId) {
+                $profile = Profile::where('channel_id', $gcChannelId)
+                    ->where('channel_identifier', $email)
+                    ->first();
+                if ($profile) {
+                    return $profile->id;
+                }
+            }
+        }
+
+        return null;
     }
 }

@@ -5,8 +5,10 @@ namespace App\Services\Insight;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Domain\DTO\Insight\InsightExtractedDataDTO;
 use App\Models\CalendarEvent;
+use App\Models\Channel;
 use App\Models\InsightSource;
 use App\Models\Participant;
+use App\Models\Profile;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
@@ -34,12 +36,19 @@ class InsightExtractionService
             return [];
         }
 
-        $participantMap = $this->buildParticipantMap($event);
+        // name => profile map for participants with known profiles
+        $profileMap = $this->buildProfileMap($event);
 
-        if (empty($participantMap)) {
-            Log::info('InsightExtractionService: no participants with emails, skipping', ['event_id' => $event->id]);
+        if (empty($profileMap)) {
+            Log::info('InsightExtractionService: no participants with profiles, skipping', ['event_id' => $event->id]);
             return [];
         }
+
+        // name => identifier map for the LLM prompt
+        $participantMap = array_map(
+            fn(Profile $p) => $p->channel_identifier,
+            $profileMap
+        );
 
         $extractedData = $this->callLLM($event, $transcript, $participantMap);
 
@@ -47,38 +56,45 @@ class InsightExtractionService
             return [];
         }
 
-        return $this->persist($event, $extractedData);
+        return $this->persist($event, $extractedData, $profileMap);
     }
 
     /**
-     * Build a name => email map for participants with known profiles.
+     * Build a name => Profile map for participants with known google_calendar profiles.
      *
-     * @return array<string, string>
+     * @return array<string, Profile>
      */
-    private function buildParticipantMap(CalendarEvent $event): array
+    private function buildProfileMap(CalendarEvent $event): array
     {
+        $gcChannelId = Channel::idFor('google_calendar');
+
+        if (!$gcChannelId) {
+            return [];
+        }
+
         return $event->participants()
             ->with('profile')
             ->get()
-            ->filter(fn(Participant $p) => $p->profile?->email)
-            ->mapWithKeys(fn(Participant $p) => [$p->name => $p->profile->email])
-            ->toArray();
+            ->filter(fn(Participant $p) => $p->profile?->channel_identifier)
+            ->filter(fn(Participant $p) => $p->profile->channel_id === $gcChannelId)
+            ->mapWithKeys(fn(Participant $p) => [$p->name => $p->profile])
+            ->all();
     }
 
     private function callLLM(CalendarEvent $event, string $transcript, array $participantMap): ?InsightExtractedDataDTO
     {
         try {
             $prompt = $this->promptBuilder->buildExtractionPrompt(
-                transcript:    $transcript,
+                transcript:     $transcript,
                 participantMap: $participantMap,
-                meetingTitle:  $event->title ?? 'Meeting',
-                meetingDate:   $event->starts_at ? \Carbon\Carbon::parse($event->starts_at)->toDateString() : now()->toDateString(),
+                meetingTitle:   $event->title ?? 'Meeting',
+                meetingDate:    $event->starts_at ? \Carbon\Carbon::parse($event->starts_at)->toDateString() : now()->toDateString(),
             );
 
             $json = $this->llm->chat(
-                messages:         [new MessageDTO('user', $prompt)],
-                model:            config('ai.providers.openrouter.models.insight'),
-                maxTokens:        4096,
+                messages:          [new MessageDTO('user', $prompt)],
+                model:             config('ai.providers.openrouter.models.insight'),
+                maxTokens:         4096,
                 forceJsonResponse: true,
             );
 
@@ -100,40 +116,54 @@ class InsightExtractionService
     }
 
     /**
-     * Persist extracted data to DB. Creates InsightSource + InsightItems + InsightShortTerm per participant.
+     * Persist extracted data. Creates InsightSource + InsightItems + InsightShortTerm per participant.
      *
+     * @param  array<string, Profile>  $profileMap  name => Profile
      * @return InsightSource[]
      */
-    private function persist(CalendarEvent $event, InsightExtractedDataDTO $data): array
+    private function persist(CalendarEvent $event, InsightExtractedDataDTO $data, array $profileMap): array
     {
+        // Build identifier => profile_id lookup (channel_identifier => profile)
+        $identifierToProfile = collect($profileMap)
+            ->keyBy(fn(Profile $p) => $p->channel_identifier)
+            ->all();
+
         $sources = [];
 
         foreach ($data->participants as $participant) {
+            $profile = $identifierToProfile[$participant->identifier] ?? null;
+
+            if (!$profile) {
+                Log::info('InsightExtractionService: no profile for participant, skipping', [
+                    'identifier' => $participant->identifier,
+                    'event_id'   => $event->id,
+                ]);
+                continue;
+            }
+
             $source = InsightSource::firstOrCreate(
                 [
-                    'email'       => $participant->email,
+                    'profile_id'  => $profile->id,
                     'source_type' => 'transcript',
                     'source_id'   => $event->id,
                 ],
                 ['processed_at' => now()],
             );
 
-            // Persist atomic items
             foreach ($participant->items as $item) {
                 $source->items()->create([
-                    'email'      => $participant->email,
+                    'profile_id' => $profile->id,
                     'category'   => $item->category,
                     'fact'       => $item->fact,
                     'confidence' => $item->confidence,
                 ]);
             }
 
-            // Persist short-term memory (30 days TTL, emotional_state — 7 days)
             foreach ($participant->shortTerm as $shortTerm) {
                 $ttlDays = $shortTerm->contextType === 'emotional_state' ? 7 : 30;
 
                 $source->shortTermMemories()->create([
-                    'email'        => $participant->email,
+                    'profile_id'   => $profile->id,
                     'context_type' => $shortTerm->contextType,
                     'content'      => $shortTerm->content,
                     'expires_at'   => now()->addDays($ttlDays),
