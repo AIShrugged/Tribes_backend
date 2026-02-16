@@ -7,6 +7,7 @@ use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\MemoryService;
+use App\Services\Agent\Tools\GetMeetingInsightsTool;
 use App\Services\Agent\Tools\GetRelationshipInsightTool;
 use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
@@ -36,6 +37,7 @@ class TelegramBotController extends Controller
     {
         $toolRegistry = new ToolRegistry;
         $toolRegistry->register(new GetUserInfoTool);
+        $toolRegistry->register(new GetMeetingInsightsTool);
         $toolRegistry->register(new GetTranscriptTool);
         $toolRegistry->register(new SearchMeetingsTool);
         $toolRegistry->register(new GetTeamMembersTool);

@@ -20,9 +20,11 @@ class GetTranscriptTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Get and analyze the transcript of a meeting/calendar event by its ID. '
-            . 'Provide a question to get a focused analysis instead of the raw transcript. '
-            . 'If the transcript is very long, it will be automatically analyzed by a sub-agent and a summary returned.';
+        return '⚠️ EXPENSIVE OPERATION - USE ONLY AS LAST RESORT: Get and analyze the full transcript of a meeting. '
+            . 'This is computationally expensive and should ONLY be used when: (1) get_meeting_insights is insufficient, '
+            . '(2) user explicitly asks for verbatim conversation details, or (3) you need to verify exact quotes. '
+            . 'ALWAYS try get_meeting_insights first! Before using this tool, you MUST ask user for confirmation '
+            . 'by explaining why you need the full transcript and requesting permission.';
     }
 
     public function getParameters(): array
@@ -38,8 +40,12 @@ class GetTranscriptTool implements ToolInterface
                     'type' => 'string',
                     'description' => 'What you want to know from this transcript. E.g.: "What decisions were made?", "Summarize the meeting", "What did John say about the project?"',
                 ],
+                'user_confirmed' => [
+                    'type' => 'boolean',
+                    'description' => 'REQUIRED: Set to true only after you have asked the user for permission and they explicitly approved accessing the full transcript. Never set to true without user consent.',
+                ],
             ],
-            'required' => ['calendar_event_id'],
+            'required' => ['calendar_event_id', 'user_confirmed'],
         ];
     }
 
@@ -49,11 +55,19 @@ class GetTranscriptTool implements ToolInterface
 
         $calendarEventId = $parameters['calendar_event_id'] ?? null;
         $question = $parameters['question'] ?? null;
+        $userConfirmed = $parameters['user_confirmed'] ?? false;
 
         if (! $calendarEventId) {
             return [
                 'success' => false,
                 'error' => 'calendar_event_id is required',
+            ];
+        }
+
+        if (! $userConfirmed) {
+            return [
+                'success' => false,
+                'error' => '⛔️ User confirmation required. You must ask the user for permission before accessing the full transcript. Explain why you need it (e.g., "insights are insufficient" or "need exact quotes") and wait for explicit approval. If approved, call this tool again with user_confirmed=true.',
             ];
         }
 
