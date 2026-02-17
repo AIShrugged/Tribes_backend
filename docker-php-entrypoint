@@ -6,7 +6,6 @@ command="$1"
 case "$command" in
   "backend" )
 
-    php artisan scribe:generate  
     php-fpm -R
   ;;
   "migration" )

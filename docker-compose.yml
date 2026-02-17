@@ -17,8 +17,6 @@ services:
     nginx:
         image: nginx:alpine
         container_name: nginx
-        ports:
-            - "80:80"
         volumes:
             - ./.docker/nginx.conf:/etc/nginx/conf.d/default.conf            
             - .:/var/www
@@ -38,8 +36,6 @@ services:
             POSTGRES_PASSWORD: ${DB_PASSWORD}
         volumes:
             - pgdata:/var/lib/postgresql/data
-        ports:
-            - "5432:5432"
         networks:
             - app
 
