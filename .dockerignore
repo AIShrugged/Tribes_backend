@@ -1,6 +1,5 @@
 deploy
 .gitlab-ci.yml
-.docker
 .git
 .dockerignore
 .editorconfig
