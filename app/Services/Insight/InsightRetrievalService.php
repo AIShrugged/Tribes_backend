@@ -7,6 +7,7 @@ use App\Models\InsightProfile;
 use App\Models\InsightRelationship;
 use App\Models\InsightShortTerm;
 use App\Services\OpenRouterClient;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class InsightRetrievalService

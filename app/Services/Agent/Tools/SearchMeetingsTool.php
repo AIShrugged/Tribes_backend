@@ -60,7 +60,7 @@ class SearchMeetingsTool implements ToolInterface
 
         if (!empty($parameters['user_id'])) {
             $query->whereHas('participants', function ($q) use ($parameters) {
-                $q->where('user_id', $parameters['user_id']);
+                $q->where('profile_id', $parameters['user_id']);
             });
         }
 
