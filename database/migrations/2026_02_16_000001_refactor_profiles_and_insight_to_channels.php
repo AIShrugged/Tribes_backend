@@ -71,7 +71,7 @@ return new class extends Migration
         DB::statement("
             SELECT setval(
                 pg_get_serial_sequence('profiles', 'id'),
-                (SELECT COALESCE(MAX(id), 0) FROM profiles)
+                (SELECT COALESCE(MAX(id), 1) FROM profiles)
             )
         ");
 

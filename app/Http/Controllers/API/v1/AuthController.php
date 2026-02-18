@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AuthRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
+use App\Services\ProfileLinkingService;
 use App\Services\TeamInvitationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,8 @@ class AuthController extends Controller
     public function register(
         AuthRequest $request,
         EmailVerificationService $emailVerificationService,
-        TeamInvitationService $teamInvitationService
+        TeamInvitationService $teamInvitationService,
+        ProfileLinkingService $profileLinkingService
     ): JsonResponse {
         $user = User::where('email', $request->getEmail())->first();
 
@@ -29,6 +31,9 @@ class AuthController extends Controller
 
         $user = User::create($request->validated());
         $token = $user->createToken('authToken')->plainTextToken;
+
+        // Link any anonymous profiles collected before registration
+        $profileLinkingService->linkByEmail($user);
 
         // Handle invite token if provided
         $inviteAccepted = false;

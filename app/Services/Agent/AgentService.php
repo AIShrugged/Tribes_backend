@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 class AgentService
 {
-    private const MAX_ITERATIONS = 10;
+    private const MAX_ITERATIONS = 15;
 
     private const MODEL = 'anthropic/claude-3.5-sonnet';
 
@@ -95,17 +95,25 @@ class AgentService
         $memoryContext = $this->memoryService->composeMemoryContext($telegramUser);
 
         // Prepare system prompt
-        $systemPrompt = $this->getSystemPrompt($memoryContext);
+        $systemPrompt = $this->getSystemPrompt($memoryContext, $telegramUser);
 
         // Inject current date/time into user message so the model reliably knows the date
         $now = now()->timezone('Europe/Moscow');
         $datePrefix = "[Current date: {$now->format('Y-m-d')}, time: {$now->format('H:i')} MSK]";
 
+        // Inject current user identity so the model can't miss it
+        $userId    = $telegramUser?->user?->id;
+        $profileId = $userId ? \App\Models\Profile::where('user_id', $userId)->value('id') : null;
+        $userName  = $telegramUser?->user?->name ?? $telegramUser?->telegram_username ?? null;
+        $userPrefix = $userName && $profileId
+            ? "[Sender: {$userName} (user_id={$userId}, profile_id={$profileId})]"
+            : '';
+
         // Prepare initial messages (without system - it's passed separately)
         $messages = [
             [
                 'role' => 'user',
-                'content' => "{$datePrefix}\n\n{$userMessage}",
+                'content' => trim("{$datePrefix} {$userPrefix}") . "\n\n{$userMessage}",
             ],
         ];
 
@@ -481,7 +489,7 @@ class AgentService
         $expectedFieldsByTool = [
             'get_transcript' => ['event', 'transcript'],
             'search_meetings' => ['success'],
-            'get_user_info' => ['id', 'name'],
+            'get_user_info' => ['success', 'user'],
         ];
 
         if (isset($expectedFieldsByTool[$toolName]) && is_array($toolResult)) {
@@ -648,11 +656,22 @@ class AgentService
         }
     }
 
-    private function getSystemPrompt(string $memoryContext): string
+    private function getSystemPrompt(string $memoryContext, ?TelegramUser $telegramUser = null): string
     {
         $now = now()->timezone('Europe/Moscow');
         $currentDate = $now->translatedFormat('l, d F Y');
         $currentTime = $now->format('H:i');
+
+        $userName  = $telegramUser?->user?->name ?? $telegramUser?->username ?? 'Unknown';
+        $userId    = $telegramUser?->user?->id ?? null;
+        $profileId = $userId ? \App\Models\Profile::where('user_id', $userId)->value('id') : null;
+
+        if ($userId) {
+            $profileHint = $profileId ? ", profile_id={$profileId}" : '';
+            $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call get_user_info for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call get_user_insights(profile_id={$profileId}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
+        } else {
+            $currentUserContext = "## Current User\n\nYou are talking to **{$userName}**.\n";
+        }
 
         return <<<PROMPT
 You are a helpful AI assistant integrated with a Telegram bot. You have access to various tools to help answer user questions.
@@ -661,6 +680,7 @@ You are a helpful AI assistant integrated with a Telegram bot. You have access t
 
 Today is {$currentDate}, {$currentTime} (MSK, Moscow Time, UTC+3).
 
+{$currentUserContext}
 {$memoryContext}
 
 ## Your Capabilities
@@ -673,11 +693,37 @@ You have access to various tools that allow you to:
 
 ## Tool Usage Priority - CRITICAL
 
-When accessing meeting information, ALWAYS follow this priority:
+When asked about a **meeting**, choose the right tool:
+- **`get_meeting_summary`** — AI-generated summary: what was discussed, key points, decisions. Use for "what was discussed?", "what did they decide?", "summarize the Friday meeting". **This tool alone is sufficient — do NOT additionally call get_meeting_tasks unless the user explicitly asked about tasks.**
+- **`get_meeting_tasks`** — action items and assignments from a meeting. Use for "what tasks were created?", "who was assigned what?", "any open tasks from the planning?". **Only call this if the user explicitly asked about tasks or action items.**
+- **`get_followup`** — AI-generated assessment reports for meeting participants. Use for "what was the followup for Ivan?", "show evaluation results from the meeting".
+- **`get_extracted_facts`** — raw facts about specific participants from that meeting. Use for "what did we learn about Ivan at that meeting?" (requires profile_id from get_user_info).
 
-1. **FIRST CHOICE**: Use `get_meeting_insights` - this returns AI-extracted insights (decisions, skills, communication style, etc.) and is efficient
-2. **LAST RESORT**: Use `get_transcript` ONLY when:
-   - Insights are insufficient for the user's question
+**STOP after you have enough data to answer.** Do not call extra tools "just in case". If get_meeting_summary answers the question — answer immediately without calling get_meeting_tasks.
+
+## IDs — CRITICAL RULES
+
+**NEVER guess or invent IDs.** Only use IDs that were explicitly returned by a previous tool call in this conversation.
+
+**profile_id workflow:**
+1. `get_meeting_summary` returns `participants` as objects: `{"name": "...", "profile_id": N}` — **use these profile_ids directly**, no need to call `get_user_info` for each participant
+2. If a participant has no `profile_id` in the summary, only then call `get_user_info` by name to resolve it
+3. Use `profile_id` in subsequent calls to `get_extracted_facts`, `get_user_insights`, `get_insight_profile_history`
+4. **Do NOT call `get_user_info` for a person whose profile_id you already have**
+5. **Do NOT use user_id as profile_id** — they are different numbers
+
+**When processing multiple people:**
+- Get participant profile_ids directly from `get_meeting_summary` response — they are already there
+- Participants listed in meeting summary are real people — project/product names (like "Wanda") are NOT people, do not search for them
+- Call `get_user_insights(profile_id=...)` for each participant directly, without intermediate `get_user_info` calls
+
+When asked about a **person**, choose the right tool:
+- **`get_user_insights`** — aggregated long-term profile. Use for "who is Ivan?", "describe Ivan's strengths".
+- **`get_extracted_facts`** — source-specific facts. Use for "what did we learn about Ivan from transcripts?".
+- **`get_insight_profile_history`** — version history of a person's profile. Use for "how has Ivan changed?", "show evolution of communication style" (requires profile_id from get_user_info).
+
+**`get_transcript` is LAST RESORT** — only when:
+   - Summary/facts are insufficient for the user's question
    - User explicitly asks for verbatim conversation details
    - You need to verify exact quotes or specific dialogue
 
@@ -688,7 +734,7 @@ When accessing meeting information, ALWAYS follow this priority:
 
 Example:
 ❌ BAD: Immediately calling get_transcript when user asks about a meeting
-✅ GOOD: First try get_meeting_insights, then ask user "The insights don't contain [specific info]. May I access the full transcript to find [exact reason]?"
+✅ GOOD: First try get_meeting_summary, then if more detail needed ask "May I access the full transcript?"
 
 ## Memory Management - IMPORTANT
 

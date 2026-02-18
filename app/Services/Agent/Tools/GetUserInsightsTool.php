@@ -16,7 +16,7 @@ class GetUserInsightsTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Get full insight profile about a user. Returns long-term psychological profile, communication style, work patterns, strengths, development areas, goals/motivations, active short-term context, and relationships with other people.';
+        return 'Get full insight profile about a user. Returns long-term psychological profile, communication style, work patterns, strengths, development areas, goals/motivations, active short-term context, and relationships with other people. Always call get_user_info first to obtain profile_id, then pass it here.';
     }
 
     public function getParameters(): array
@@ -24,13 +24,13 @@ class GetUserInsightsTool implements ToolInterface
         return [
             'type' => 'object',
             'properties' => [
+                'profile_id' => [
+                    'type' => 'integer',
+                    'description' => 'PREFERRED: The profile_id from profiles[].profile_id returned by get_user_info. Always use this when available.',
+                ],
                 'user_id' => [
                     'type' => 'integer',
-                    'description' => 'The ID of the user',
-                ],
-                'email' => [
-                    'type' => 'string',
-                    'description' => 'The email of the user',
+                    'description' => 'The user_id (id field) returned by get_user_info. Use only if profile_id is not available.',
                 ],
             ],
             'required' => [],
@@ -41,30 +41,37 @@ class GetUserInsightsTool implements ToolInterface
     {
         $parameters = $parameters ?? [];
 
-        $userId = $parameters['user_id'] ?? null;
-        $email  = $parameters['email'] ?? null;
+        $userId    = $parameters['user_id'] ?? null;
+        $email     = $parameters['email'] ?? null;
+        $profileId = $parameters['profile_id'] ?? null;
 
-        if (! $userId && ! $email) {
+        if (! $userId && ! $email && ! $profileId) {
             return [
                 'success' => false,
-                'error' => 'Either user_id or email must be provided',
+                'error' => 'One of user_id, email, or profile_id must be provided',
             ];
         }
 
-        if ($userId) {
-            $user = User::find($userId);
+        // Direct profile_id lookup — for users without an account
+        if ($profileId) {
+            $profile = Profile::find($profileId);
+
+            if (! $profile) {
+                return ['success' => false, 'error' => 'Profile not found'];
+            }
         } else {
-            $user = User::where('email', $email)->first();
-        }
+            if ($userId) {
+                $user = User::find($userId);
+            } else {
+                $user = User::where('email', $email)->first();
+            }
 
-        if (! $user) {
-            return [
-                'success' => false,
-                'error' => 'User not found',
-            ];
-        }
+            if (! $user) {
+                return ['success' => false, 'error' => 'User not found'];
+            }
 
-        $profile = $this->resolveProfile($user);
+            $profile = $this->resolveProfile($user);
+        }
 
         if (! $profile) {
             return [
