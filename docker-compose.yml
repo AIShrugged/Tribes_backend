@@ -5,8 +5,8 @@ services:
             dockerfile: Dockerfile
         container_name: backend
         working_dir: /var/www
-        #volumes:
-            #- .:/var/www
+        volumes:
+            - .:/var/www
             #- .docker/php-fpm.conf:/usr/local/etc/php-fpm.conf            
         depends_on:
             - postgres
@@ -24,7 +24,9 @@ services:
             - backend
         networks:
             - app
-        command: ["nginx", "-g", "daemon off;"] 
+        command: ["nginx", "-g", "daemon off;"]
+        ports:
+            - "80:80"
 
     postgres:
         image: postgres:16
@@ -38,6 +40,8 @@ services:
             - pgdata:/var/lib/postgresql/data
         networks:
             - app
+        ports:
+            - "5432:5432"
 
 networks:
     app:
