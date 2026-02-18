@@ -33,19 +33,19 @@ services:
     labels:
       - "traefik.enable=true"
 
-      - "traefik.http.routers.devapi.rule=Host(`api.shrugged.ai`)"
-      - "traefik.http.routers.devapi.entrypoints=http"
-      - "traefik.http.routers.devapi.middlewares=devapi-redirect,gzip"
-      - "traefik.http.middlewares.devapi-redirect.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.gzip.compress=true"
+      - "traefik.http.routers.api-prod.rule=Host(`api.shrugged.ai`)"
+      - "traefik.http.routers.api-prod.entrypoints=http"
+      - "traefik.http.routers.api-prod.middlewares=api-prod-redirect,api-prod-gzip"
+      - "traefik.http.middlewares.api-prod-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.api-prod-gzip.compress=true"
 
-      - "traefik.http.routers.devapi-secure.rule=Host(`api.shrugged.ai`)"
-      - "traefik.http.routers.devapi-secure.entrypoints=https"
-      - "traefik.http.routers.devapi-secure.tls=true"
-      - "traefik.http.routers.devapi-secure.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.devapi-secure.middlewares=gzip"
-      - "traefik.http.routers.devapi-secure.service=devapi-svc"
-      - "traefik.http.services.devapi-svc.loadbalancer.server.port=80"
+      - "traefik.http.routers.api-prod-secure.rule=Host(`api.shrugged.ai`)"
+      - "traefik.http.routers.api-prod-secure.entrypoints=https"
+      - "traefik.http.routers.api-prod-secure.tls=true"
+      - "traefik.http.routers.api-prod-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api-prod-secure.middlewares=api-prod-gzip"
+      - "traefik.http.routers.api-prod-secure.service=api-prod-svc"
+      - "traefik.http.services.api-prod-svc.loadbalancer.server.port=80"
 
   postgres:
     image: "postgres:16"
