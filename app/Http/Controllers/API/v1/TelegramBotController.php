@@ -7,7 +7,11 @@ use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\MemoryService;
-use App\Services\Agent\Tools\GetMeetingInsightsTool;
+use App\Services\Agent\Tools\GetExtractedFactsTool;
+use App\Services\Agent\Tools\GetFollowupTool;
+use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
+use App\Services\Agent\Tools\GetMeetingSummaryTool;
+use App\Services\Agent\Tools\GetMeetingTasksTool;
 use App\Services\Agent\Tools\GetRelationshipInsightTool;
 use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
@@ -37,13 +41,17 @@ class TelegramBotController extends Controller
     {
         $toolRegistry = new ToolRegistry;
         $toolRegistry->register(new GetUserInfoTool);
-        $toolRegistry->register(new GetMeetingInsightsTool);
-        $toolRegistry->register(new GetTranscriptTool);
+        $toolRegistry->register(new GetExtractedFactsTool);
+        $toolRegistry->register(new GetMeetingSummaryTool);
+        // $toolRegistry->register(new GetTranscriptTool); // TODO: re-enable after testing
         $toolRegistry->register(new SearchMeetingsTool);
         $toolRegistry->register(new GetTeamMembersTool);
         $toolRegistry->register(new GetUserInsightsTool);
         $toolRegistry->register(new GetUserShortTermMemoryTool);
         $toolRegistry->register(new GetRelationshipInsightTool);
+        $toolRegistry->register(new GetMeetingTasksTool);
+        $toolRegistry->register(new GetFollowupTool);
+        $toolRegistry->register(new GetInsightProfileHistoryTool);
 
         $memoryService = new MemoryService;
 

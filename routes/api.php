@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
+use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
 use App\Http\Controllers\API\v1\ChatController;
 use App\Http\Controllers\API\v1\ChatMessageController;
@@ -55,6 +56,12 @@ Route::group(['prefix' => 'v1'], function () {
         Route::group(['prefix' => 'users'], function () {
             Route::get('/me', function (Request $request) {
                 return $request->user();
+            });
+
+            Route::group(['prefix' => 'me'], function () {
+                Route::get('identities', [UserIdentityController::class, 'index']);
+                Route::post('identities', [UserIdentityController::class, 'link']);
+                Route::delete('identities/{profile}', [UserIdentityController::class, 'unlink']);
             });
         });
 
@@ -138,10 +145,20 @@ Route::group(['prefix' => 'v1'], function () {
 
         // Insight — user profiling and memory
         Route::group(['prefix' => 'insight'], function () {
-            Route::get('profiles/{profile}', [InsightController::class, 'profile']);
-            Route::delete('profiles/{profile}', [InsightController::class, 'forget']);
-            Route::get('profiles/{profile}/short-term', [InsightController::class, 'shortTerm']);
-            Route::get('relationships', [InsightController::class, 'relationship']);
+            Route::get('profiles/{profile}', [InsightController::class, 'profile'])
+                ->name('insight.profile.show');
+            Route::delete('profiles/{profile}', [InsightController::class, 'forget'])
+                ->name('insight.profile.forget');
+            Route::get('profiles/{profile}/short-term', [InsightController::class, 'shortTerm'])
+                ->name('insight.profile.short-term');
+            Route::get('profiles/{profile}/items', [InsightController::class, 'items'])
+                ->name('insight.profile.items');
+            Route::get('profiles/{profile}/sources', [InsightController::class, 'sources'])
+                ->name('insight.profile.sources');
+            Route::get('profiles/{profile}/history', [InsightController::class, 'history'])
+                ->name('insight.profile.history');
+            Route::get('relationships', [InsightController::class, 'relationship'])
+                ->name('insight.relationships');
         });
     });
 });
