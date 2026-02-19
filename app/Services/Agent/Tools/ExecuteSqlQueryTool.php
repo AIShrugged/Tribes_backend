@@ -2,16 +2,12 @@
 
 namespace App\Services\Agent\Tools;
 
-use App\Models\TelegramUser;
 use App\Services\Chat\SqlQueryExecutor;
 
 class ExecuteSqlQueryTool implements ToolInterface
 {
-    private int $telegramUserId;
-
-    public function __construct(int $telegramUserId)
+    public function __construct(private readonly int $userId)
     {
-        $this->telegramUserId = $telegramUserId;
     }
 
     public function getName(): string
@@ -53,26 +49,7 @@ class ExecuteSqlQueryTool implements ToolInterface
         }
 
         try {
-            $telegramUser = TelegramUser::find($this->telegramUserId);
-
-            if (! $telegramUser) {
-                return [
-                    'success' => false,
-                    'error' => 'Telegram user not found',
-                ];
-            }
-
-            // Check if user has linked account
-            if (! $telegramUser->user_id) {
-                return [
-                    'success' => false,
-                    'error' => 'No linked user account. Cannot execute queries on user data.',
-                ];
-            }
-
-            // Get accessible user IDs (for now, just the linked user)
-            // In the future, this could include team members or organization members
-            $accessibleUserIds = [$telegramUser->user_id];
+            $accessibleUserIds = [$this->userId];
 
             $executor = new SqlQueryExecutor;
             $result = $executor->execute($sql, $accessibleUserIds);

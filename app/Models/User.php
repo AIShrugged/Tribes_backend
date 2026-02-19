@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -58,6 +59,25 @@ class User extends Authenticatable
     public function chats(): HasMany
     {
         return $this->hasMany(Chat::class);
+    }
+
+    public function telegramUser(): HasOne
+    {
+        return $this->hasOne(TelegramUser::class);
+    }
+
+    /**
+     * Resolve the channel-specific identifier for this user.
+     * Used by MemoryService to look up profiles via channel.
+     */
+    public function resolveChannelIdentifier(string $channelName): ?string
+    {
+        return match ($channelName) {
+            'telegram' => $this->telegramUser?->telegram_user_id
+                ? (string) $this->telegramUser->telegram_user_id
+                : null,
+            default => null,
+        };
     }
 
     public function profiles(): HasMany

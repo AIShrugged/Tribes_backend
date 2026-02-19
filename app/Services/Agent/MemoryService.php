@@ -7,35 +7,30 @@ use App\Models\Channel;
 use App\Models\InsightProfile;
 use App\Models\InsightShortTerm;
 use App\Models\Profile;
-use App\Models\TelegramUser;
+use App\Models\User;
 use Illuminate\Support\Collection;
 
 class MemoryService
 {
     /**
-     * Compose memory context for LLM prompt from InsightShortTerm and InsightProfile
+     * Compose memory context for LLM prompt.
+     *
+     * @param User        $user        Internal application user
+     * @param string|null $channelName Channel name for profile resolution (e.g. 'telegram').
+     *                                 When null, profile is looked up directly by user_id.
      */
-    public function composeMemoryContext(TelegramUser $telegramUser): string
+    public function composeMemoryContext(User $user, ?string $channelName = null): string
     {
-        // 1. Resolve telegram profile (works for both linked and unlinked users)
-        $telegramChannelId = Channel::idFor('telegram');
-
-        $profile = $telegramChannelId
-            ? Profile::where('channel_id', $telegramChannelId)
-                ->where('channel_identifier', (string) $telegramUser->telegram_user_id)
-                ->first()
-            : null;
+        $profile = $this->resolveProfile($user, $channelName);
 
         if (! $profile) {
             return "## Previous Context\n\nNo previous memories. First interaction.";
         }
 
-        // 3. Read ShortTerm memory (all context types)
         $shortTermMemories = InsightShortTerm::where('profile_id', $profile->id)
             ->active()
             ->get();
 
-        // 4. Read Profile categories (long-term characteristics)
         $profiles = InsightProfile::where('profile_id', $profile->id)
             ->whereIn('category', [
                 InsightCategory::COMMUNICATION_STYLE,
@@ -43,8 +38,24 @@ class MemoryService
             ])
             ->get();
 
-        // 5. Format combined context
         return $this->formatContext($shortTermMemories, $profiles);
+    }
+
+    /**
+     * Resolve the Profile for a user, optionally through a specific channel.
+     */
+    private function resolveProfile(User $user, ?string $channelName): ?Profile
+    {
+        if (! $channelName) {
+            return Profile::where('user_id', $user->id)->first();
+        }
+
+        $channelId  = Channel::idFor($channelName);
+        $identifier = $user->resolveChannelIdentifier($channelName);
+
+        return $channelId && $identifier
+            ? Profile::where('channel_id', $channelId)->where('channel_identifier', $identifier)->first()
+            : null;
     }
 
     /**
@@ -54,19 +65,17 @@ class MemoryService
     {
         $lines = ["## Previous Context\n"];
 
-        // Short-term memories by context type
         if ($shortTermMemories->isNotEmpty()) {
             foreach ($shortTermMemories as $memory) {
                 if (! empty($memory->content['text'])) {
                     $contextLabel = str_replace('_', ' ', $memory->context_type->value);
-                    $lines[] = "### " . ucwords($contextLabel);
-                    $lines[] = $memory->content['text'];
-                    $lines[] = '';
+                    $lines[]      = '### ' . ucwords($contextLabel);
+                    $lines[]      = $memory->content['text'];
+                    $lines[]      = '';
                 }
             }
         }
 
-        // Long-term (stable characteristics)
         if ($profiles->isNotEmpty()) {
             $lines[] = '### What you know about this user:';
             foreach ($profiles as $profile) {
@@ -75,7 +84,6 @@ class MemoryService
             }
         }
 
-        // No memories at all
         if (count($lines) === 1) {
             return "## Previous Context\n\nNo previous memories. First interaction.";
         }

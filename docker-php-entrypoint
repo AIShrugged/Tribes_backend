@@ -1,67 +1,73 @@
 #!/bin/sh
-set -e;
+set -e
 
 command="$1"
 
+ensure_permissions() {
+  # storage и cache должны быть writable
+  mkdir -p /var/www/storage /var/www/bootstrap/cache || true
+  chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache || true
+}
+
+graceful_sleep() {
+  sleep "${GRACEFUL_SHUTDOWN_SECONDS:-10}"
+}
+
 case "$command" in
-  "backend" )
-
-    php-fpm -R
+  backend)
+    ensure_permissions
+    exec php-fpm -R
   ;;
-  "migration" )
-  
-    php artisan migrate
+
+  migration)
+    ensure_permissions
+    exec php artisan migrate --force --no-interaction
   ;;
-  "queue-worker" )
 
-    work=true
+  queue-worker)
+    ensure_permissions
 
-    function stop_scheduler() {
+    stop_worker() {
+      echo "Stopping queue worker..."
+      php artisan queue:restart || true
+      graceful_sleep
+      exit 0
+    }
+
+    trap "" SIGPIPE
+    trap stop_worker SIGTERM SIGINT SIGHUP
+
+    exec php artisan queue:work \
+      --sleep=1 \
+      --tries=3 \
+      --timeout=90 \
+      --no-interaction
+  ;;
+
+  schedule)
+    ensure_permissions
+
+    stop_scheduler() {
       echo "Stopping scheduler..."
-      work=false
-      php artisan queue:restart
-      sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
+      php artisan schedule:interrupt >/dev/null 2>&1 || true
+      graceful_sleep
       exit 0
     }
 
-    # handle graceful shutdown
     trap "" SIGPIPE
     trap stop_scheduler SIGTERM SIGINT SIGHUP
 
-    while $work; do
-      echo "Running queue"
-      php artisan queue:work
-      sleep 1
-    done  
+    # Рекомендованный вариант для контейнера (Laravel 9+)
+    exec php artisan schedule:work --no-interaction
   ;;
-  "schedule" )
 
-    work=true
-
-    function stop_scheduler() {
-      echo "Stopping schedule..."
-      work=false
-      php artisan schedule:interrupt
-      sleep ${GRACEFUL_SHUTDOWN_SECONDS:-10}
-      exit 0
-    }
-
-    # handle graceful shutdown
-    trap "" SIGPIPE
-    trap stop_scheduler SIGTERM SIGINT SIGHUP
-
-    while $work; do
-      echo "Running schedule"
-      php artisan schedule:run --verbose --no-interaction &
-      sleep 60
-    done
-  ;; 
-  "nginx" )
-    ln -sf /dev/stdout /var/log/nginx/access.log  
-    ln -sf /dev/stdout /var/log/nginx/access.log    
-    nginx -g "daemon off;"
+  nginx)
+    ln -sf /dev/stdout /var/log/nginx/access.log || true
+    ln -sf /dev/stderr /var/log/nginx/error.log || true
+    exec nginx -g "daemon off;"
   ;;
-  * )
+
+  *)
     exec "$@"
-  ;;  
+  ;;
 esac
