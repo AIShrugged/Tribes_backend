@@ -3,13 +3,17 @@
 namespace App\Services\Agent\Tools;
 
 use App\Enums\InsightContextType;
+use App\Models\Channel;
 use App\Models\InsightShortTerm;
+use App\Models\Profile;
 use App\Models\User;
 
 class UpdateMemoryTool implements ToolInterface
 {
-    public function __construct(private readonly User $user)
-    {
+    public function __construct(
+        private readonly User $user,
+        private readonly string $channel = 'web',
+    ) {
     }
 
     public function getName(): string
@@ -63,14 +67,21 @@ class UpdateMemoryTool implements ToolInterface
             ];
         }
 
-        $email = $this->user->email;
-        if (! $email) {
-            return ['success' => false, 'error' => 'User has no email. Cannot save memory.'];
+        $channelId  = Channel::idFor($this->channel);
+        $identifier = $this->user->resolveChannelIdentifier($this->channel);
+
+        if (! $channelId || ! $identifier) {
+            return ['success' => false, 'error' => "Cannot resolve channel profile for channel '{$this->channel}'."];
         }
 
         try {
+            $profile = Profile::firstOrCreate(
+                ['channel_id' => $channelId, 'channel_identifier' => $identifier],
+                ['user_id' => $this->user->id]
+            );
+
             InsightShortTerm::updateOrCreate(
-                ['email' => $email, 'context_type' => $validContextType],
+                ['profile_id' => $profile->id, 'context_type' => $validContextType],
                 ['content' => ['text' => $memoryText], 'expires_at' => now()->addMonths(3)]
             );
 

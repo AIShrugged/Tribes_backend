@@ -76,7 +76,8 @@ class User extends Authenticatable
             'telegram' => $this->telegramUser?->telegram_user_id
                 ? (string) $this->telegramUser->telegram_user_id
                 : null,
-            default => null,
+            'web'     => (string) $this->id,
+            default   => null,
         };
     }
 
