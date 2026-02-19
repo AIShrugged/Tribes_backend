@@ -1,6 +1,5 @@
 FROM third-party-registry.fabit.ru/docker.io/library/php:8.3-fpm-alpine3.21
 
-# Системные зависимости
 RUN apk add --no-cache \
   git unzip curl \
   postgresql-dev \
@@ -8,41 +7,38 @@ RUN apk add --no-cache \
   nodejs npm \
   ca-certificates
 
-# PHP extensions (стандартные)
 RUN docker-php-ext-install pdo pdo_pgsql bcmath zip
 
-# Установка PHP Redis (phpredis)
 RUN apk add --no-cache $PHPIZE_DEPS \
   && pecl install redis \
   && docker-php-ext-enable redis \
   && apk del $PHPIZE_DEPS
 
-# Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
 
-# --- Composer deps (кешируется) ---
-# Сначала копируем только composer.* чтобы работал кеш слоёв
+# Composer deps (кешируется) — НО без artisan scripts
 COPY composer.json composer.lock ./
-RUN php -v && composer -V && php -m \
-  && COMPOSER_MEMORY_LIMIT=-1 composer install -vvv \
-      --no-interaction \
-      --prefer-dist \
-      --optimize-autoloader
+RUN COMPOSER_MEMORY_LIMIT=-1 composer install \
+    --no-interaction \
+    --prefer-dist \
+    --optimize-autoloader \
+    --no-scripts
 
-# --- NPM deps (кешируется) ---
-# Также сначала копируем только package.* для кеша
+# NPM deps (кешируется)
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# --- Копируем проект ---
+# Копируем проект
 COPY --chown=www-data:www-data . .
+
+# Теперь можно выполнить package discovery (уже есть artisan)
+RUN php artisan package:discover --ansi || true
 
 # Сборка ассетов (если Vite)
 RUN npm run build || true
 
-# Права (Laravel)
 RUN mkdir -p storage bootstrap/cache \
   && chown -R www-data:www-data storage bootstrap/cache
 
