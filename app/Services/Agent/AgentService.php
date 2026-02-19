@@ -86,7 +86,19 @@ class AgentService
 
         // Register user-specific tools (always needed regardless of channel)
         $this->toolRegistry->register(new Tools\UpdateMemoryTool($user, $channel ?? 'web'));
-        $this->toolRegistry->register(new Tools\ExecuteSqlQueryTool($user->id));
+
+        // Register context-free tools (available for all channels)
+        $this->toolRegistry->register(new Tools\GetUserInfoTool);
+        $this->toolRegistry->register(new Tools\SearchMeetingsTool);
+        $this->toolRegistry->register(new Tools\GetMeetingSummaryTool);
+        $this->toolRegistry->register(new Tools\GetMeetingTasksTool);
+        $this->toolRegistry->register(new Tools\GetFollowupTool);
+        $this->toolRegistry->register(new Tools\GetExtractedFactsTool);
+        $this->toolRegistry->register(new Tools\GetUserInsightsTool);
+        $this->toolRegistry->register(new Tools\GetInsightProfileHistoryTool);
+        $this->toolRegistry->register(new Tools\GetTeamMembersTool);
+        $this->toolRegistry->register(new Tools\GetRelationshipInsightTool);
+        $this->toolRegistry->register(new Tools\GetUserShortTermMemoryTool);
 
         // Load memory context
         $memoryContext = $this->memoryService->composeMemoryContext($user, $channel);

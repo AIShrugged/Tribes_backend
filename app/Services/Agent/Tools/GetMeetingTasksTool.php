@@ -4,6 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\MeetingTask;
 use App\Models\Participant;
+use Illuminate\Support\Carbon;
 
 /**
  * Retrieves action items and tasks assigned during a meeting.
@@ -45,6 +46,14 @@ class GetMeetingTasksTool implements ToolInterface
                     'type' => 'string',
                     'description' => 'Optional: filter tasks by status. Common values: open, in_progress, done, cancelled.',
                 ],
+                'due_before' => [
+                    'type' => 'string',
+                    'description' => 'Optional: filter tasks with due_date on or before this date (YYYY-MM-DD).',
+                ],
+                'due_after' => [
+                    'type' => 'string',
+                    'description' => 'Optional: filter tasks with due_date on or after this date (YYYY-MM-DD).',
+                ],
             ],
             'required' => ['calendar_event_id'],
         ];
@@ -57,6 +66,8 @@ class GetMeetingTasksTool implements ToolInterface
         $eventId   = $parameters['calendar_event_id'] ?? null;
         $profileId = $parameters['profile_id'] ?? null;
         $status    = $parameters['status'] ?? null;
+        $dueBefore = $parameters['due_before'] ?? null;
+        $dueAfter  = $parameters['due_after'] ?? null;
 
         if (! $eventId) {
             return [
@@ -83,6 +94,14 @@ class GetMeetingTasksTool implements ToolInterface
 
         if ($status) {
             $query->where('status', $status);
+        }
+
+        if ($dueBefore) {
+            $query->where('due_date', '<=', Carbon::parse($dueBefore)->toDateString());
+        }
+
+        if ($dueAfter) {
+            $query->where('due_date', '>=', Carbon::parse($dueAfter)->toDateString());
         }
 
         $tasks = $query->orderByRaw('due_date ASC NULLS LAST')->get();

@@ -17,7 +17,16 @@ class ExecuteSqlQueryTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Execute a read-only SQL SELECT query to retrieve data from the database. Only SELECT statements are allowed. You can query tables: users, organizations, teams, sources, calendar_events, participants, transcript_entries, followups, methodologies, profiles. Use __ACCESSIBLE_USER_IDS__ placeholder when querying data tables (followups, sources, calendar_events) to filter by user access.';
+        return 'Execute a read-only SQL SELECT query to retrieve data from the database. Only SELECT statements are allowed. '
+            . 'Available tables: users, organizations, organization_user (pivot), teams, team_user (pivot), '
+            . 'profiles, channels, sources, source_oauths, '
+            . 'calendar_events (columns: id, source_id, external_id, platform, starts_at, ends_at, title, description, required_bot), '
+            . 'participants (columns: id, calendar_event_id, profile_id, name), '
+            . 'transcript_entries, meeting_summaries, meeting_tasks (columns: id, calendar_event_id, profile_id, title, description, assignee_name, due_date, status), '
+            . 'followups, methodologies, '
+            . 'insight_sources, insight_items, insight_profiles, insight_profile_history, insight_relationships, insight_short_term. '
+            . 'Use __ACCESSIBLE_USER_IDS__ placeholder when querying followups, sources, or calendar_events to filter by user access. '
+            . 'Example: SELECT id, title, starts_at, ends_at FROM calendar_events WHERE source_id IN (SELECT id FROM sources WHERE user_id IN (__ACCESSIBLE_USER_IDS__)) ORDER BY starts_at DESC LIMIT 10';
     }
 
     public function getParameters(): array
