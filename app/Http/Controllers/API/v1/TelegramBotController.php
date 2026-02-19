@@ -37,26 +37,6 @@ class TelegramBotController extends Controller
     public function __construct()
     {
         $this->telegram = new Api(config('telegram.bot_token'));
-        $this->initializeAgentService();
-    }
-
-    private function initializeAgentService(): void
-    {
-        $this->toolRegistry = new ToolRegistry;
-        $this->toolRegistry->register(new GetUserInfoTool);
-        $this->toolRegistry->register(new GetExtractedFactsTool);
-        $this->toolRegistry->register(new GetMeetingSummaryTool);
-        // $this->toolRegistry->register(new GetTranscriptTool); // TODO: re-enable after testing
-        $this->toolRegistry->register(new SearchMeetingsTool);
-        $this->toolRegistry->register(new GetTeamMembersTool);
-        $this->toolRegistry->register(new GetUserInsightsTool);
-        $this->toolRegistry->register(new GetUserShortTermMemoryTool);
-        $this->toolRegistry->register(new GetRelationshipInsightTool);
-        $this->toolRegistry->register(new GetMeetingTasksTool);
-        $this->toolRegistry->register(new GetFollowupTool);
-        $this->toolRegistry->register(new GetInsightProfileHistoryTool);
-
-        $this->agentService = new AgentService($this->toolRegistry, new MemoryService);
     }
 
     /**

@@ -35,11 +35,11 @@ class GetChatHistoryTool implements ToolInterface
                 ],
                 'since' => [
                     'type' => 'string',
-                    'description' => 'Get messages starting from this date (YYYY-MM-DD format)',
+                    'description' => 'Get messages starting from this datetime. Accepts "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", or ISO 8601.',
                 ],
                 'until' => [
                     'type' => 'string',
-                    'description' => 'Get messages until this date (YYYY-MM-DD format)',
+                    'description' => 'Get messages until this datetime (end of day if only date given). Accepts "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", or ISO 8601.',
                 ],
             ],
             'required' => [],
@@ -67,12 +67,15 @@ class GetChatHistoryTool implements ToolInterface
 
         if (!empty($parameters['until'])) {
             try {
-                $until = Carbon::parse($parameters['until'])->endOfDay();
+                $until = Carbon::parse($parameters['until']);
+                if (!str_contains($parameters['until'], ':')) {
+                    $until = $until->endOfDay();
+                }
                 $query->where('created_at', '<=', $until);
             } catch (\Exception $e) {
                 return [
                     'success' => false,
-                    'error' => 'Invalid until date format. Use YYYY-MM-DD',
+                    'error' => 'Invalid until date format. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS',
                 ];
             }
         }
