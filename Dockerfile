@@ -23,11 +23,11 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 
 # Composer deps (кешируется)
-COPY composer.json composer.lock /var/www/
-RUN composer install \
---no-interaction \
---prefer-dist \
---optimize-autoloader
+RUN php -v && composer -V && php -m \
+ && COMPOSER_MEMORY_LIMIT=-1 composer install -vvv \
+    --no-interaction \
+    --prefer-dist \
+    --optimize-autoloader
 
 # NPM deps
 COPY package.json package-lock.json* /var/www/

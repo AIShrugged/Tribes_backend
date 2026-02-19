@@ -22,6 +22,68 @@ services:
       - app
     command: ["backend"]
 
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www
+    environment:
+      APP_ENV: "${APP_ENV}"
+      APP_DEBUG: "${APP_DEBUG}"
+      APP_KEY: "${APP_KEY}"
+      APP_URL: "${APP_URL}"
+
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app
+    command: ["queue-worker"]
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www
+    environment:
+      APP_ENV: "${APP_ENV}"
+      APP_DEBUG: "${APP_DEBUG}"
+      APP_KEY: "${APP_KEY}"
+      APP_URL: "${APP_URL}"
+
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app
+    command: ["schedule"]
+    restart: unless-stopped
+
   nginx:
     build:
       context: .
@@ -46,6 +108,12 @@ services:
       - "traefik.http.routers.devapi-secure.middlewares=gzip"
       - "traefik.http.routers.devapi-secure.service=devapi-svc"
       - "traefik.http.services.devapi-svc.loadbalancer.server.port=80"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - app
 
   postgres:
     image: postgres:16
