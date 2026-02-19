@@ -1,33 +1,51 @@
 FROM third-party-registry.fabit.ru/docker.io/library/php:8.3-fpm-alpine3.21
 
-# Установка системных пакетов
-RUN apk update && apk --no-cache add \
-    nginx \
-    git \
-    unzip \
-    curl \
-    postgresql-dev \
-    libzip-dev \
-    zip \
-    gnupg \
-    ca-certificates \
-    nodejs \
-    npm
+# Системные зависимости
+RUN apk add --no-cache \
+git unzip curl \
+postgresql-dev \
+libzip-dev zip \
+nodejs npm \
+ca-certificates
 
-# Установка PHP-расширений
+# PHP extensions (стандартные)
 RUN docker-php-ext-install pdo pdo_pgsql bcmath zip
 
-# Установка Composer
+# Установка PHP Redis (phpredis)
+RUN apk add --no-cache $PHPIZE_DEPS \
+&& pecl install redis \
+&& docker-php-ext-enable redis \
+&& apk del $PHPIZE_DEPS
+
+# Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY --chmod=755 ./docker-php-entrypoint /var/www/docker-php-entrypoint
-COPY --chown=www-data:www-data . /var/www
-#COPY .env.example /var/www/.env
+
 WORKDIR /var/www
-RUN /usr/bin/composer install
-#RUN mkdir /var/run/php
-RUN npm install
+
+# Composer deps (кешируется)
+COPY composer.json composer.lock /var/www/
+RUN composer install \
+--no-interaction \
+--prefer-dist \
+--optimize-autoloader
+
+# NPM deps
+COPY package.json package-lock.json* /var/www/
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+# Копируем проект
+COPY --chown=www-data:www-data . /var/www
+
+# Сборка ассетов (если Vite)
+RUN npm run build || true
+
+# Права
+RUN mkdir -p storage bootstrap/cache \
+&& chown -R www-data:www-data storage bootstrap/cache
+
+COPY --chmod=755 ./docker-php-entrypoint /var/www/docker-php-entrypoint
 
 EXPOSE 9000
 
 ENTRYPOINT ["/var/www/docker-php-entrypoint"]
-CMD [""]
+CMD ["backend"]

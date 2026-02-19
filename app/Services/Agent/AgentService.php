@@ -2,10 +2,11 @@
 
 namespace App\Services\Agent;
 
-use App\Models\TelegramChatMessage;
-use App\Models\TelegramUser;
+use App\Models\Profile;
+use App\Models\User;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\OpenRouterClient;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -15,7 +16,7 @@ class AgentService
 
     private const MODEL = 'anthropic/claude-3.5-sonnet';
 
-    private const STOP_KEY_PREFIX = 'telegram_agent_stop_';
+    private const STOP_KEY_PREFIX = 'agent_stop_';
 
     /** Maximum characters for a single tool result before truncation */
     private const MAX_TOOL_RESULT_CHARS = 15000;
@@ -42,90 +43,81 @@ class AgentService
     }
 
     /**
-     * Request stop for a telegram user's current processing
+     * Request stop for a user's current agent processing.
      */
-    public function requestStop(int $telegramUserId): void
+    public function requestStop(int $userId): void
     {
-        Cache::put(self::STOP_KEY_PREFIX.$telegramUserId, true, 60);
-        Log::info('Stop requested for telegram user', ['telegram_user_id' => $telegramUserId]);
+        Cache::put(self::STOP_KEY_PREFIX.$userId, true, 60);
+        Log::info('Stop requested for user', ['user_id' => $userId]);
     }
 
     /**
-     * Check if stop was requested for this user
+     * Check if stop was requested for this user.
      */
-    private function isStopRequested(int $telegramUserId): bool
+    private function isStopRequested(int $userId): bool
     {
-        return Cache::get(self::STOP_KEY_PREFIX.$telegramUserId, false);
+        return Cache::get(self::STOP_KEY_PREFIX.$userId, false);
     }
 
     /**
-     * Clear stop flag for user
+     * Clear stop flag for user.
      */
-    private function clearStopFlag(int $telegramUserId): void
+    private function clearStopFlag(int $userId): void
     {
-        Cache::forget(self::STOP_KEY_PREFIX.$telegramUserId);
+        Cache::forget(self::STOP_KEY_PREFIX.$userId);
     }
 
     /**
-     * Process a message from user through the agent loop
+     * Process a message through the agent loop.
+     *
+     * Channel-agnostic: works for web chat, Telegram, or any other channel.
+     * The caller is responsible for persisting messages and registering
+     * channel-specific tools (e.g. GetChatHistoryTool for Telegram) into
+     * the ToolRegistry before calling this method.
+     *
+     * @param User        $user    Authenticated application user
+     * @param Collection  $history Recent chat history (ChatMessage / any model with role+content)
+     * @param string      $content The new user message
+     * @param string|null $channel Channel name for memory resolution (e.g. 'telegram'). Null = web.
      */
-    public function processMessage(int $telegramUserId, string $userMessage, ?string $username = null, ?int $telegramChatId = null): string
+    public function processMessage(User $user, Collection $history, string $content, ?string $channel = null): string
     {
-        // Clear any previous stop flags
-        $this->clearStopFlag($telegramUserId);
+        $this->clearStopFlag($user->id);
 
-        // Find or create telegram user
-        $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
-
-        // Register UpdateMemoryTool for this user
-        $updateMemoryTool = new Tools\UpdateMemoryTool($telegramUserId);
-        $this->toolRegistry->register($updateMemoryTool);
-
-        // Register ExecuteSqlQueryTool for this user
-        $executeSqlQueryTool = new Tools\ExecuteSqlQueryTool($telegramUserId);
-        $this->toolRegistry->register($executeSqlQueryTool);
-
-        // Register GetChatHistoryTool for this chat
-        if ($telegramChatId) {
-            $getChatHistoryTool = new Tools\GetChatHistoryTool($telegramChatId);
-            $this->toolRegistry->register($getChatHistoryTool);
-        }
+        // Register user-specific tools (always needed regardless of channel)
+        $this->toolRegistry->register(new Tools\UpdateMemoryTool($user));
+        $this->toolRegistry->register(new Tools\ExecuteSqlQueryTool($user->id));
 
         // Load memory context
-        $memoryContext = $this->memoryService->composeMemoryContext($telegramUser);
+        $memoryContext = $this->memoryService->composeMemoryContext($user, $channel);
 
         // Prepare system prompt
-        $systemPrompt = $this->getSystemPrompt($memoryContext, $telegramUser);
+        $systemPrompt = $this->getSystemPrompt($memoryContext, $user);
 
         // Inject current date/time into user message so the model reliably knows the date
         $now = now()->timezone('Europe/Moscow');
         $datePrefix = "[Current date: {$now->format('Y-m-d')}, time: {$now->format('H:i')} MSK]";
 
         // Inject current user identity so the model can't miss it
-        $userId    = $telegramUser?->user?->id;
-        $profileId = $userId ? \App\Models\Profile::where('user_id', $userId)->value('id') : null;
-        $userName  = $telegramUser?->user?->name ?? $telegramUser?->telegram_username ?? null;
+        $userId    = $user->id;
+        $profileId = Profile::where('user_id', $userId)->value('id');
+        $userName  = $user->name ?? 'Unknown';
         $userPrefix = $userName && $profileId
             ? "[Sender: {$userName} (user_id={$userId}, profile_id={$profileId})]"
             : '';
 
-        // Prepare initial messages (without system - it's passed separately)
-        $messages = [
-            [
-                'role' => 'user',
-                'content' => trim("{$datePrefix} {$userPrefix}") . "\n\n{$userMessage}",
-            ],
-        ];
-
-        // Save user message to chat history
-        if ($telegramChatId) {
-            TelegramChatMessage::create([
-                'telegram_chat_id' => $telegramChatId,
-                'telegram_user_id' => $telegramUser->telegram_user_id,
-                'role' => 'user',
-                'content' => $userMessage,
-            ]);
+        // Build messages from history + current message
+        $messages = [];
+        foreach ($history as $msg) {
+            $messages[] = [
+                'role'    => $msg->role === 'user' ? 'user' : 'assistant',
+                'content' => $msg->content,
+            ];
         }
+        $messages[] = [
+            'role'    => 'user',
+            'content' => trim("{$datePrefix} {$userPrefix}") . "\n\n{$content}",
+        ];
 
         // Get available tools
         $tools = $this->toolRegistry->getToolsForLLM();
@@ -134,21 +126,22 @@ class AgentService
         $finalAnswer = null;
 
         Log::info('Agent loop started', [
-            'telegram_user_id' => $telegramUserId,
-            'message' => $userMessage,
-            'tools_count' => count($tools),
+            'user_id'              => $user->id,
+            'channel'              => $channel,
+            'message'              => $content,
+            'tools_count'          => count($tools),
             'system_prompt_length' => strlen($systemPrompt),
         ]);
 
         // Agent loop
         while ($iteration < self::MAX_ITERATIONS) {
             // Check if stop was requested
-            if ($this->isStopRequested($telegramUserId)) {
+            if ($this->isStopRequested($user->id)) {
                 Log::info('Agent loop stopped by user request', [
-                    'telegram_user_id' => $telegramUserId,
+                    'user_id'   => $user->id,
                     'iteration' => $iteration,
                 ]);
-                $this->clearStopFlag($telegramUserId);
+                $this->clearStopFlag($user->id);
 
                 return '⛔️ Processing stopped by your request.';
             }
@@ -156,7 +149,7 @@ class AgentService
             $iteration++;
 
             Log::info('Agent loop iteration', [
-                'iteration' => $iteration,
+                'iteration'      => $iteration,
                 'messages_count' => count($messages),
             ]);
 
@@ -201,8 +194,8 @@ class AgentService
 
                     // Execute each tool call
                     foreach ($assistantMessage['tool_calls'] as $toolCall) {
-                        $toolName = $toolCall['function']['name'] ?? null;
-                        $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?? [];
+                        $toolName   = $toolCall['function']['name'] ?? null;
+                        $toolArgs   = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?? [];
                         $toolCallId = $toolCall['id'] ?? 'unknown';
 
                         Log::info('Executing tool', [
@@ -215,29 +208,29 @@ class AgentService
                         if (! $tool) {
                             $toolResult = [
                                 'success' => false,
-                                'error' => "Tool '{$toolName}' not found",
+                                'error'   => "Tool '{$toolName}' not found",
                             ];
                         } else {
                             try {
                                 $toolResult = $tool->execute($toolArgs);
                             } catch (\Exception $e) {
                                 Log::error('Tool execution failed', [
-                                    'tool' => $toolName,
+                                    'tool'  => $toolName,
                                     'error' => $e->getMessage(),
                                 ]);
 
                                 $toolResult = [
                                     'success' => false,
-                                    'error' => $e->getMessage(),
+                                    'error'   => $e->getMessage(),
                                 ];
                             }
                         }
 
                         // Add tool result to messages (with truncation for large results)
                         $messages[] = [
-                            'role' => 'tool',
+                            'role'         => 'tool',
                             'tool_call_id' => $toolCallId,
-                            'content' => $this->truncateToolResult($toolResult, $toolName),
+                            'content'      => $this->truncateToolResult($toolResult, $toolName),
                         ];
 
                         // Validate tool result and add feedback if issues detected (Pattern 3)
@@ -246,7 +239,7 @@ class AgentService
                             $this->addValidationFeedback($messages, $validation, $toolName);
 
                             Log::info('Tool validation detected issues', [
-                                'tool' => $toolName,
+                                'tool'   => $toolName,
                                 'issues' => $validation['issues'],
                             ]);
                         }
@@ -279,8 +272,8 @@ class AgentService
             } catch (\Exception $e) {
                 Log::error('Agent loop error', [
                     'iteration' => $iteration,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
+                    'error'     => $e->getMessage(),
+                    'trace'     => $e->getTraceAsString(),
                 ]);
 
                 return "Sorry, I encountered an error processing your request: {$e->getMessage()}";
@@ -299,18 +292,8 @@ class AgentService
             return "Sorry, I couldn't generate a response.";
         }
 
-        // Save assistant response to chat history
-        if ($telegramChatId && $finalAnswer) {
-            TelegramChatMessage::create([
-                'telegram_chat_id' => $telegramChatId,
-                'telegram_user_id' => null,
-                'role' => 'assistant',
-                'content' => $finalAnswer,
-            ]);
-        }
-
         Log::info('Agent loop completed', [
-            'iterations' => $iteration,
+            'iterations'          => $iteration,
             'final_answer_length' => strlen($finalAnswer),
         ]);
 
@@ -349,14 +332,14 @@ class AgentService
         }
 
         Log::info('Truncating large tool result', [
-            'tool' => $toolName,
+            'tool'          => $toolName,
             'original_size' => strlen($encoded),
-            'max_size' => self::MAX_TOOL_RESULT_CHARS,
+            'max_size'      => self::MAX_TOOL_RESULT_CHARS,
         ]);
 
         // For transcript tool — keep metadata, truncate entries
         if ($toolName === 'get_transcript' && is_array($toolResult) && isset($toolResult['transcript'])) {
-            $entries = $toolResult['transcript'];
+            $entries      = $toolResult['transcript'];
             $totalEntries = count($entries);
 
             // Keep first 10 and last 10 entries
@@ -369,8 +352,8 @@ class AgentService
                     [['speaker' => 'SYSTEM', 'text' => "[...{$totalEntries} entries total, " . ($totalEntries - $kept) . " omitted...]", 'timestamp' => null]],
                     $tail,
                 );
-                $toolResult['_truncated'] = true;
-                $toolResult['_total_entries'] = $totalEntries;
+                $toolResult['_truncated']      = true;
+                $toolResult['_total_entries']  = $totalEntries;
             }
 
             return json_encode($toolResult);
@@ -405,8 +388,8 @@ class AgentService
             $originalSize = strlen($messages[$i]['content'] ?? '');
             if ($originalSize > 200) { // Don't mask tiny results
                 $messages[$i]['content'] = json_encode([
-                    '_masked' => true,
-                    '_note' => 'Previous tool output omitted for brevity. Result was processed in earlier iteration.',
+                    '_masked'        => true,
+                    '_note'          => 'Previous tool output omitted for brevity. Result was processed in earlier iteration.',
                     '_original_size' => $originalSize,
                 ]);
             }
@@ -419,8 +402,8 @@ class AgentService
     private function enforceTokenBudget(array &$messages, ?string $systemPrompt): bool
     {
         $estimatedTokens = $this->estimateTokens($messages, $systemPrompt);
-        $warningLimit = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_WARNING_THRESHOLD);
-        $criticalLimit = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_CRITICAL_THRESHOLD);
+        $warningLimit    = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_WARNING_THRESHOLD);
+        $criticalLimit   = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_CRITICAL_THRESHOLD);
 
         if ($estimatedTokens > $criticalLimit) {
             // Last resort: mask everything except the very last tool result
@@ -430,7 +413,7 @@ class AgentService
             if ($estimatedTokens > $criticalLimit) {
                 Log::warning('Token budget critical — forcing loop end', [
                     'estimated_tokens' => $estimatedTokens,
-                    'critical_limit' => $criticalLimit,
+                    'critical_limit'   => $criticalLimit,
                 ]);
 
                 return false;
@@ -438,7 +421,7 @@ class AgentService
         } elseif ($estimatedTokens > $warningLimit) {
             Log::info('Token budget warning — masking old tool results', [
                 'estimated_tokens' => $estimatedTokens,
-                'warning_limit' => $warningLimit,
+                'warning_limit'    => $warningLimit,
             ]);
             $this->maskOldToolResults($messages, 1);
         }
@@ -456,7 +439,7 @@ class AgentService
 
         // Check 1: Explicit failure
         if (is_array($toolResult) && isset($toolResult['success']) && $toolResult['success'] === false) {
-            $error = $toolResult['error'] ?? 'Unknown error';
+            $error    = $toolResult['error'] ?? 'Unknown error';
             $issues[] = "Tool returned explicit failure: {$error}";
 
             // Provide hints based on tool type
@@ -487,9 +470,9 @@ class AgentService
 
         // Check 3: Missing expected fields
         $expectedFieldsByTool = [
-            'get_transcript' => ['event', 'transcript'],
+            'get_transcript'  => ['event', 'transcript'],
             'search_meetings' => ['success'],
-            'get_user_info' => ['success', 'user'],
+            'get_user_info'   => ['success', 'user'],
         ];
 
         if (isset($expectedFieldsByTool[$toolName]) && is_array($toolResult)) {
@@ -506,8 +489,8 @@ class AgentService
         }
 
         return [
-            'valid' => empty($issues),
-            'issues' => $issues,
+            'valid'               => empty($issues),
+            'issues'              => $issues,
             'requires_reflection' => ! empty($issues),
         ];
     }
@@ -527,21 +510,19 @@ class AgentService
         }
         $feedbackContent .= "\nConsider: Should you investigate this issue or try a different approach?";
 
-        // Add as a system-style message hint (will be part of the context)
         Log::info('Validation feedback generated', [
-            'tool' => $toolName,
+            'tool'         => $toolName,
             'issues_count' => count($validation['issues']),
         ]);
 
-        // We add this as additional context in the last tool message
-        // by enriching it with validation notes
+        // Enrich the last tool message with validation notes
         $lastMessageIndex = count($messages) - 1;
         if ($lastMessageIndex >= 0 && isset($messages[$lastMessageIndex]['role']) && $messages[$lastMessageIndex]['role'] === 'tool') {
             $originalContent = $messages[$lastMessageIndex]['content'];
-            $decoded = json_decode($originalContent, true);
+            $decoded         = json_decode($originalContent, true);
 
             if (is_array($decoded)) {
-                $decoded['_validation_feedback'] = $feedbackContent;
+                $decoded['_validation_feedback']        = $feedbackContent;
                 $messages[$lastMessageIndex]['content'] = json_encode($decoded);
             }
         }
@@ -555,7 +536,7 @@ class AgentService
     {
         // Extract last N tool calls
         $recentToolCalls = [];
-        $lookbackLimit = 6; // Check last 6 tool calls
+        $lookbackLimit   = 6; // Check last 6 tool calls
 
         foreach (array_reverse($messages) as $message) {
             if (count($recentToolCalls) >= $lookbackLimit) {
@@ -579,18 +560,18 @@ class AgentService
         // Check for exact repetition (same tool + same args)
         $callSignatures = [];
         foreach ($recentToolCalls as $call) {
-            $signature = $call['tool'].'::'.md5($call['args']);
+            $signature        = $call['tool'].'::'.md5($call['args']);
             $callSignatures[] = $signature;
         }
 
         // Count occurrences
         $signatureCounts = array_count_values($callSignatures);
-        $maxRepetitions = max($signatureCounts);
+        $maxRepetitions  = max($signatureCounts);
 
         if ($maxRepetitions >= 3) {
             // Same call repeated 3+ times
             $repeatedSignature = array_search($maxRepetitions, $signatureCounts);
-            $repeatedCall = null;
+            $repeatedCall      = null;
 
             foreach ($recentToolCalls as $call) {
                 if ($call['tool'].'::'.md5($call['args']) === $repeatedSignature) {
@@ -600,28 +581,28 @@ class AgentService
             }
 
             return [
-                'stuck' => true,
-                'pattern' => 'exact_repetition',
-                'tool' => $repeatedCall['tool'] ?? 'unknown',
+                'stuck'       => true,
+                'pattern'     => 'exact_repetition',
+                'tool'        => $repeatedCall['tool'] ?? 'unknown',
                 'repetitions' => $maxRepetitions,
-                'suggestion' => "The tool '{$repeatedCall['tool']}' has been called {$maxRepetitions} times with the same parameters. This suggests you're stuck in a loop. Try a completely different approach or tool.",
+                'suggestion'  => "The tool '{$repeatedCall['tool']}' has been called {$maxRepetitions} times with the same parameters. This suggests you're stuck in a loop. Try a completely different approach or tool.",
             ];
         }
 
         // Check for same tool different args (strategy not working)
-        $toolNames = array_map(fn ($call) => $call['tool'], $recentToolCalls);
-        $toolCounts = array_count_values($toolNames);
-        $maxToolRepetitions = max($toolCounts);
+        $toolNames            = array_map(fn ($call) => $call['tool'], $recentToolCalls);
+        $toolCounts           = array_count_values($toolNames);
+        $maxToolRepetitions   = max($toolCounts);
 
         if ($maxToolRepetitions >= 4) {
             $repeatedTool = array_search($maxToolRepetitions, $toolCounts);
 
             return [
-                'stuck' => true,
-                'pattern' => 'same_tool_different_params',
-                'tool' => $repeatedTool,
+                'stuck'       => true,
+                'pattern'     => 'same_tool_different_params',
+                'tool'        => $repeatedTool,
                 'repetitions' => $maxToolRepetitions,
-                'suggestion' => "The tool '{$repeatedTool}' has been tried {$maxToolRepetitions} times with different parameters but still not working. Consider using a different tool or asking the user for clarification.",
+                'suggestion'  => "The tool '{$repeatedTool}' has been tried {$maxToolRepetitions} times with different parameters but still not working. Consider using a different tool or asking the user for clarification.",
             ];
         }
 
@@ -638,8 +619,8 @@ class AgentService
         }
 
         Log::warning('Repetitive failure pattern detected', [
-            'pattern' => $detection['pattern'],
-            'tool' => $detection['tool'],
+            'pattern'     => $detection['pattern'],
+            'tool'        => $detection['tool'],
             'repetitions' => $detection['repetitions'],
         ]);
 
@@ -647,31 +628,27 @@ class AgentService
         $lastMessageIndex = count($messages) - 1;
         if ($lastMessageIndex >= 0 && isset($messages[$lastMessageIndex]['role']) && $messages[$lastMessageIndex]['role'] === 'tool') {
             $originalContent = $messages[$lastMessageIndex]['content'];
-            $decoded = json_decode($originalContent, true);
+            $decoded         = json_decode($originalContent, true);
 
             if (is_array($decoded)) {
-                $decoded['_repetition_warning'] = "🔄 REPETITION DETECTED: {$detection['suggestion']}";
+                $decoded['_repetition_warning']         = "🔄 REPETITION DETECTED: {$detection['suggestion']}";
                 $messages[$lastMessageIndex]['content'] = json_encode($decoded);
             }
         }
     }
 
-    private function getSystemPrompt(string $memoryContext, ?TelegramUser $telegramUser = null): string
+    private function getSystemPrompt(string $memoryContext, User $user): string
     {
-        $now = now()->timezone('Europe/Moscow');
+        $now         = now()->timezone('Europe/Moscow');
         $currentDate = $now->translatedFormat('l, d F Y');
         $currentTime = $now->format('H:i');
 
-        $userName  = $telegramUser?->user?->name ?? $telegramUser?->username ?? 'Unknown';
-        $userId    = $telegramUser?->user?->id ?? null;
-        $profileId = $userId ? \App\Models\Profile::where('user_id', $userId)->value('id') : null;
+        $userName  = $user->name ?? 'Unknown';
+        $userId    = $user->id;
+        $profileId = Profile::where('user_id', $userId)->value('id');
 
-        if ($userId) {
-            $profileHint = $profileId ? ", profile_id={$profileId}" : '';
-            $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call get_user_info for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call get_user_insights(profile_id={$profileId}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
-        } else {
-            $currentUserContext = "## Current User\n\nYou are talking to **{$userName}**.\n";
-        }
+        $profileHint        = $profileId ? ", profile_id={$profileId}" : '';
+        $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call get_user_info for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call get_user_insights(profile_id={$profileId}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
 
         return <<<PROMPT
 You are a helpful AI assistant integrated with a Telegram bot. You have access to various tools to help answer user questions.
