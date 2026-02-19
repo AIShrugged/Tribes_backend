@@ -85,7 +85,7 @@ class AgentService
         $this->clearStopFlag($user->id);
 
         // Register user-specific tools (always needed regardless of channel)
-        $this->toolRegistry->register(new Tools\UpdateMemoryTool($user));
+        $this->toolRegistry->register(new Tools\UpdateMemoryTool($user, $channel ?? 'web'));
         $this->toolRegistry->register(new Tools\ExecuteSqlQueryTool($user->id));
 
         // Load memory context

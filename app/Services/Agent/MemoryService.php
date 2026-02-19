@@ -46,9 +46,7 @@ class MemoryService
      */
     private function resolveProfile(User $user, ?string $channelName): ?Profile
     {
-        if (! $channelName) {
-            return Profile::where('user_id', $user->id)->first();
-        }
+        $channelName ??= 'web';
 
         $channelId  = Channel::idFor($channelName);
         $identifier = $user->resolveChannelIdentifier($channelName);

@@ -1,5 +1,5 @@
 <?php
-$token = '2|kKmXaxyuvzAtqySfit9koS5r2qWLNkLoL3BZNAD5b936b15f';
+$token = '5|WmRp1bK2seA6qsAEMqV2wigdZu8N6PUuHZ0YEoSpfc553050';
 $apiBase = '/api/v1';
 ?>
 <!DOCTYPE html>
