@@ -32,7 +32,7 @@ class TeamController extends Controller
     {
         Gate::authorize('viewAny', [Team::class, $organization]);
 
-        $teams = $organization->teams();
+        $teams = $organization->teams()->visibleFor($request->user(), $organization);
 
         $count = $teams->count();
 

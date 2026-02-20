@@ -34,9 +34,11 @@ class TelegramBotController extends Controller
 
     private ToolRegistry $toolRegistry;
 
-    public function __construct()
+    public function __construct(AgentService $agentService, ToolRegistry $toolRegistry)
     {
         $this->telegram = new Api(config('telegram.bot_token'));
+        $this->agentService = $agentService;
+        $this->toolRegistry = $toolRegistry;
     }
 
     /**

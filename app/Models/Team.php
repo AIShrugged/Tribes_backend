@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Exceptions\AppException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,6 +13,15 @@ use Illuminate\Support\Facades\DB;
 class Team extends Model
 {
     protected $guarded = [];
+
+    public function scopeVisibleFor(Builder $query, User $user, Organization $organization): Builder
+    {
+        if ($user->isOrganizationManager($organization)) {
+            return $query;
+        }
+
+        return $query->whereHas('users', fn (Builder $q) => $q->where('users.id', $user->id));
+    }
 
     public function organization(): BelongsTo
     {
