@@ -28,6 +28,10 @@ class AppServiceProvider extends ServiceProvider
 
         // Register Email Service
         $this->app->singleton(\App\Services\Email\EmailService::class);
+
+        // Agent singletons — ToolRegistry must be shared between AgentService and controllers
+        $this->app->singleton(\App\Services\Agent\Tools\ToolRegistry::class);
+        $this->app->singleton(\App\Services\Agent\AgentService::class);
     }
 
     /**
