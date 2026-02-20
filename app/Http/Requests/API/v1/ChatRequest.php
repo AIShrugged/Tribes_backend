@@ -23,18 +23,6 @@ class ChatRequest extends ApiResourceRequest
         ];
     }
 
-    protected function prepareForValidation(): void
-    {
-        if ($this->route('chat')) {
-            $this->merge(['chat_id' => (int) $this->route('chat')]);
-        }
-    }
-
-    public function getChatId(): int
-    {
-        return $this->chat_id;
-    }
-
     public function getTitle(): ?string
     {
         return $this->input('title');
