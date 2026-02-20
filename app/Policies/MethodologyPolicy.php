@@ -15,7 +15,7 @@ class MethodologyPolicy
      */
     public function viewAny(User $user, Organization $organization): bool
     {
-        return $user->isOrganizationManager($organization);
+        return $user->isOrganizationMember($organization);
     }
 
     /**
