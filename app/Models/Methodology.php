@@ -20,6 +20,27 @@ class Methodology extends Model
         });
     }
 
+    public function scopeVisibleFor(Builder $query, User $user, Organization $organization): Builder
+    {
+        if ($user->isOrganizationManager($organization)) {
+            return $query->where(function (Builder $q) use ($organization) {
+                $q->where('organization_id', $organization->id)
+                    ->orWhere('is_default', true);
+            });
+        }
+
+        return $query->where(function (Builder $q) use ($user, $organization) {
+            $q->where('is_default', true)
+                ->orWhere(function (Builder $q) use ($user, $organization) {
+                    $q->where('organization_id', $organization->id)
+                        ->whereHas('teams', fn (Builder $q) => $q->whereHas(
+                            'users',
+                            fn (Builder $q) => $q->where('users.id', $user->id)
+                        ));
+                });
+        });
+    }
+
     public function followups(): HasMany
     {
         return $this->hasMany(Followup::class);

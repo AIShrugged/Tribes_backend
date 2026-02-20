@@ -34,11 +34,7 @@ class MethodologyController extends Controller
     {
         Gate::authorize('viewAny', [Methodology::class, $organization]);
 
-        $methodologies = $organization->methodologies()
-            ->orWhere(function ($q) {
-                $q->whereNull('organization_id')
-                    ->where('is_default', true);
-            });
+        $methodologies = Methodology::visibleFor($request->user(), $organization);
 
         $count = $methodologies->count();
 
