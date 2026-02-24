@@ -6,20 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
-use App\Services\Agent\MemoryService;
 use App\Services\Agent\Tools\GetChatHistoryTool;
-use App\Services\Agent\Tools\GetExtractedFactsTool;
-use App\Services\Agent\Tools\GetFollowupTool;
-use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
-use App\Services\Agent\Tools\GetMeetingSummaryTool;
-use App\Services\Agent\Tools\GetMeetingTasksTool;
-use App\Services\Agent\Tools\GetRelationshipInsightTool;
-use App\Services\Agent\Tools\GetTeamMembersTool;
-use App\Services\Agent\Tools\GetTranscriptTool;
-use App\Services\Agent\Tools\GetUserInfoTool;
-use App\Services\Agent\Tools\GetUserInsightsTool;
-use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
-use App\Services\Agent\Tools\SearchMeetingsTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -49,7 +36,7 @@ class TelegramBotController extends Controller
         try {
             $update = $this->telegram->getWebhookUpdate();
 
-            if ($message = $update->getMessage()) {
+            if ($update->isType('message') && ($message = $update->getMessage())) {
                 $chatId          = $message->getChat()->getId();
                 $chatType        = $message->getChat()->getType();
                 $text            = $message->getText();
