@@ -16,12 +16,31 @@ use Illuminate\Support\Facades\Auth;
 class ParticipantController extends Controller
 {
     /**
-     * Get participants of calendar event
+     * List participants
+     *
+     * Returns a paginated list of participants for a calendar event.
+     * The total count is returned in the `Items-Count` response header.
      *
      * @authenticated
      *
-     * @param ParticipantRequest $request
-     * @return ApiResponse
+     * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 1,
+     *       "calendar_event_id": 5,
+     *       "profile": {"id": 3, "channel": "GOOGLE", "channel_identifier": "alice@example.com", "user_id": 1},
+     *       "name": "Alice Johnson"
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 404 scenario="Not Found" {"message": "No query results for model [CalendarEvent] 5"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function index(ParticipantRequest $request): ApiResponse
     {
@@ -39,12 +58,29 @@ class ParticipantController extends Controller
     }
 
     /**
-     * Attach event participant to profile
+     * Assign profile to participant
+     *
+     * Links a meeting participant to an existing contact profile.
      *
      * @authenticated
      *
-     * @param ParticipantRequest $request
-     * @return ApiResponse
+     * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     * @urlParam participant_id integer required The Participant ID. Example: 1
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": {
+     *     "id": 1,
+     *     "calendar_event_id": 5,
+     *     "profile": {"id": 3, "channel": "GOOGLE", "channel_identifier": "alice@example.com", "user_id": 1},
+     *     "name": "Alice Johnson"
+     *   },
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 404 scenario="Not Found" {"message": "No query results for model [Participant] 1"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function setProfile(ParticipantRequest $request): ApiResponse
     {

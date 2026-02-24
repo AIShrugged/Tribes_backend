@@ -78,8 +78,6 @@ class UserIdentityController extends Controller
      *
      * @authenticated
      *
-     * @bodyParam channel string required The channel name. Allowed: `google_calendar`, `telegram`, `zoom`. Example: telegram
-     * @bodyParam identifier string required The identity on that channel (email, Telegram user ID, etc.). Example: 123456789
      *
      * @response 200 scenario="Linked (or already linked to this user)" {
      *   "success": true,

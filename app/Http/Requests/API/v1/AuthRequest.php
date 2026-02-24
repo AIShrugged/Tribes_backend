@@ -35,4 +35,40 @@ class AuthRequest extends FormRequest
     {
         return $this->input('invite');
     }
+
+    public function bodyParameters(): array
+    {
+        if ($this->route()?->getName() === 'auth.register') {
+            return [
+                'name'     => [
+                    'description' => 'Full name of the user.',
+                    'example'     => 'Alice Johnson',
+                ],
+                'email'    => [
+                    'description' => 'Email address.',
+                    'example'     => 'alice@example.com',
+                ],
+                'password' => [
+                    'description' => 'Password (min 8 characters).',
+                    'example'     => 'secret123',
+                ],
+                'invite'   => [
+                    'description' => 'Invite token from a team invitation email.',
+                    'example'     => 'abc123xyz',
+                ],
+            ];
+        }
+
+        return [
+            'email'    => [
+                'description' => 'Email address.',
+                'example'     => 'alice@example.com',
+            ],
+            'password' => [
+                'description' => 'Password.',
+                'example'     => 'secret123',
+            ],
+        ];
+    }
+
 }

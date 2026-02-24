@@ -24,8 +24,6 @@ class MethodologyController extends Controller
      * Returns a paginated list of methodologies for the given organization.
      *
      * @urlParam organization integer required The organization ID. Example: 10
-     * @queryParam offset integer The number of items to skip. Example: 0
-     * @queryParam limit integer The number of items to return. Example: 25
      *
      * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Scrum","text":"..."}],"meta":{"count":1}}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
@@ -53,8 +51,6 @@ class MethodologyController extends Controller
      * Creates a new methodology under the given organization and dispatches a background job
      * to generate its scheme.
      *
-     * @bodyParam name string required The methodology name. Example: Scrum
-     * @bodyParam text string required The methodology description text. Example: "A lightweight agile framework..."
      *
      * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Scrum","text":"..."}}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
@@ -114,8 +110,6 @@ class MethodologyController extends Controller
      * This endpoint is blocked if the methodology is default or is used by follow-ups.
      *
      * @urlParam methodology integer required The methodology ID. Example: 1
-     * @bodyParam name string required The methodology name. Example: Kanban
-     * @bodyParam text string required The methodology description text. Example: "Visual workflow management..."
      *
      * @response 200 scenario="OK" {"success":true,"data":{"id":1,"name":"Kanban","text":"..."}}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}

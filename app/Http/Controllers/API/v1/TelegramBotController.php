@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 use Telegram\Bot\Exceptions\TelegramSDKException;
 
+/**
+ * @hideFromAPIDocumentation
+ */
 class TelegramBotController extends Controller
 {
     private Api $telegram;

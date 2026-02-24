@@ -18,12 +18,31 @@ class ProfileController extends Controller
 {
 
     /**
-     * Get profiles associated with calendar event
+     * List profiles for calendar event
+     *
+     * Returns a paginated list of contact profiles associated with a calendar event.
+     * The total count is returned in the `Items-Count` response header.
      *
      * @authenticated
      *
-     * @param ProfileRequest $request
-     * @return ApiResponse
+     * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 3,
+     *       "channel": "GOOGLE",
+     *       "channel_identifier": "alice@example.com",
+     *       "user_id": 1
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 404 scenario="Not Found" {"message": "No query results for model [CalendarEvent] 5"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function index(ProfileRequest $request): ApiResponse
     {

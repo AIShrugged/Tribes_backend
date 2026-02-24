@@ -17,6 +17,27 @@ use Knuckles\Scribe\Attributes\Group;
 #[Group('Authentication')]
 class AuthController extends Controller
 {
+    /**
+     * Register
+     *
+     * Create a new user account. Returns an auth token on success.
+     * If an invite token is provided and valid, the user is added to the team
+     * and the email is marked as verified without sending a verification email.
+     *
+     *
+     * @response 201 scenario="Registered (standard)" {
+     *   "token": "1|abc123token",
+     *   "email_verification_sent": true
+     * }
+     * @response 201 scenario="Registered via invite" {
+     *   "token": "1|abc123token",
+     *   "email_verification_sent": false,
+     *   "invite_accepted": true,
+     *   "team_id": 2,
+     *   "organization_id": 1
+     * }
+     * @response 409 scenario="User already exists" {"message": "User already exists."}
+     */
     public function register(
         AuthRequest $request,
         EmailVerificationService $emailVerificationService,
@@ -73,6 +94,16 @@ class AuthController extends Controller
         return response()->json($response, 201);
     }
 
+    /**
+     * Login
+     *
+     * Authenticate with email and password. Returns an auth token on success.
+     * All previous tokens for the user are revoked before issuing a new one.
+     *
+     *
+     * @response 201 scenario="OK" {"token": "1|abc123token"}
+     * @response 401 scenario="Invalid credentials" {"message": "Invalid credentials"}
+     */
     public function login(AuthRequest $request): JsonResponse
     {
         $user = User::where('email', $request->getEmail())->first();
@@ -88,6 +119,14 @@ class AuthController extends Controller
         return response()->json(['token' => $token], 201);
     }
 
+    /**
+     * Logout
+     *
+     * Revoke the current access token.
+     *
+     * @response 204 scenario="OK" {"message": "Logged out"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
+     */
     #[Authenticated]
     public function logout(Request $request): JsonResponse
     {

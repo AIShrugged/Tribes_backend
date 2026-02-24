@@ -23,4 +23,19 @@ class LinkIdentityRequest extends FormRequest
     {
         return $this->input('identifier');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'channel' => [
+                'description' => 'The channel name. Allowed: google_calendar, telegram, zoom.',
+                'example'     => 'telegram',
+            ],
+            'identifier' => [
+                'description' => 'The identity on that channel (email, Telegram user ID, etc.).',
+                'example'     => '123456789',
+            ],
+        ];
+    }
+
 }

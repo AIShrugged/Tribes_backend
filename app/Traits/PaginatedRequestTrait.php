@@ -24,4 +24,19 @@ trait PaginatedRequestTrait
             'limit'  => ['nullable', 'integer', 'min:' . $maxLimit],
         ];
     }
+
+    public function queryParameters(): array
+    {
+        return [
+            'offset' => [
+                'description' => 'Number of items to skip (for pagination).',
+                'example'     => 0,
+            ],
+            'limit' => [
+                'description' => 'Maximum number of items to return.',
+                'example'     => 20,
+            ],
+        ];
+    }
+
 }

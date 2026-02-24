@@ -63,4 +63,53 @@ class InsightRequest extends FormRequest
     {
         return (int) $this->input('profile_b');
     }
+
+    public function queryParameters(): array
+    {
+        $name   = $this->route()?->getName();
+        $params = [];
+
+        if (in_array($name, ['insight.profile.items', 'insight.profile.sources', 'insight.profile.history'])) {
+            $params['offset'] = [
+                'description' => 'Number of items to skip.',
+                'example'     => 0,
+            ];
+            $params['limit'] = [
+                'description' => 'Maximum number of items to return (max 50).',
+                'example'     => 25,
+            ];
+        }
+
+        if ($name === 'insight.profile.items') {
+            $params['category'] = [
+                'description' => 'Filter by knowledge category. Allowed values: communication_style, work_patterns, strengths, development_areas, goals_motivations, psychological_profile.',
+                'example'     => 'communication_style',
+            ];
+            $params['is_archived'] = [
+                'description' => 'Filter by archive status. Omit to return all.',
+                'example'     => false,
+            ];
+        }
+
+        if ($name === 'insight.profile.history') {
+            $params['category'] = [
+                'description' => 'Filter history by knowledge category.',
+                'example'     => 'communication_style',
+            ];
+        }
+
+        if ($name === 'insight.relationships') {
+            $params['profile_a'] = [
+                'description' => 'ID of the first profile.',
+                'example'     => 42,
+            ];
+            $params['profile_b'] = [
+                'description' => 'ID of the second profile.',
+                'example'     => 15,
+            ];
+        }
+
+        return $params;
+    }
+
 }

@@ -11,6 +11,9 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
+/**
+ * @group Followups
+ */
 class FollowupExportController extends Controller
 {
     public function __construct(
@@ -19,6 +22,26 @@ class FollowupExportController extends Controller
     ) {
     }
 
+    /**
+     * Export followup
+     *
+     * Downloads an AI-generated followup as a file in the specified format.
+     * The response is a binary file attachment, not JSON.
+     *
+     * @subgroup Export
+     * @authenticated
+     *
+     * @urlParam followup integer required The Followup ID. Example: 1
+     *
+     * @response 200 scenario="PDF file" <<binary>>
+     * @response 403 scenario="Forbidden" {"message": "Access denied"}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [Followup] 1"}
+     * @response 422 scenario="Validation error — invalid format" {
+     *   "message": "The selected format is invalid.",
+     *   "errors": {"format": ["The selected format is invalid."]}
+     * }
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
+     */
     public function export(FollowupExportRequest $request): HttpResponse
     {
         $followup = Followup::with('calendarEvent.source')->findOrFail($request->getFollowupId());

@@ -21,8 +21,6 @@ class TeamController extends Controller
      *
      * Returns a paginated list of teams for the given organization.
      *
-     * @queryParam offset integer The number of items to skip. Example: 0
-     * @queryParam limit integer The number of items to return. Example: 25
      *
      * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Core Team","slug":"core-team","employee_count":12}]}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -51,7 +49,6 @@ class TeamController extends Controller
      * Creates a new team in the given organization. A default methodology is assigned automatically.
      *
      * @urlParam organization integer required The organization ID. Example: 10
-     * @bodyParam name string required Team name. Example: Core Team
      *
      * @response 200 scenario="Created" {"success":true,"data":{"id":1,"name":"Core Team","slug":"core-team","employee_count":0}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -97,8 +94,6 @@ class TeamController extends Controller
      * Updates team fields. The request payload includes the team ID and optional fields to change.
      *
      * @urlParam team integer required The team ID (route model binding). Example: 5
-     * @bodyParam name string Team name. Example: Platform Team
-     * @bodyParam slug string Team slug. Example: platform-team
      *
      * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Platform Team","slug":"platform-team","employee_count":12}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -147,7 +142,6 @@ class TeamController extends Controller
      * Assigns a methodology to the given team and returns the updated team.
      *
      * @urlParam team integer required The team ID. Example: 5
-     * @bodyParam methodology_id integer required The methodology ID to assign. Example: 2
      *
      * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Core Team","slug":"core-team","employee_count":12}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -166,13 +160,18 @@ class TeamController extends Controller
     }
 
     /**
-     * @param TeamRequest $request
-     * @param Team $team
-     * @return ApiResponse
+     * Delete a team
      *
      * @group Teams
      *
-     * Delete a teams with its members
+     * Permanently deletes the team along with all its members.
+     *
+     * @urlParam team integer required The team ID. Example: 5
+     *
+     * @response 200 scenario="OK" {"success": true, "data": null, "message": "Success", "status": 200, "meta": {}}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success": false, "message": "This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [Team] 999"}
      */
     public function destroy(TeamRequest $request, Team $team): ApiResponse
     {
