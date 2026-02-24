@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API\v1;
 
+use App\Enums\OutputMode;
 use App\Http\Controllers\Controller;
 use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
@@ -152,10 +153,10 @@ class TelegramBotController extends Controller
                 $this->toolRegistry->register(new GetChatHistoryTool($chatId));
 
                 // Process message through channel-agnostic agent
-                $response = $this->agentService->processMessage($user, collect(), $text, 'telegram');
+                $response = $this->agentService->processMessage($user, collect(), $text, 'telegram', OutputMode::MD);
 
                 // Send response back to chat
-                $sendParams = ['chat_id' => $chatId, 'text' => $response];
+                $sendParams = ['chat_id' => $chatId, 'text' => $response, 'parse_mode' => 'Markdown'];
                 if ($messageThreadId) {
                     $sendParams['message_thread_id'] = $messageThreadId;
                 }
