@@ -2,6 +2,7 @@
 
 namespace App\Services\Agent;
 
+use App\Enums\OutputMode;
 use App\Models\Profile;
 use App\Models\User;
 use App\Services\Agent\Tools\ToolRegistry;
@@ -79,8 +80,9 @@ class AgentService
      * @param Collection  $history Recent chat history (ChatMessage / any model with role+content)
      * @param string      $content The new user message
      * @param string|null $channel Channel name for memory resolution (e.g. 'telegram'). Null = web.
+     * @param OutputMode  $mode    Output formatting mode: md (Markdown) or plain text.
      */
-    public function processMessage(User $user, Collection $history, string $content, ?string $channel = null): string
+    public function processMessage(User $user, Collection $history, string $content, ?string $channel = null, OutputMode $mode = OutputMode::PLAIN): string
     {
         $this->clearStopFlag($user->id);
 
@@ -104,7 +106,7 @@ class AgentService
         $memoryContext = $this->memoryService->composeMemoryContext($user, $channel);
 
         // Prepare system prompt
-        $systemPrompt = $this->getSystemPrompt($memoryContext, $user);
+        $systemPrompt = $this->getSystemPrompt($memoryContext, $user, $mode);
 
         // Inject current date/time into user message so the model reliably knows the date
         $now = now()->timezone('Europe/Moscow');
@@ -649,7 +651,7 @@ class AgentService
         }
     }
 
-    private function getSystemPrompt(string $memoryContext, User $user): string
+    private function getSystemPrompt(string $memoryContext, User $user, OutputMode $mode = OutputMode::PLAIN): string
     {
         $now         = now()->timezone('Europe/Moscow');
         $currentDate = $now->translatedFormat('l, d F Y');
@@ -661,6 +663,10 @@ class AgentService
 
         $profileHint        = $profileId ? ", profile_id={$profileId}" : '';
         $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call get_user_info for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call get_user_insights(profile_id={$profileId}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
+
+        $formattingInstructions = $mode === OutputMode::MD
+            ? "## Output Format\n\nFormat your responses using **Markdown**: use headings, bullet lists, bold, italic, and code blocks where appropriate. Do NOT use plain prose when structured formatting improves readability."
+            : "## Output Format\n\nReturn plain text only. Do NOT use Markdown syntax (no **, no ##, no backticks, no bullet dashes). Write in clear, readable prose.";
 
         return <<<PROMPT
 You are a helpful AI assistant integrated with a Telegram bot. You have access to various tools to help answer user questions.
@@ -801,6 +807,8 @@ Tool: search_meetings(user_id=123) → Returns: []
 - When you use tools, explain what information you found
 - **CRITICAL**: Update your memory whenever you learn something important about the user
 - **CRITICAL**: Always verify tool results before trusting them
+
+{$formattingInstructions}
 
 PROMPT;
     }

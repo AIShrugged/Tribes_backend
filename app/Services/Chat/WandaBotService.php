@@ -2,6 +2,7 @@
 
 namespace App\Services\Chat;
 
+use App\Enums\OutputMode;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\User;
@@ -22,7 +23,7 @@ class WandaBotService
 
         $this->messageService->createUserMessage($chat, $content);
 
-        $responseText = $this->agentService->processMessage($user, $history, $content);
+        $responseText = $this->agentService->processMessage($user, $history, $content, null, OutputMode::MD);
 
         return $this->messageService->createAssistantMessage($chat, $responseText);
     }
