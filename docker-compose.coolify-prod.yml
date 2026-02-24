@@ -30,6 +30,12 @@ services:
     networks:
       - app
     command: ["backend"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   queue:
     build:
