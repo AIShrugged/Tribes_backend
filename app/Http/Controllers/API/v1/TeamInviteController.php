@@ -30,6 +30,28 @@ class TeamInviteController extends Controller
      * List team invitations
      *
      * Get all invitations for a team. Only available for organization managers.
+     * The total count is returned in the `Items-Count` response header.
+     *
+     * @urlParam team integer required The Team ID. Example: 2
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 1,
+     *       "email": "bob@example.com",
+     *       "status": "pending",
+     *       "expires_at": "2026-02-17T10:00:00.000000Z",
+     *       "accepted_at": null,
+     *       "created_at": "2026-02-10T10:00:00.000000Z"
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     #[Authenticated]
     public function index(TeamInviteRequest $request, Team $team): ApiResponse
@@ -52,6 +74,28 @@ class TeamInviteController extends Controller
      * Send team invitation
      *
      * Invite a user to join a team by email. Only available for organization managers.
+     * An invitation email is sent to the specified address.
+     *
+     * @urlParam team integer required The Team ID. Example: 2
+     *
+     * @response 201 scenario="Invitation sent" {
+     *   "success": true,
+     *   "data": {
+     *     "id": 1,
+     *     "email": "bob@example.com",
+     *     "status": "pending",
+     *     "expires_at": "2026-02-17T10:00:00.000000Z",
+     *     "accepted_at": null,
+     *     "created_at": "2026-02-10T10:00:00.000000Z"
+     *   },
+     *   "message": "Invitation sent",
+     *   "status": 201,
+     *   "meta": {}
+     * }
+     * @response 409 scenario="User already in team" {"success": false, "message": "User is already in the team.", "code": "USER_ALREADY_IN_TEAM"}
+     * @response 409 scenario="Invite already exists" {"success": false, "message": "Invite already exists.", "code": "INVITE_ALREADY_EXISTS"}
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     #[Authenticated]
     public function store(TeamInviteRequest $request, Team $team): ApiResponse
@@ -84,6 +128,20 @@ class TeamInviteController extends Controller
      * Cancel invitation
      *
      * Cancel a pending invitation. Only available for organization managers.
+     *
+     * @urlParam team integer required The Team ID. Example: 2
+     * @urlParam invite integer required The Invite ID. Example: 1
+     *
+     * @response 200 scenario="Cancelled" {
+     *   "success": true,
+     *   "data": null,
+     *   "message": "Invitation cancelled",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 409 scenario="Invite already accepted" {"success": false, "message": "Invite already accepted.", "code": "INVITE_ALREADY_ACCEPTED"}
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     #[Authenticated]
     public function destroy(TeamInviteRequest $request, Team $team, Invite $invite): ApiResponse
@@ -102,9 +160,15 @@ class TeamInviteController extends Controller
     /**
      * Accept invitation (redirect)
      *
-     * Accept a team invitation. This endpoint redirects to the frontend
-     * with the appropriate status and parameters.
-     * If user not found - redirects to registration page with invite token.
+     * Accept a team invitation using the token from the invitation email.
+     * This endpoint redirects the browser to the frontend.
+     * If the user account does not exist yet, redirects to the registration page with the invite token pre-filled.
+     *
+     * @urlParam token string required The invitation token from the email link. Example: abc123xyz
+     *
+     * @response 302 scenario="Accepted — redirects to frontend /invite-accepted?status=success&team_id=2" <<binary>>
+     * @response 302 scenario="User not registered — redirects to /auth/register?invite=TOKEN&email=EMAIL" <<binary>>
+     * @response 302 scenario="Error — redirects with status=error&reason=invalid_token|expired|cancelled|already_accepted" <<binary>>
      */
     public function accept(string $token): RedirectResponse
     {

@@ -28,8 +28,6 @@ class OrganizationController extends Controller
      *
      * Returns a paginated list of organizations that belong to the authenticated user.
      *
-     * @queryParam offset integer The number of items to skip. Example: 0
-     * @queryParam limit integer The number of items to return. Example: 25
      *
      * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Acme Inc"}],"meta":{"count":1}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -75,7 +73,6 @@ class OrganizationController extends Controller
      *
      * Creates a new organization and assigns the authenticated user a manager role in it.
      *
-     * @bodyParam name string required Organization name. Example: Acme Inc
      *
      * @response 200 scenario="Created" {"success":true,"data":{"id":10,"name":"Acme Inc"}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -108,8 +105,6 @@ class OrganizationController extends Controller
      * Updates the given organization.
      *
      * @urlParam organization integer required The organization ID. Example: 10
-     * @bodyParam name string required Organization name. Example: Acme Inc
-     * @bodyParam slug string Optional Organization slug. Example: "acme-inc"
      *
      * @response 200 scenario="OK" {"success":true,"data":{"id":10,"name":"Acme Inc"}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -125,13 +120,18 @@ class OrganizationController extends Controller
     }
 
     /**
-     * @param OrganizationRequest $request
-     * @param Organization $organization
-     * @return ApiResponse
+     * Delete an organization
      *
      * @group Organizations
      *
-     * Delete an organization with its teams and members
+     * Permanently deletes the organization along with all its teams and members.
+     *
+     * @urlParam organization integer required The organization ID. Example: 10
+     *
+     * @response 200 scenario="OK" {"success": true, "data": null, "message": "Success", "status": 200, "meta": {}}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
+     * @response 403 scenario="Forbidden" {"success": false, "message": "This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [Organization] 999"}
      */
     public function destroy(OrganizationRequest $request, Organization $organization): ApiResponse
     {

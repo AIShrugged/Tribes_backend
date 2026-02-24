@@ -62,4 +62,19 @@ class MethodologyRequest extends ApiResourceRequest
     {
         return $this->input('team_ids');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'name' => [
+                'description' => 'The methodology name.',
+                'example'     => 'Scrum',
+            ],
+            'text' => [
+                'description' => 'The methodology description text.',
+                'example'     => 'A lightweight agile framework for complex projects.',
+            ],
+        ];
+    }
+
 }

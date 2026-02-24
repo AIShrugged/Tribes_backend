@@ -21,7 +21,12 @@ class EmailVerificationController extends Controller
      * Verify email address
      *
      * Verify the user's email address using the token from the verification email.
-     * Redirects to the frontend with the verification result.
+     * This endpoint always redirects to the frontend — it does not return JSON.
+     *
+     * @urlParam token string required The email verification token. Example: abc123xyz
+     *
+     * @response 302 scenario="Verified — redirects to /email-verified?status=success" <<binary>>
+     * @response 302 scenario="Error — redirects with status=error&reason=invalid_token|expired|already_verified|server_error" <<binary>>
      */
     public function verify(string $token): RedirectResponse
     {
@@ -57,6 +62,15 @@ class EmailVerificationController extends Controller
      * Resend verification email
      *
      * Resend the verification email to the authenticated user.
+     * Rate limited to 6 requests per minute.
+     *
+     * @response 200 scenario="Sent" {
+     *   "message": "Verification email sent",
+     *   "email": "alice@example.com",
+     *   "expires_in_minutes": 30
+     * }
+     * @response 422 scenario="Already verified" {"message": "Email already verified"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     #[Authenticated]
     public function resend(Request $request): JsonResponse

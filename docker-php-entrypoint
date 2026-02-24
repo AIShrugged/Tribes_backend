@@ -16,6 +16,8 @@ graceful_sleep() {
 case "$command" in
   backend)
     ensure_permissions
+    php artisan migrate --force --no-interaction
+    php artisan scribe:generate --no-interaction || true
     exec php-fpm -R
   ;;
 

@@ -60,4 +60,15 @@ class ParticipantRequest extends FormRequest
     {
         return $this->input('profile_id');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'profile_id' => [
+                'description' => 'The Profile ID to link to this participant.',
+                'example'     => 3,
+            ],
+        ];
+    }
+
 }

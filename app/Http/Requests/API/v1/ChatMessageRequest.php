@@ -32,4 +32,15 @@ class ChatMessageRequest extends ApiResourceRequest
     {
         return $this->input('content');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'content' => [
+                'description' => 'The message text to send to the bot. Max 10,000 characters.',
+                'example'     => 'Summarise the key points from last week\'s meetings.',
+            ],
+        ];
+    }
+
 }

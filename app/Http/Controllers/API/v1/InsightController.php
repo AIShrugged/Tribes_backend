@@ -136,13 +136,9 @@ class InsightController extends Controller
      *
      * @urlParam profile integer required The Profile ID. Example: 42
      *
-     * @queryParam category string Filter by knowledge category. Allowed values:
      *   `communication_style`, `work_patterns`, `strengths`, `development_areas`,
      *   `goals_motivations`, `psychological_profile`. Example: communication_style
-     * @queryParam is_archived boolean Filter by archive status. Omit to return all.
      *   Example: false
-     * @queryParam offset integer Number of items to skip. Example: 0
-     * @queryParam limit integer Number of items to return (max 50). Example: 25
      *
      * @response 200 scenario="OK" {
      *   "success": true,
@@ -219,8 +215,6 @@ class InsightController extends Controller
      *
      * @urlParam profile integer required The Profile ID. Example: 42
      *
-     * @queryParam offset integer Number of items to skip. Example: 0
-     * @queryParam limit integer Number of items to return (max 50). Example: 25
      *
      * @response 200 scenario="OK" {
      *   "success": true,
@@ -282,11 +276,8 @@ class InsightController extends Controller
      *
      * @urlParam profile integer required The Profile ID. Example: 42
      *
-     * @queryParam category string Filter history by knowledge category. Allowed values:
      *   `communication_style`, `work_patterns`, `strengths`, `development_areas`,
      *   `goals_motivations`, `psychological_profile`. Example: strengths
-     * @queryParam offset integer Number of items to skip. Example: 0
-     * @queryParam limit integer Number of items to return (max 50). Example: 25
      *
      * @response 200 scenario="OK" {
      *   "success": true,
@@ -355,8 +346,6 @@ class InsightController extends Controller
      * @subgroup Relationships
      * @authenticated
      *
-     * @queryParam profile_a integer required ID of the first profile. Example: 42
-     * @queryParam profile_b integer required ID of the second profile. Example: 15
      *
      * @response 200 scenario="OK" {
      *   "success": true,

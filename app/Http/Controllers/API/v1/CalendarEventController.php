@@ -16,10 +16,36 @@ use Illuminate\Support\Facades\Auth;
 class CalendarEventController extends Controller
 {
     /**
-     * Get list of calendar events
+     * List calendar events
+     *
+     * Returns a paginated list of calendar events owned by the authenticated user.
+     * The total count is returned in the `Items-Count` response header.
      *
      * @subgroup Events
      * @authenticated
+     *
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 5,
+     *       "platform": "google_meet",
+     *       "url": "https://meet.google.com/abc-defg-hij",
+     *       "title": "Q1 Planning",
+     *       "description": "Quarterly planning session",
+     *       "starts_at": "2026-02-10T09:00:00.000000Z",
+     *       "ends_at": "2026-02-10T10:00:00.000000Z",
+     *       "external_id": "ext_abc123",
+     *       "source_id": 1,
+     *       "required_bot": true
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function index(CalendarEventRequest $request): ApiResponse
     {
@@ -35,10 +61,41 @@ class CalendarEventController extends Controller
     }
 
     /**
-     * Get specific calendar event
+     * Get calendar event
+     *
+     * Returns a single calendar event by ID. The event must belong to the authenticated user.
      *
      * @subgroup Events
      * @authenticated
+     *
+     * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": {
+     *     "id": 5,
+     *     "platform": "google_meet",
+     *     "url": "https://meet.google.com/abc-defg-hij",
+     *     "title": "Q1 Planning",
+     *     "description": "Quarterly planning session",
+     *     "starts_at": "2026-02-10T09:00:00.000000Z",
+     *     "ends_at": "2026-02-10T10:00:00.000000Z",
+     *     "external_id": "ext_abc123",
+     *     "source_id": 1,
+     *     "required_bot": true
+     *   },
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 404 scenario="Not Found" {
+     *   "success": false,
+     *   "data": null,
+     *   "message": "Not Found",
+     *   "status": 404,
+     *   "meta": {}
+     * }
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function show(CalendarEventRequest $request): ApiResponse
     {

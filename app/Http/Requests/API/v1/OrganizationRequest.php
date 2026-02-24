@@ -50,4 +50,19 @@ class OrganizationRequest extends ApiResourceRequest
             'slug' => $this->slug ?? Str::slug($this->name),
         ]);
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'name' => [
+                'description' => 'Organization name.',
+                'example'     => 'Acme Inc',
+            ],
+            'slug' => [
+                'description' => 'Organization slug (auto-generated from name if omitted).',
+                'example'     => 'acme-inc',
+            ],
+        ];
+    }
+
 }

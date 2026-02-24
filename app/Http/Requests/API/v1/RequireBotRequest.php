@@ -33,4 +33,15 @@ class RequireBotRequest extends FormRequest
     {
         return $this->input('required_bot');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'required_bot' => [
+                'description' => 'Whether the recording bot should join the event.',
+                'example'     => true,
+            ],
+        ];
+    }
+
 }

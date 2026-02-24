@@ -17,10 +17,38 @@ use Illuminate\Support\Facades\Auth;
 class MeetingTaskController extends Controller
 {
     /**
-     * Get list of meeting tasks
+     * List meeting tasks
+     *
+     * Returns a paginated list of AI-extracted action items for a calendar event.
+     * The total count is returned in the `Items-Count` response header.
      *
      * @subgroup Meeting Tasks
      * @authenticated
+     *
+     * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 1,
+     *       "calendar_event_id": 5,
+     *       "profile_id": 3,
+     *       "title": "Prepare Q1 budget report",
+     *       "description": "Compile financial data from all departments",
+     *       "assignee_name": "Alice Johnson",
+     *       "due_date": "2026-02-28",
+     *       "status": "open",
+     *       "created_at": "2026-02-10T10:05:00.000000Z",
+     *       "updated_at": "2026-02-10T10:05:00.000000Z"
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 404 scenario="Not Found" {"message": "No query results for model [CalendarEvent] 5"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function index(MeetingTaskRequest $request): ApiResponse
     {
@@ -39,10 +67,35 @@ class MeetingTaskController extends Controller
     }
 
     /**
-     * Get specific meeting task
+     * Get meeting task
+     *
+     * Returns a single AI-extracted meeting task by ID.
      *
      * @subgroup Meeting Tasks
      * @authenticated
+     *
+     * @urlParam task_id integer required The Task ID. Example: 1
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": {
+     *     "id": 1,
+     *     "calendar_event_id": 5,
+     *     "profile_id": 3,
+     *     "title": "Prepare Q1 budget report",
+     *     "description": "Compile financial data from all departments",
+     *     "assignee_name": "Alice Johnson",
+     *     "due_date": "2026-02-28",
+     *     "status": "open",
+     *     "created_at": "2026-02-10T10:05:00.000000Z",
+     *     "updated_at": "2026-02-10T10:05:00.000000Z"
+     *   },
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 404 scenario="Not Found" {"message": "No query results for model [MeetingTask] 1"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function show(MeetingTaskRequest $request): ApiResponse
     {

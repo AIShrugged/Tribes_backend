@@ -13,12 +13,32 @@ use Illuminate\Support\Facades\Auth;
 class SourceController extends Controller
 {
     /**
-     * Get sources
+     * List sources
+     *
+     * Returns a paginated list of calendar sources (Google Calendar integrations) owned by the authenticated user.
+     * The total count is returned in the `Items-Count` response header.
      *
      * @authenticated
      *
-     * @param SourceRequest $request
-     * @return ApiResponse
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 1,
+     *       "user_id": 1,
+     *       "external_id": "alice@gmail.com",
+     *       "identity": "alice@gmail.com",
+     *       "type": "google_calendar",
+     *       "auth_type": "oauth",
+     *       "is_connected": true
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function index(SourceRequest $request): ApiResponse
     {

@@ -20,4 +20,15 @@ class TeamInviteRequest extends ApiResourceRequest
     {
         return $this->input('email');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'email' => [
+                'description' => 'Email address to invite.',
+                'example'     => 'bob@example.com',
+            ],
+        ];
+    }
+
 }

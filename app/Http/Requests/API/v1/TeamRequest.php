@@ -72,4 +72,47 @@ class TeamRequest extends ApiResourceRequest
             'slug' => $this->getSlug(),
         ]);
     }
+
+    public function bodyParameters(): array
+    {
+        $action = $this->route()?->getActionMethod();
+
+        if ($action === 'store') {
+            return [
+                'organization_id' => [
+                    'description' => 'Organization ID the team belongs to.',
+                    'example'     => 1,
+                ],
+                'name' => [
+                    'description' => 'Team name (min 3, max 255 characters).',
+                    'example'     => 'Core Team',
+                ],
+            ];
+        }
+
+        if ($action === 'update') {
+            return [
+                'name' => [
+                    'description' => 'Team name.',
+                    'example'     => 'Platform Team',
+                ],
+                'slug' => [
+                    'description' => 'Team slug (auto-generated from name if omitted).',
+                    'example'     => 'platform-team',
+                ],
+            ];
+        }
+
+        if ($action === 'assignMethodologyForTeam') {
+            return [
+                'methodology_id' => [
+                    'description' => 'The methodology ID to assign.',
+                    'example'     => 2,
+                ],
+            ];
+        }
+
+        return [];
+    }
+
 }

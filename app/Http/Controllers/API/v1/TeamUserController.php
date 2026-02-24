@@ -13,14 +13,30 @@ use Illuminate\Support\Facades\Gate;
 class TeamUserController extends Controller
 {
     /**
-     * @param TeamUserRequest $request
-     * @param Team $team
-     * @return ApiResponse
+     * List team members
      *
      * @group TeamUsers
      *
-     * Get a list of team members
+     * Returns a paginated list of members in the given team.
+     * The total count is returned in the `Items-Count` response header.
      *
+     * @urlParam team integer required The Team ID. Example: 2
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": [
+     *     {
+     *       "id": 1,
+     *       "user": {"id": 1, "name": "Alice Johnson", "email": "alice@example.com"},
+     *       "teams": {"id": 2, "name": "Core Team", "slug": "core-team"}
+     *     }
+     *   ],
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function index(TeamUserRequest $request, Team $team): ApiResponse
     {
@@ -38,15 +54,29 @@ class TeamUserController extends Controller
     }
 
     /**
-     * @param TeamUserRequest $request
-     * @param Team $team
-     * @param TeamUser $user
-     * @return ApiResponse
+     * Get team member
      *
      * @group TeamUsers
      *
-     * Get specific team member
+     * Returns a single team member record.
      *
+     * @urlParam team integer required The Team ID. Example: 2
+     * @urlParam user integer required The TeamUser ID. Example: 1
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": {
+     *     "id": 1,
+     *     "user": {"id": 1, "name": "Alice Johnson", "email": "alice@example.com"},
+     *     "teams": {"id": 2, "name": "Core Team", "slug": "core-team"}
+     *   },
+     *   "message": "Success",
+     *   "status": 200,
+     *   "meta": {}
+     * }
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [TeamUser] 1"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function show(TeamUserRequest $request, Team $team, TeamUser $user): ApiResponse
     {
@@ -56,14 +86,19 @@ class TeamUserController extends Controller
     }
 
     /**
-     * @param TeamUserRequest $request
-     * @param Team $team
-     * @param TeamUser $user
-     * @return ApiResponse
+     * Kick member from team
      *
      * @group TeamUsers
      *
-     * Kick member from the team
+     * Removes a user from the team.
+     *
+     * @urlParam team integer required The Team ID. Example: 2
+     * @urlParam user integer required The TeamUser ID. Example: 1
+     *
+     * @response 200 scenario="OK" {"success": true, "data": null, "message": "Success", "status": 200, "meta": {}}
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [TeamUser] 1"}
+     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     public function kick(TeamUserRequest $request, Team $team, TeamUser $user): ApiResponse
     {

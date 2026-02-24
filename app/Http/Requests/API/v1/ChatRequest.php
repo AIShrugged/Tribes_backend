@@ -27,4 +27,15 @@ class ChatRequest extends ApiResourceRequest
     {
         return $this->input('title');
     }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'title' => [
+                'description' => 'Optional title for the chat. Max 255 characters.',
+                'example'     => 'Q1 Strategy Discussion',
+            ],
+        ];
+    }
+
 }

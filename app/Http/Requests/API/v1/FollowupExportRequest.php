@@ -26,4 +26,15 @@ class FollowupExportRequest extends ApiResourceRequest
     {
         return $this->followup_id;
     }
+
+    public function queryParameters(): array
+    {
+        return [
+            'format' => [
+                'description' => 'Export format. Must be one of: pdf, excel, html.',
+                'example'     => 'pdf',
+            ],
+        ];
+    }
+
 }
