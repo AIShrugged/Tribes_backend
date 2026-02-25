@@ -30,12 +30,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'verified' => EnsureEmailIsVerified::class,
         ]);
-        $middleware->trustProxies(['*'],
-            SymfonyRequest::HEADER_X_FORWARDED_FOR |
-            SymfonyRequest::HEADER_X_FORWARDED_HOST |
-            SymfonyRequest::HEADER_X_FORWARDED_PORT |
-            SymfonyRequest::HEADER_X_FORWARDED_PROTO |
-            SymfonyRequest::HEADER_X_FORWARDED_AWS_ELB
+        $middleware->trustProxies(
+            at: '*',
+            headers: SymfonyRequest::HEADER_X_FORWARDED_FOR
+                | SymfonyRequest::HEADER_X_FORWARDED_HOST
+                | SymfonyRequest::HEADER_X_FORWARDED_PORT
+                | SymfonyRequest::HEADER_X_FORWARDED_PROTO
+                | SymfonyRequest::HEADER_X_FORWARDED_AWS_ELB
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
