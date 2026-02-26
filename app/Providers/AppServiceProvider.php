@@ -2,7 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\Conversation;
+use App\Policies\ChatPolicy;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -32,6 +36,9 @@ class AppServiceProvider extends ServiceProvider
         // Agent singletons — ToolRegistry must be shared between AgentService and controllers
         $this->app->singleton(\App\Services\Agent\Tools\ToolRegistry::class);
         $this->app->singleton(\App\Services\Agent\AgentService::class);
+
+        // Telegram Bot API — singleton so it can be mocked in tests
+        $this->app->singleton(\Telegram\Bot\Api::class, fn() => new \Telegram\Bot\Api(config('telegram.bot_token')));
     }
 
     /**
@@ -39,6 +46,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Route model binding: {chat} param resolves to Conversation (routes stay /chats for backward compat)
+        Route::model('chat', Conversation::class);
+
+        // Register ChatPolicy for Conversation model
+        Gate::policy(Conversation::class, ChatPolicy::class);
+
         Http::macro('withProxy', function () {
             if (! config('proxy.enabled', true)) {
                 return Http::withOptions([]);

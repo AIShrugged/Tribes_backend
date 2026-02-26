@@ -11,10 +11,10 @@ class ChatMessageResource extends JsonResource
     {
         return [
             'id'            => $this->id,
-            'chat_id'       => $this->chat_id,
+            'chat_id'       => $this->conversation_id, // backward compat: conversation_id exposed as chat_id
             'role'          => $this->role,
             'content'       => $this->content,
-            'followup_data' => $this->followup_data,
+            'followup_data' => $this->getFollowupData(),
             'created_at'    => $this->created_at,
         ];
     }

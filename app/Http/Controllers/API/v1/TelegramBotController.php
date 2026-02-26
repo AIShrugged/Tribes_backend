@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers\API\v1;
 
+use App\Enums\ChannelType;
 use App\Enums\OutputMode;
 use App\Http\Controllers\Controller;
-use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\Tools\GetChatHistoryTool;
 use App\Services\Agent\Tools\ToolRegistry;
+use App\Services\Chat\ConversationService;
+use App\Services\Chat\MessageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
@@ -19,17 +21,13 @@ use Telegram\Bot\Exceptions\TelegramSDKException;
  */
 class TelegramBotController extends Controller
 {
-    private Api $telegram;
-
-    private AgentService $agentService;
-
-    private ToolRegistry $toolRegistry;
-
-    public function __construct(AgentService $agentService, ToolRegistry $toolRegistry)
-    {
-        $this->telegram = new Api(config('telegram.bot_token'));
-        $this->agentService = $agentService;
-        $this->toolRegistry = $toolRegistry;
+    public function __construct(
+        private readonly Api $telegram,
+        private readonly AgentService $agentService,
+        private readonly ToolRegistry $toolRegistry,
+        private readonly ConversationService $conversationService,
+        private readonly MessageService $messageService,
+    ) {
     }
 
     /**
@@ -71,20 +69,23 @@ class TelegramBotController extends Controller
                 }
 
                 // Find or create telegram user and resolve application user
-                $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
-                $user         = $telegramUser->user;
+                $telegramUser  = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
+                $user          = $telegramUser->user;
+                $isPrivateChat = $chatType === 'private';
+                $channelType   = $isPrivateChat ? ChannelType::TelegramPrivate : ChannelType::TelegramGroup;
+
+                // Find or create conversation for this Telegram chat
+                $conversation = $this->conversationService->findOrCreateTelegramConversation(
+                    $telegramUser,
+                    $chatId,
+                    $channelType
+                );
 
                 // Save incoming user message (save ALL messages, not just mentions)
-                TelegramChatMessage::create([
-                    'telegram_chat_id' => $chatId,
-                    'telegram_user_id' => $telegramUser->telegram_user_id,
-                    'role'             => 'user',
-                    'content'          => $text,
-                ]);
+                $this->messageService->createUserMessage($conversation, $telegramUser, $text);
 
                 // Only respond when bot is mentioned (except in private chats)
-                $botUsername  = config('telegram.bot_username');
-                $isPrivateChat = $chatType === 'private';
+                $botUsername = config('telegram.bot_username');
                 if (! $isPrivateChat && (! $botUsername || ! $this->isBotMentioned($text, $botUsername))) {
                     return response()->json(['ok' => true]);
                 }
@@ -130,12 +131,7 @@ class TelegramBotController extends Controller
                     }
                     $this->telegram->sendMessage($sendParams);
 
-                    TelegramChatMessage::create([
-                        'telegram_chat_id' => $chatId,
-                        'telegram_user_id' => $telegramUser->telegram_user_id,
-                        'role'             => 'assistant',
-                        'content'          => $stopMessage,
-                    ]);
+                    $this->messageService->createAssistantMessage($conversation, $stopMessage);
 
                     return response()->json(['ok' => true]);
                 }
@@ -149,8 +145,8 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
-                // Register Telegram-specific tool for this chat's history
-                $this->toolRegistry->register(new GetChatHistoryTool($chatId));
+                // Register Telegram-specific tool for this conversation's history
+                $this->toolRegistry->register(new GetChatHistoryTool($conversation));
 
                 // Process message through channel-agnostic agent
                 $response = $this->agentService->processMessage($user, collect(), $text, 'telegram', OutputMode::MD);
@@ -163,12 +159,7 @@ class TelegramBotController extends Controller
                 $this->telegram->sendMessage($sendParams);
 
                 // Save bot response
-                TelegramChatMessage::create([
-                    'telegram_chat_id' => $chatId,
-                    'telegram_user_id' => $telegramUser->telegram_user_id,
-                    'role'             => 'assistant',
-                    'content'          => $response,
-                ]);
+                $this->messageService->createAssistantMessage($conversation, $response);
             }
 
             return response()->json(['ok' => true]);
@@ -207,11 +198,11 @@ class TelegramBotController extends Controller
 
     private function isBotMentioned(string $text, string $botUsername): bool
     {
-        return str_contains(mb_strtolower($text), '@'.mb_strtolower($botUsername));
+        return str_contains(mb_strtolower($text), '@' . mb_strtolower($botUsername));
     }
 
     private function removeMention(string $text, string $botUsername): string
     {
-        return preg_replace('/@'.preg_quote($botUsername, '/').'/i', '', $text);
+        return preg_replace('/@' . preg_quote($botUsername, '/') . '/i', '', $text);
     }
 }
