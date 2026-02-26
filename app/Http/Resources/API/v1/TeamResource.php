@@ -19,6 +19,7 @@ class TeamResource extends JsonResource
             'name'           => $this->name,
             'slug'           => $this->slug,
             'employee_count' => $this->employee_count,
+            'members'        => UserResource::collection($this->whenLoaded('users')),
         ];
     }
 }

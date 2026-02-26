@@ -74,7 +74,7 @@ class TeamController extends Controller
      *
      * @urlParam team integer required The team ID. Example: 5
      *
-     * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Core Team","slug":"core-team","employee_count":12}}
+     * @response 200 scenario="OK" {"success":true,"data":{"id":5,"name":"Core Team","slug":"core-team","employee_count":12,"members":[{"id":1,"name":"John Doe","email":"john@example.com"}]}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      * @response 404 scenario="Not Found" {"message":"No query results for model [Team] 999"}
@@ -82,6 +82,8 @@ class TeamController extends Controller
     public function show(TeamRequest $request, Team $team): ApiResponse
     {
         Gate::authorize('view', $team);
+
+        $team->load('users');
 
         return ApiResponse::success(data: TeamResource::make($team));
     }
