@@ -1,4 +1,4 @@
-FROM third-party-registry.fabit.ru/docker.io/library/php:8.3-fpm-alpine3.21
+FROM docker.io/library/php:8.3-fpm-alpine3.21
 
 RUN apk add --no-cache \
   git unzip curl \
