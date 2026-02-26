@@ -12,6 +12,7 @@ return [
                 'meeting_summary' => 'google/gemini-3-pro-preview',
                 'meeting_tasks'   => 'google/gemini-3-pro-preview',
                 'insight'         => 'google/gemini-3-pro-preview',
+                'demo'            => 'google/gemini-3-pro-preview',
             ]
         ]
     ]
