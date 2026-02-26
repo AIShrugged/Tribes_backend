@@ -3,9 +3,11 @@
 namespace App\Services\Agent;
 
 use App\Enums\OutputMode;
+use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
 use App\Services\Agent\Tools\ToolRegistry;
+use App\Services\Artifact\ArtifactStateService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -35,12 +37,24 @@ class AgentService
 
     private MemoryService $memoryService;
 
+    private ArtifactStateService $artifactStateService;
+
     public function __construct(
         ToolRegistry $toolRegistry,
-        MemoryService $memoryService
+        MemoryService $memoryService,
+        ArtifactStateService $artifactStateService
     ) {
         $this->toolRegistry = $toolRegistry;
         $this->memoryService = $memoryService;
+        $this->artifactStateService = $artifactStateService;
+    }
+
+    /**
+     * Register chat-specific tools (call this before processMessage when a Chat context is available).
+     */
+    public function registerChatTools(Chat $chat): void
+    {
+        $this->toolRegistry->register(new Tools\CreateArtifactTool($chat, $this->artifactStateService));
     }
 
     /**
