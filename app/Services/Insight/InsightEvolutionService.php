@@ -63,7 +63,7 @@ class InsightEvolutionService
 
         // Only save history when there is existing content to preserve.
         // Skipping on first creation avoids a useless empty-content history entry.
-        if (!$profile->wasRecentlyCreated() && !empty($profile->content)) {
+        if (!$profile->wasRecentlyCreated && !empty($profile->content)) {
             InsightProfileHistory::create([
                 'insight_profile_id' => $profile->id,
                 'category'           => $profile->category,
