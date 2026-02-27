@@ -23,6 +23,8 @@ class WandaBotService
 
         $this->messageService->createUserMessage($chat, $content);
 
+        $this->agentService->registerChatTools($chat);
+
         $responseText = $this->agentService->processMessage($user, $history, $content, null, OutputMode::MD);
 
         return $this->messageService->createAssistantMessage($chat, $responseText);

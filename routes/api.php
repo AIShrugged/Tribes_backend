@@ -4,6 +4,7 @@ use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
+use App\Http\Controllers\API\v1\ChatArtifactController;
 use App\Http\Controllers\API\v1\ChatController;
 use App\Http\Controllers\API\v1\ChatMessageController;
 use App\Http\Controllers\API\v1\EmailVerificationController;
@@ -140,6 +141,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::apiResource('chats', ChatController::class);
         Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
+        Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
 
         // Followup Export
         Route::get('followups/{followup}/export', [FollowupExportController::class, 'export']);
