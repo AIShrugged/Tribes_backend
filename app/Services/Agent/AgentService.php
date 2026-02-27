@@ -17,7 +17,7 @@ class AgentService
 {
     private const MAX_ITERATIONS = 15;
 
-    private const MODEL = 'anthropic/claude-3.5-sonnet';
+    private const MODEL = 'anthropic/claude-sonnet-4.6';
 
     private const STOP_KEY_PREFIX = 'agent_stop_';
 
