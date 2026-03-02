@@ -10,24 +10,10 @@ use Illuminate\Support\Facades\Log;
 class SqlQueryExecutor
 {
     private const CONNECTION = 'pgsql_readonly';
-    private const MAX_ROWS = 500;
-    private const STATEMENT_TIMEOUT_MS = 5000;
 
-    private const ALLOWED_TABLES = [
-        'users',
-        'organizations',
-        'organization_user',
-        'teams',
-        'team_user',
-        'sources',
-        'calendar_events',
-        'participants',
-        'transcript_entries',
-        'followups',
-        'methodologies',
-        'profiles',
-        'calendar_event_profile',
-    ];
+    private const MAX_ROWS = 500;
+
+    private const STATEMENT_TIMEOUT_MS = 5000;
 
     private const DANGEROUS_KEYWORDS = [
         'INSERT',
@@ -61,15 +47,17 @@ class SqlQueryExecutor
 
             $results = $connection->select($sql);
 
+            $data = array_map(fn ($row) => $this->stripBlacklistedColumns((array) $row), $results);
+
             Log::info('Wanda SQL executed', [
-                'rows' => count($results),
+                'rows' => count($data),
                 'sql'  => substr($sql, 0, 500),
             ]);
 
             return new SqlQueryResult(
                 success: true,
-                data: array_map(fn($row) => (array) $row, $results),
-                rowCount: count($results),
+                data: $data,
+                rowCount: count($data),
             );
         } catch (SqlValidationException | SqlAccessControlException $e) {
             Log::warning('Wanda SQL validation failed', [
@@ -99,7 +87,7 @@ class SqlQueryExecutor
         $sql = trim($sql);
 
         // Must start with SELECT
-        if (!preg_match('/^\s*SELECT\b/i', $sql)) {
+        if (! preg_match('/^\s*SELECT\b/i', $sql)) {
             throw new SqlValidationException('Only SELECT statements are allowed');
         }
 
@@ -127,20 +115,57 @@ class SqlQueryExecutor
 
         // Check table whitelist
         $this->validateTables($sql);
+
+        // Block explicit references to blacklisted columns
+        $this->validateColumns($sql);
     }
 
     private function validateTables(string $sql): void
     {
-        // Extract table names from FROM and JOIN clauses
+        $allowedTables = array_map('strtolower', config('agent.sql_allowed_tables', []));
+
         preg_match_all('/\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)/i', $sql, $matches);
 
-        $tables = array_map('strtolower', $matches[1] ?? []);
-
-        foreach ($tables as $table) {
-            if (!in_array($table, self::ALLOWED_TABLES)) {
+        foreach (array_map('strtolower', $matches[1] ?? []) as $table) {
+            if (! in_array($table, $allowedTables, true)) {
                 throw new SqlValidationException("Table '{$table}' is not allowed");
             }
         }
+    }
+
+    /**
+     * Reject queries that explicitly name a blacklisted column.
+     * This catches SELECT password, t.password, users.password, etc.
+     * SELECT * is allowed here — blacklisted columns are stripped from results.
+     */
+    private function validateColumns(string $sql): void
+    {
+        $blacklist = config('agent.sql_column_blacklist', []);
+
+        // Collect all unique blacklisted column names (table-agnostic, use word boundary)
+        $allBlacklisted = array_unique(array_merge(...array_values($blacklist)));
+
+        foreach ($allBlacklisted as $column) {
+            if (preg_match('/\b' . preg_quote($column, '/') . '\b/i', $sql)) {
+                throw new SqlAccessControlException("Column '{$column}' is not accessible");
+            }
+        }
+    }
+
+    /**
+     * Remove blacklisted columns from a result row regardless of how they were selected.
+     * This is the second line of defense (e.g. covers SELECT *).
+     */
+    private function stripBlacklistedColumns(array $row): array
+    {
+        $blacklist = config('agent.sql_column_blacklist', []);
+        $allBlacklisted = array_unique(array_merge(...(array_values($blacklist) ?: [[]])));
+
+        foreach ($allBlacklisted as $column) {
+            unset($row[$column]);
+        }
+
+        return $row;
     }
 
     private function enforceLimit(string $sql): string
@@ -167,7 +192,7 @@ class SqlQueryExecutor
         );
         $hasPlaceholder = str_contains($sql, '__ACCESSIBLE_USER_IDS__');
 
-        if ($touchesDataTables && !$hasPlaceholder) {
+        if ($touchesDataTables && ! $hasPlaceholder) {
             throw new SqlAccessControlException(
                 'Query references data tables but does not include __ACCESSIBLE_USER_IDS__ access filter'
             );
