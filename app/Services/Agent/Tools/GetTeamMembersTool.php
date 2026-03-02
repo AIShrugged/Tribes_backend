@@ -54,13 +54,19 @@ class GetTeamMembersTool implements ToolInterface
         if ($teamId) {
             $team = $query->find($teamId);
         } else {
-            $team = $query->where('name', 'like', "%{$teamName}%")->first();
+            $team = $query->where('name', 'ilike', "%{$teamName}%")->first();
         }
 
         if (! $team) {
+            $suggestions = Team::where('name', 'ilike', '%' . mb_substr($teamName ?? '', 0, 3) . '%')
+                ->limit(5)
+                ->pluck('name')
+                ->toArray();
+
             return [
-                'success' => false,
-                'error' => 'Team not found',
+                'success'     => false,
+                'error'       => "Team not found" . ($teamName ? " for name '{$teamName}'" : ''),
+                'suggestions' => $suggestions,
             ];
         }
 

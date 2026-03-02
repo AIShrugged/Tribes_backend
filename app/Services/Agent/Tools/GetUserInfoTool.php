@@ -67,7 +67,7 @@ class GetUserInfoTool implements ToolInterface
         }
 
         if ($email) {
-            $user = $query->where('email', $email)->first();
+            $user = $query->whereRaw('LOWER(email) = ?', [strtolower(trim($email))])->first();
 
             return $user
                 ? ['success' => true, 'user' => $this->formatUser($user)]

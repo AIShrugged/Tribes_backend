@@ -39,14 +39,18 @@ class AgentService
 
     private ArtifactStateService $artifactStateService;
 
+    private DatabaseSchemaService $databaseSchemaService;
+
     public function __construct(
         ToolRegistry $toolRegistry,
         MemoryService $memoryService,
-        ArtifactStateService $artifactStateService
+        ArtifactStateService $artifactStateService,
+        DatabaseSchemaService $databaseSchemaService
     ) {
         $this->toolRegistry = $toolRegistry;
         $this->memoryService = $memoryService;
         $this->artifactStateService = $artifactStateService;
+        $this->databaseSchemaService = $databaseSchemaService;
     }
 
     /**
@@ -678,6 +682,9 @@ class AgentService
         $profileHint        = $profileId ? ", profile_id={$profileId}" : '';
         $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call get_user_info for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call get_user_insights(profile_id={$profileId}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
 
+        $dbSchema = $this->databaseSchemaService->getSchemaForAgent();
+        $databaseSchemaSection = "## Database Schema\n\nThe following tables and columns are available for `execute_sql_query`:\n\n```\n{$dbSchema}\n```\n\n## When No Specialized Tool Fits\n\nIf none of the specialized tools can answer the question, use `execute_sql_query` as a universal fallback:\n- It accepts any read-only SELECT query joining any number of tables\n- Use ILIKE for case-insensitive text search (e.g. `WHERE name ILIKE '%backenders%'`)\n- Use JOINs to aggregate data from multiple tables in a single request instead of chaining multiple tool calls\n- Always include `__ACCESSIBLE_USER_IDS__` in WHERE when querying `followups`, `sources`, or `calendar_events`\n\nExamples of questions best answered with SQL:\n- \"How many meetings did each team member attend last month?\"\n- \"Which users have no profile yet?\"\n- \"Show tasks assigned to the backend team\"\n";
+
         $formattingInstructions = $mode === OutputMode::MD
             ? "## Output Format\n\nFormat your responses using **Markdown**: use headings, bullet lists, bold, italic, and code blocks where appropriate. Do NOT use plain prose when structured formatting improves readability."
             : "## Output Format\n\nReturn plain text only. Do NOT use Markdown syntax (no **, no ##, no backticks, no bullet dashes). Write in clear, readable prose.";
@@ -691,6 +698,8 @@ Today is {$currentDate}, {$currentTime} (MSK, Moscow Time, UTC+3).
 
 {$currentUserContext}
 {$memoryContext}
+
+{$databaseSchemaSection}
 
 ## Your Capabilities
 
