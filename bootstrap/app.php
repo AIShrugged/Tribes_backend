@@ -5,6 +5,7 @@ use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -41,8 +42,14 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn(Request $request, Throwable $e) => $request->is('api/*')
+            fn(Request $request, Throwable $e) => $request->is('api/*') || $request->is('mcp*')
         );
+
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if ($request->is('mcp*')) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+        });
 
         $exceptions->render(function (AppException $e, Request $request) {
             return ApiResponse::error(

@@ -34,7 +34,7 @@ abstract class AbstractAgentTool extends Tool implements ToolInterface
      */
     public function handle(Request $request): Response
     {
-        return Response::structured(
+        return Response::json(
             $this->execute($request->all())
         );
     }
