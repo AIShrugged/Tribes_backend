@@ -7,7 +7,7 @@ use App\Models\Profile;
 use App\Models\User;
 use App\Services\Insight\InsightRetrievalService;
 
-class GetUserInsightsTool implements ToolInterface
+class GetUserInsightsTool extends AbstractAgentTool
 {
     public function getName(): string
     {

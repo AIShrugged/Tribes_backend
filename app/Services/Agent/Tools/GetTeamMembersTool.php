@@ -4,7 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\Team;
 
-class GetTeamMembersTool implements ToolInterface
+class GetTeamMembersTool extends AbstractAgentTool
 {
     public function getName(): string
     {

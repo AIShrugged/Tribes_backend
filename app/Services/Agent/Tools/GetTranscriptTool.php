@@ -6,7 +6,7 @@ use App\Models\CalendarEvent;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
-class GetTranscriptTool implements ToolInterface
+class GetTranscriptTool extends AbstractAgentTool
 {
     /** Max transcript chars before delegating to sub-agent summarization */
     private const SUB_AGENT_THRESHOLD = 10000;

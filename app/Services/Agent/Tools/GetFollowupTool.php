@@ -15,7 +15,7 @@ use App\Models\Followup;
  * - "Покажи итоги ревью по методологии DISC."
  * - "Was the followup for user 5 generated successfully?"
  */
-class GetFollowupTool implements ToolInterface
+class GetFollowupTool extends AbstractAgentTool
 {
     public function getName(): string
     {

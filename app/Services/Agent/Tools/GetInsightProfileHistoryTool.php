@@ -16,7 +16,7 @@ use App\Models\InsightProfileHistory;
  * - "When did we first start tracking Ivan's goals and motivations?"
  * - "Show me how Ivan's personality profile has changed across versions."
  */
-class GetInsightProfileHistoryTool implements ToolInterface
+class GetInsightProfileHistoryTool extends AbstractAgentTool
 {
     public function getName(): string
     {
