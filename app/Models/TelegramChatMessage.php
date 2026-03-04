@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class TelegramChatMessage extends Model
 {
@@ -16,5 +17,10 @@ class TelegramChatMessage extends Model
     public function telegramUser(): BelongsTo
     {
         return $this->belongsTo(TelegramUser::class);
+    }
+
+    public function tasks(): MorphMany
+    {
+        return $this->morphMany(Task::class, 'taskable');
     }
 }

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\DB;
 
 class CalendarEvent extends Model
@@ -56,9 +56,9 @@ class CalendarEvent extends Model
         return $this->hasOne(MeetingSummary::class);
     }
 
-    public function meetingTasks(): HasMany
+    public function tasks(): MorphMany
     {
-        return $this->hasMany(MeetingTask::class);
+        return $this->morphMany(Task::class, 'taskable');
     }
 
     public function scopeOwned(Builder $query, int $userId): Builder

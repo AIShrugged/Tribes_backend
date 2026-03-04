@@ -5,7 +5,7 @@ namespace App\Services\Meeting;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\MeetingTaskStatus;
 use App\Models\CalendarEvent;
-use App\Models\MeetingTask;
+use App\Models\Task;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Services\OpenRouterClient;
 use Illuminate\Database\Eloquent\Collection;
@@ -37,23 +37,24 @@ class MeetingTaskService
                 return new Collection();
             }
 
-            $event->meetingTasks()->delete();
+            $event->tasks()->delete();
 
             foreach ($items as $item) {
-                MeetingTask::create([
-                    'calendar_event_id' => $event->id,
-                    'title'             => $item['title'],
-                    'description'       => $item['description'] ?? null,
-                    'assignee_name'     => $item['assignee_name'] ?? null,
-                    'due_date'          => $item['due_date'] ?? null,
-                    'status'            => MeetingTaskStatus::OPEN->value,
+                Task::create([
+                    'taskable_type' => CalendarEvent::class,
+                    'taskable_id'   => $event->id,
+                    'title'         => $item['title'],
+                    'description'   => $item['description'] ?? null,
+                    'assignee_name' => $item['assignee_name'] ?? null,
+                    'due_date'      => $item['due_date'] ?? null,
+                    'status'        => MeetingTaskStatus::OPEN->value,
                 ]);
             }
         } catch (\Throwable $e) {
             Log::error('MeetingTaskService: extraction failed', ['error' => $e->getMessage()]);
         }
 
-        return $event->meetingTasks()->get();
+        return $event->tasks()->get();
     }
 
     private function buildPrompt(string $transcript): string
