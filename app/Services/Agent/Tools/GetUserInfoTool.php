@@ -6,7 +6,7 @@ use App\Models\Participant;
 use App\Models\Profile;
 use App\Models\User;
 
-class GetUserInfoTool implements ToolInterface
+class GetUserInfoTool extends AbstractAgentTool
 {
     public function getName(): string
     {

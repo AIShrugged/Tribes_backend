@@ -5,7 +5,7 @@ namespace App\Services\Agent\Tools;
 use App\Models\CalendarEvent;
 use Illuminate\Support\Carbon;
 
-class SearchMeetingsTool implements ToolInterface
+class SearchMeetingsTool extends AbstractAgentTool
 {
     public function getName(): string
     {

@@ -5,7 +5,7 @@ namespace App\Services\Agent\Tools;
 use App\Models\InsightItem;
 use App\Models\InsightSource;
 
-class GetExtractedFactsTool implements ToolInterface
+class GetExtractedFactsTool extends AbstractAgentTool
 {
     public function getName(): string
     {

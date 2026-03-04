@@ -7,7 +7,7 @@ use App\Models\Profile;
 use App\Models\User;
 use App\Services\Insight\InsightRetrievalService;
 
-class GetRelationshipInsightTool implements ToolInterface
+class GetRelationshipInsightTool extends AbstractAgentTool
 {
     public function getName(): string
     {

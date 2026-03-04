@@ -17,7 +17,7 @@ use Illuminate\Support\Carbon;
  * - "Are there any overdue tasks from the planning session?"
  * - "Who was assigned the most tasks in this meeting?"
  */
-class GetMeetingTasksTool implements ToolInterface
+class GetMeetingTasksTool extends AbstractAgentTool
 {
     public function getName(): string
     {

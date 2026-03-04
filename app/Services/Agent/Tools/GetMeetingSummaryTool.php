@@ -4,7 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\MeetingSummary;
 
-class GetMeetingSummaryTool implements ToolInterface
+class GetMeetingSummaryTool extends AbstractAgentTool
 {
     public function getName(): string
     {
