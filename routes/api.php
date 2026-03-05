@@ -24,6 +24,7 @@ use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
 use App\Http\Controllers\API\v1\InsightController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
+use App\Http\Controllers\API\v1\DashboardController;
 use App\Http\Controllers\API\v1\DemoController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use Illuminate\Http\Request;
@@ -145,6 +146,10 @@ Route::group(['prefix' => 'v1'], function () {
 
         // Followup Export
         Route::get('followups/{followup}/export', [FollowupExportController::class, 'export']);
+
+        // Dashboard statistics
+        Route::get('dashboard', [DashboardController::class, 'index'])
+            ->name('dashboard.index');
 
         // Demo data generation
         Route::post('demo/seed', [DemoController::class, 'seed']);
