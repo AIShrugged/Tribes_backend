@@ -14,6 +14,7 @@ use App\Services\Chat\WandaPromptBuilder;
 use App\Services\Chat\WandaResponseParser;
 use App\Models\Chat;
 use App\Models\ChatMessage;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -197,7 +198,7 @@ PROMPT);
                 'Content-Type'  => 'application/json',
             ])
             ->post(self::OPENROUTER_URL, [
-                'model'      => config('ai.providers.openrouter.models.wanda'),
+                'model'      => Setting::get('model.wanda', config('ai.providers.openrouter.models.wanda')),
                 'messages'   => $payloadMessages,
                 'max_tokens' => 4096,
             ]);
