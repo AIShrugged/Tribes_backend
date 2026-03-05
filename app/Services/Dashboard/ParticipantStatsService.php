@@ -19,10 +19,19 @@ class ParticipantStatsService
 
     private function countUnique(Collection $eventIds): int
     {
-        return DB::table('participants')
+        $withProfile = DB::table('participants')
             ->whereIn('calendar_event_id', $eventIds)
+            ->whereNotNull('profile_id')
+            ->distinct()
+            ->count('profile_id');
+
+        $withoutProfile = DB::table('participants')
+            ->whereIn('calendar_event_id', $eventIds)
+            ->whereNull('profile_id')
             ->distinct()
             ->count('name');
+
+        return $withProfile + $withoutProfile;
     }
 
     private function averagePerMeeting(Collection $eventIds, int $totalMeetings): float
