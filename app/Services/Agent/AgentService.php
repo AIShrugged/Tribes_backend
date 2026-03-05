@@ -111,6 +111,8 @@ class AgentService
         $this->toolRegistry->register(new Tools\SearchMeetingsTool);
         $this->toolRegistry->register(new Tools\GetMeetingSummaryTool);
         $this->toolRegistry->register(new Tools\GetMeetingTasksTool);
+        $this->toolRegistry->register(new Tools\CreateTaskTool);
+        $this->toolRegistry->register(new Tools\UpdateTaskStatusTool);
         $this->toolRegistry->register(new Tools\GetFollowupTool);
         $this->toolRegistry->register(new Tools\GetExtractedFactsTool);
         $this->toolRegistry->register(new Tools\GetUserInsightsTool);

@@ -2,18 +2,19 @@
 
 namespace App\Services\Agent\Tools;
 
-use App\Models\MeetingTask;
+use App\Models\CalendarEvent;
 use App\Models\Participant;
+use App\Models\Task;
 use Illuminate\Support\Carbon;
 
 /**
- * Retrieves action items and tasks assigned during a meeting.
+ * Retrieves tasks and action items, optionally filtered by meeting, assignee, or status.
  *
  * Example questions this tool answers:
  * - "Какие задачи были поставлены на встрече в пятницу?"
  * - "What action items came out of the sprint review?"
  * - "Что задано Ивану по итогам встречи?"
- * - "Покажи незакрытые задачи со встречи #42."
+ * - "Покажи все незакрытые задачи."
  * - "Are there any overdue tasks from the planning session?"
  * - "Who was assigned the most tasks in this meeting?"
  */
@@ -21,12 +22,12 @@ class GetMeetingTasksTool extends AbstractAgentTool
 {
     public function getName(): string
     {
-        return 'get_meeting_tasks';
+        return 'get_tasks';
     }
 
     public function getDescription(): string
     {
-        return 'Get action items and tasks created from a specific meeting. Returns task titles, descriptions, assignee names, due dates, and statuses. Use ONLY when the user explicitly asks about tasks, action items, or assignments. Do NOT call this tool when the user asks what was discussed or what happened at a meeting — use get_meeting_summary instead. Can filter by assignee (profile_id) or status.';
+        return 'Get tasks and action items. Can filter by meeting (calendar_event_id), assignee (profile_id), or status. If no filters are provided, returns all tasks. Use ONLY when the user explicitly asks about tasks, action items, or assignments. Do NOT call this tool when the user asks what was discussed or what happened at a meeting — use get_meeting_summary instead.';
     }
 
     public function getParameters(): array
@@ -35,27 +36,27 @@ class GetMeetingTasksTool extends AbstractAgentTool
             'type' => 'object',
             'properties' => [
                 'calendar_event_id' => [
-                    'type' => 'integer',
-                    'description' => 'The ID of the calendar event (meeting) to get tasks for.',
+                    'type'        => 'integer',
+                    'description' => 'Optional: filter tasks linked to a specific calendar event (meeting) by its ID.',
                 ],
                 'profile_id' => [
-                    'type' => 'integer',
+                    'type'        => 'integer',
                     'description' => 'Optional: filter tasks assigned to a specific person by their profile_id.',
                 ],
                 'status' => [
-                    'type' => 'string',
+                    'type'        => 'string',
                     'description' => 'Optional: filter tasks by status. Common values: open, in_progress, done, cancelled.',
                 ],
                 'due_before' => [
-                    'type' => 'string',
+                    'type'        => 'string',
                     'description' => 'Optional: filter tasks with due_date on or before this date (YYYY-MM-DD).',
                 ],
                 'due_after' => [
-                    'type' => 'string',
+                    'type'        => 'string',
                     'description' => 'Optional: filter tasks with due_date on or after this date (YYYY-MM-DD).',
                 ],
             ],
-            'required' => ['calendar_event_id'],
+            'required' => [],
         ];
     }
 
@@ -69,20 +70,19 @@ class GetMeetingTasksTool extends AbstractAgentTool
         $dueBefore = $parameters['due_before'] ?? null;
         $dueAfter  = $parameters['due_after'] ?? null;
 
-        if (! $eventId) {
-            return [
-                'success' => false,
-                'error'   => 'calendar_event_id is required',
-            ];
+        $query = Task::query();
+
+        if ($eventId) {
+            $query->where('taskable_type', CalendarEvent::class)
+                ->where('taskable_id', $eventId);
         }
 
-        $query = MeetingTask::where('calendar_event_id', $eventId);
-
         if ($profileId) {
-            // Try filtering by profile_id first; if tasks aren't linked, fall back to assignee_name
-            $participant = Participant::where('calendar_event_id', $eventId)
-                ->where('profile_id', $profileId)
-                ->first();
+            $participant = $eventId
+                ? Participant::where('calendar_event_id', $eventId)
+                    ->where('profile_id', $profileId)
+                    ->first()
+                : null;
 
             $query->where(function ($q) use ($profileId, $participant) {
                 $q->where('profile_id', $profileId);
@@ -108,20 +108,19 @@ class GetMeetingTasksTool extends AbstractAgentTool
 
         if ($tasks->isEmpty()) {
             return [
-                'success'           => true,
-                'calendar_event_id' => $eventId,
-                'tasks_count'       => 0,
-                'message'           => 'No tasks found for this meeting'
+                'success'     => true,
+                'tasks_count' => 0,
+                'message'     => 'No tasks found'
+                    . ($eventId ? " for meeting #{$eventId}" : '')
                     . ($status ? " with status '{$status}'" : '')
                     . '.',
             ];
         }
 
         return [
-            'success'           => true,
-            'calendar_event_id' => $eventId,
-            'tasks_count'       => $tasks->count(),
-            'tasks'             => $tasks->map(fn ($task) => [
+            'success'     => true,
+            'tasks_count' => $tasks->count(),
+            'tasks'       => $tasks->map(fn ($task) => [
                 'id'            => $task->id,
                 'title'         => $task->title,
                 'description'   => $task->description,
@@ -129,6 +128,8 @@ class GetMeetingTasksTool extends AbstractAgentTool
                 'profile_id'    => $task->profile_id,
                 'due_date'      => $task->due_date?->toDateString(),
                 'status'        => $task->status,
+                'taskable_type' => $task->taskable_type,
+                'taskable_id'   => $task->taskable_id,
             ])->toArray(),
         ];
     }

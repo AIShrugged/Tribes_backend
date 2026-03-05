@@ -27,3 +27,9 @@ Schedule::command('insight:process-telegram')
     ->everyFourHours()
     ->name('insight:process-telegram')
     ->withoutOverlapping();
+
+// Extract tasks from Telegram messages
+Schedule::command('tasks:process-telegram')
+    ->everyThreeHours()
+    ->name('tasks:process-telegram')
+    ->withoutOverlapping();
