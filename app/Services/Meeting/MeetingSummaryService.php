@@ -7,6 +7,7 @@ use App\Enums\FollowupStatus;
 use App\Models\CalendarEvent;
 use App\Models\MeetingSummary;
 use App\Services\Followup\TranscriptBuilderService;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -33,7 +34,7 @@ class MeetingSummaryService
 
             $json = $this->llm->chat(
                 messages: [new MessageDTO('user', $this->buildPrompt($transcript))],
-                model: config('ai.providers.openrouter.models.meeting_summary'),
+                model: Setting::get('model.meeting_summary', config('ai.providers.openrouter.models.meeting_summary')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

@@ -7,6 +7,7 @@ use App\Models\CalendarEvent;
 use App\Models\InsightRelationship;
 use App\Models\Profile;
 use App\Services\Followup\TranscriptBuilderService;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -140,7 +141,7 @@ PROMPT;
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             config('ai.providers.openrouter.models.insight'),
+                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
                 maxTokens:         2048,
                 forceJsonResponse: true,
             );
@@ -180,7 +181,7 @@ PROMPT;
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             config('ai.providers.openrouter.models.insight'),
+                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
                 maxTokens:         1024,
                 forceJsonResponse: true,
             );

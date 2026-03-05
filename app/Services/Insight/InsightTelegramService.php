@@ -9,6 +9,7 @@ use App\Models\InsightSource;
 use App\Models\Profile;
 use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -183,7 +184,7 @@ class InsightTelegramService
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             config('ai.providers.openrouter.models.insight'),
+                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
                 maxTokens:         4096,
                 forceJsonResponse: true,
             );

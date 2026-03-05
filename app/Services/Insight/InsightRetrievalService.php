@@ -6,6 +6,7 @@ use App\Domain\DTO\AI\MessageDTO;
 use App\Models\InsightProfile;
 use App\Models\InsightRelationship;
 use App\Models\InsightShortTerm;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -135,7 +136,7 @@ class InsightRetrievalService
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             config('ai.providers.openrouter.models.insight'),
+                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
                 maxTokens:         256,
                 forceJsonResponse: true,
             );

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Models\Setting;
 use App\Services\Methodologies\SchemePromptFactory;
 
 class MethodologySchemeGenerator
@@ -21,6 +22,6 @@ class MethodologySchemeGenerator
             new MessageDTO('user', $prompt->make($methodology))
         ];
 
-        return $this->llm->chat($messages, config('ai.providers.openrouter.models.scheme'), 8096, true);
+        return $this->llm->chat($messages, Setting::get('model.scheme', config('ai.providers.openrouter.models.scheme')), 8096, true);
     }
 }

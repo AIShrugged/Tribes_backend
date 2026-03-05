@@ -3,6 +3,7 @@
 namespace App\Services\Demo;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -33,7 +34,7 @@ class DemoTranscriptGeneratorService
         try {
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
-                model: config('ai.providers.openrouter.models.demo'),
+                model: Setting::get('model.demo', config('ai.providers.openrouter.models.demo')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

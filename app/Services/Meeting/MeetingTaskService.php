@@ -7,6 +7,7 @@ use App\Enums\MeetingTaskStatus;
 use App\Models\CalendarEvent;
 use App\Models\MeetingTask;
 use App\Services\Followup\TranscriptBuilderService;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +27,7 @@ class MeetingTaskService
         try {
             $json = $this->llm->chat(
                 messages: [new MessageDTO('user', $this->buildPrompt($transcript))],
-                model: config('ai.providers.openrouter.models.meeting_tasks'),
+                model: Setting::get('model.meeting_tasks', config('ai.providers.openrouter.models.meeting_tasks')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

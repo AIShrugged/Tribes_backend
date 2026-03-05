@@ -9,6 +9,7 @@ use App\Models\Followup;
 use App\Models\Methodology;
 use App\Models\Team;
 use App\Models\User;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -53,7 +54,7 @@ class FollowupService
 
                 $json = $this->llm->chat(
                     messages: $messages,
-                    model: config('ai.providers.openrouter.models.followup'),
+                    model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
                     maxTokens: 8192,
                     forceJsonResponse: true
                 );

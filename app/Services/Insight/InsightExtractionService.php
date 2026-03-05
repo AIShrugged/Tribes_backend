@@ -10,6 +10,7 @@ use App\Models\InsightSource;
 use App\Models\Participant;
 use App\Models\Profile;
 use App\Services\Followup\TranscriptBuilderService;
+use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -93,7 +94,7 @@ class InsightExtractionService
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             config('ai.providers.openrouter.models.insight'),
+                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
                 maxTokens:         4096,
                 forceJsonResponse: true,
             );

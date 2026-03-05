@@ -6,6 +6,7 @@ use App\Enums\OutputMode;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
+use App\Models\Setting;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\OpenRouterClient;
@@ -16,8 +17,6 @@ use Illuminate\Support\Facades\Log;
 class AgentService
 {
     private const MAX_ITERATIONS = 15;
-
-    private const MODEL = 'anthropic/claude-sonnet-4.6';
 
     private const STOP_KEY_PREFIX = 'agent_stop_';
 
@@ -203,7 +202,7 @@ class AgentService
                 $response = OpenRouterClient::chatWithTools(
                     $messages,
                     $tools,
-                    self::MODEL,
+                    Setting::get('model.telegram_agent', 'anthropic/claude-sonnet-4.6'),
                     4096,
                     $systemPrompt
                 );
