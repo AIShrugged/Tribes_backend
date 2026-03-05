@@ -30,13 +30,13 @@ class MeetingStatsService
 
     private function countWithBot(Builder $query): int
     {
-        return (clone $query)->where('has_bot', true)->count();
+        return (clone $query)->where('required_bot', true)->count();
     }
 
     private function totalDurationMinutes(Builder $query): int
     {
         return (int) (clone $query)
-            ->selectRaw('SUM(TIMESTAMPDIFF(MINUTE, starts_at, ends_at)) as total')
+            ->selectRaw('SUM(EXTRACT(EPOCH FROM (ends_at - starts_at)) / 60) as total')
             ->value('total');
     }
 
@@ -44,7 +44,7 @@ class MeetingStatsService
     {
         return (int) round(
             (clone $query)
-                ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, starts_at, ends_at)) as avg')
+                ->selectRaw('AVG(EXTRACT(EPOCH FROM (ends_at - starts_at)) / 60) as avg')
                 ->value('avg') ?? 0
         );
     }
@@ -53,7 +53,7 @@ class MeetingStatsService
     {
         return (clone $query)
             ->select('id', 'title', 'starts_at', 'ends_at')
-            ->selectRaw('TIMESTAMPDIFF(MINUTE, starts_at, ends_at) as duration_minutes')
+            ->selectRaw('EXTRACT(EPOCH FROM (ends_at - starts_at)) / 60 as duration_minutes')
             ->withCount('participants')
             ->orderByDesc('starts_at')
             ->limit(10)
@@ -71,9 +71,9 @@ class MeetingStatsService
     private function byMonth(Builder $query): Collection
     {
         return (clone $query)
-            ->selectRaw("DATE_FORMAT(starts_at, '%Y-%m') as month")
+            ->selectRaw("TO_CHAR(starts_at, 'YYYY-MM') as month")
             ->selectRaw('COUNT(*) as count')
-            ->selectRaw('SUM(TIMESTAMPDIFF(MINUTE, starts_at, ends_at)) as total_duration_minutes')
+            ->selectRaw('SUM(EXTRACT(EPOCH FROM (ends_at - starts_at)) / 60) as total_duration_minutes')
             ->groupBy('month')
             ->orderBy('month')
             ->get()
