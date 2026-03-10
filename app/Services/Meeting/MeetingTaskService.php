@@ -17,6 +17,7 @@ class MeetingTaskService
     public function __construct(
         private readonly OpenRouterClient $llm,
         private readonly TranscriptBuilderService $transcriptBuilder,
+        private readonly ParticipantProfileMatchingService $participantMatcher,
     ) {
     }
 
@@ -55,7 +56,45 @@ class MeetingTaskService
             Log::error('MeetingTaskService: extraction failed', ['error' => $e->getMessage()]);
         }
 
+        // Match participants to profiles via LLM, then link profile_id to tasks
+        $this->participantMatcher->match($event);
+        $this->linkTaskProfiles($event);
+
         return $event->tasks()->get();
+    }
+
+    /**
+     * After participant matching, fill task.profile_id by comparing assignee_name
+     * with participant names that already have a profile_id.
+     */
+    private function linkTaskProfiles(CalendarEvent $event): void
+    {
+        $tasks = $event->tasks()->whereNull('profile_id')->whereNotNull('assignee_name')->get();
+
+        if ($tasks->isEmpty()) {
+            return;
+        }
+
+        $participants = $event->participants()->whereNotNull('profile_id')->get();
+
+        if ($participants->isEmpty()) {
+            return;
+        }
+
+        foreach ($tasks as $task) {
+            $assigneeLower = mb_strtolower($task->assignee_name);
+
+            $matched = $participants->first(function ($participant) use ($assigneeLower) {
+                $participantLower = mb_strtolower($participant->name);
+                return str_contains($participantLower, $assigneeLower)
+                    || str_contains($assigneeLower, $participantLower)
+                    || str_contains($assigneeLower, mb_strtolower(explode(' ', $participant->name)[0] ?? ''));
+            });
+
+            if ($matched) {
+                $task->update(['profile_id' => $matched->profile_id]);
+            }
+        }
     }
 
     private function buildPrompt(string $transcript): string
