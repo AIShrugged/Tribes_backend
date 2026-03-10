@@ -11,6 +11,7 @@ use App\Services\Agent\Tools\GetMeetingTasksTool;
 use App\Services\Agent\Tools\GetRelationshipInsightTool;
 use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
+use App\Services\Agent\Tools\GetCurrentUserTool;
 use App\Services\Agent\Tools\GetUserInfoTool;
 use App\Services\Agent\Tools\GetUserInsightsTool;
 use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
@@ -27,6 +28,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 class HrServer extends Server
 {
     protected array $tools = [
+        GetCurrentUserTool::class,
         GetUserInfoTool::class,
         GetUserInsightsTool::class,
         GetUserShortTermMemoryTool::class,
