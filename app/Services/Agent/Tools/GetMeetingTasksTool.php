@@ -43,6 +43,10 @@ class GetMeetingTasksTool extends AbstractAgentTool
                     'type'        => 'integer',
                     'description' => 'Optional: filter tasks assigned to a specific person by their profile_id.',
                 ],
+                'assignee_name' => [
+                    'type'        => 'string',
+                    'description' => 'Optional: filter tasks by assignee name (case-insensitive, partial match). Use when you have a name but no profile_id.',
+                ],
                 'status' => [
                     'type'        => 'string',
                     'description' => 'Optional: filter tasks by status. Common values: open, in_progress, done, cancelled.',
@@ -64,17 +68,22 @@ class GetMeetingTasksTool extends AbstractAgentTool
     {
         $parameters = $parameters ?? [];
 
-        $eventId   = $parameters['calendar_event_id'] ?? null;
-        $profileId = $parameters['profile_id'] ?? null;
-        $status    = $parameters['status'] ?? null;
-        $dueBefore = $parameters['due_before'] ?? null;
-        $dueAfter  = $parameters['due_after'] ?? null;
+        $eventId      = $parameters['calendar_event_id'] ?? null;
+        $profileId    = $parameters['profile_id'] ?? null;
+        $assigneeName = $parameters['assignee_name'] ?? null;
+        $status       = $parameters['status'] ?? null;
+        $dueBefore    = $parameters['due_before'] ?? null;
+        $dueAfter     = $parameters['due_after'] ?? null;
 
         $query = Task::query();
 
         if ($eventId) {
             $query->where('taskable_type', CalendarEvent::class)
                 ->where('taskable_id', $eventId);
+        }
+
+        if ($assigneeName) {
+            $query->where('assignee_name', 'ilike', '%' . $assigneeName . '%');
         }
 
         if ($profileId) {
