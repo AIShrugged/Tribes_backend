@@ -23,11 +23,15 @@ class MeetingTaskService
 
     public function extract(CalendarEvent $event): Collection
     {
-        $transcript = $this->transcriptBuilder->build($event);
+        // Match participants to profiles first so the LLM can reference profile_id directly
+        $this->participantMatcher->match($event);
+
+        $participants = $event->participants()->whereNotNull('profile_id')->get();
+        $transcript   = $this->transcriptBuilder->build($event);
 
         try {
             $json = $this->llm->chat(
-                messages: [new MessageDTO('user', $this->buildPrompt($transcript))],
+                messages: [new MessageDTO('user', $this->buildPrompt($transcript, $participants))],
                 model: Setting::get('model.meeting_tasks', config('ai.providers.openrouter.models.meeting_tasks')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
@@ -48,6 +52,7 @@ class MeetingTaskService
                     'title'         => $item['title'],
                     'description'   => $item['description'] ?? null,
                     'assignee_name' => $item['assignee_name'] ?? null,
+                    'profile_id'    => $item['profile_id'] ?? null,
                     'due_date'      => $item['due_date'] ?? null,
                     'status'        => MeetingTaskStatus::OPEN->value,
                 ]);
@@ -56,65 +61,43 @@ class MeetingTaskService
             Log::error('MeetingTaskService: extraction failed', ['error' => $e->getMessage()]);
         }
 
-        // Match participants to profiles via LLM, then link profile_id to tasks
-        $this->participantMatcher->match($event);
-        $this->linkTaskProfiles($event);
-
         return $event->tasks()->get();
     }
 
-    /**
-     * After participant matching, fill task.profile_id by comparing assignee_name
-     * with participant names that already have a profile_id.
-     */
-    private function linkTaskProfiles(CalendarEvent $event): void
+    private function buildPrompt(string $transcript, Collection $participants): string
     {
-        $tasks = $event->tasks()->whereNull('profile_id')->whereNotNull('assignee_name')->get();
+        $participantsBlock = '';
 
-        if ($tasks->isEmpty()) {
-            return;
+        if ($participants->isNotEmpty()) {
+            $list = $participants->map(fn($p) => "- profile_id={$p->profile_id}, name=\"{$p->name}\"")->implode("\n");
+            $participantsBlock = <<<BLOCK
+
+            Known meeting participants with their profile IDs (use profile_id when you can identify the assignee):
+            {$list}
+
+            BLOCK;
         }
 
-        $participants = $event->participants()->whereNotNull('profile_id')->get();
-
-        if ($participants->isEmpty()) {
-            return;
-        }
-
-        foreach ($tasks as $task) {
-            $assigneeLower = mb_strtolower($task->assignee_name);
-
-            $matched = $participants->first(function ($participant) use ($assigneeLower) {
-                $participantLower = mb_strtolower($participant->name);
-                return str_contains($participantLower, $assigneeLower)
-                    || str_contains($assigneeLower, $participantLower)
-                    || str_contains($assigneeLower, mb_strtolower(explode(' ', $participant->name)[0] ?? ''));
-            });
-
-            if ($matched) {
-                $task->update(['profile_id' => $matched->profile_id]);
-            }
-        }
-    }
-
-    private function buildPrompt(string $transcript): string
-    {
         return <<<TXT
-        Проанализируй транскрипт встречи и извлеки все задачи, поручения и договорённости о действиях.
-        Верни JSON-массив задач в следующем формате:
+        Analyze the meeting transcript and extract all tasks, assignments, and action items.
+        Return a JSON array of tasks in the following format:
         [
             {
-                "title": "Краткое название задачи",
-                "description": "Подробное описание или null",
-                "assignee_name": "Имя ответственного или null",
-                "due_date": "YYYY-MM-DD или null"
+                "title": "Short task title",
+                "description": "Detailed description or null",
+                "assignee_name": "Assignee name as mentioned in the transcript, or null",
+                "profile_id": 5,
+                "due_date": "YYYY-MM-DD or null"
             }
         ]
+        {$participantsBlock}
+        Rules:
+        - Set profile_id only if you can confidently match the assignee to one of the known participants above
+        - If the assignee is unknown or not in the participants list — set profile_id to null
+        - If there are no tasks — return an empty array []
+        - Respond with valid JSON only, no additional text
 
-        Если задач нет — верни пустой массив [].
-        Отвечай только валидным JSON без дополнительного текста.
-
-        Транскрипт встречи:
+        Meeting transcript:
         {$transcript}
         TXT;
     }
