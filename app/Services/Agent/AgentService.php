@@ -105,6 +105,7 @@ class AgentService
 
         // Register user-specific tools (always needed regardless of channel)
         $this->toolRegistry->register(new Tools\UpdateMemoryTool($user, $channel ?? 'web'));
+        $this->toolRegistry->register(new Tools\GetCurrentUserTool($user));
 
         // Register context-free tools (available for all channels)
         $this->toolRegistry->register(new Tools\GetUserInfoTool);
