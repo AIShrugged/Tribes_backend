@@ -87,16 +87,16 @@ class GetMeetingTasksTool extends AbstractAgentTool
         }
 
         if ($profileId) {
-            $participant = $eventId
-                ? Participant::where('calendar_event_id', $eventId)
-                    ->where('profile_id', $profileId)
-                    ->first()
-                : null;
+            $participantQuery = Participant::where('profile_id', $profileId);
+            if ($eventId) {
+                $participantQuery->where('calendar_event_id', $eventId);
+            }
+            $assigneeNames = $participantQuery->pluck('name')->unique()->values()->toArray();
 
-            $query->where(function ($q) use ($profileId, $participant) {
+            $query->where(function ($q) use ($profileId, $assigneeNames) {
                 $q->where('profile_id', $profileId);
-                if ($participant) {
-                    $q->orWhere('assignee_name', $participant->name);
+                if (!empty($assigneeNames)) {
+                    $q->orWhereIn('assignee_name', $assigneeNames);
                 }
             });
         }
