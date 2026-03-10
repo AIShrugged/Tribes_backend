@@ -46,6 +46,8 @@ class UserProfileService
         $user->save();
 
         if ($newPassword !== null) {
+            $this->revokeOtherTokens($user);
+
             try {
                 $this->dispatchPasswordChangedNotification($user);
             } catch (Throwable $e) {
@@ -57,6 +59,15 @@ class UserProfileService
         }
 
         return $user;
+    }
+
+    private function revokeOtherTokens(User $user): void
+    {
+        $currentTokenId = $user->currentAccessToken()?->id;
+
+        $user->tokens()
+            ->when($currentTokenId, fn($q) => $q->where('id', '!=', $currentTokenId))
+            ->delete();
     }
 
     private function dispatchPasswordChangedNotification(User $user): void

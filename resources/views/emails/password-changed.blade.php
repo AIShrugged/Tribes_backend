@@ -81,7 +81,7 @@
                 <p><strong>Didn't make this change?</strong> If you did not change your password, please contact our support team immediately, as your account may be compromised.</p>
             </div>
 
-            <p>For security, all existing sessions remain active. If you suspect unauthorized access, you can log out from all devices by logging in and revoking your sessions.</p>
+            <p>For security, all other active sessions have been automatically signed out.</p>
         </div>
 
         <div class="footer">

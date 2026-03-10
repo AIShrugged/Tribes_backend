@@ -12,7 +12,7 @@ class UpdateUserProfileRequest extends ApiResourceRequest
         return [
             'name'             => ['sometimes', 'string', 'min:1', 'max:255'],
             'current_password' => ['required_with:password', 'string'],
-            'password'         => ['sometimes', 'string'],
+            'password'         => ['sometimes', 'string', 'min:8', 'confirmed'],
         ];
     }
 
@@ -52,7 +52,11 @@ class UpdateUserProfileRequest extends ApiResourceRequest
                 'example'     => 'oldpassword123',
             ],
             'password'         => [
-                'description' => 'New password. Required if name is not provided.',
+                'description' => 'New password. Minimum 8 characters. Required if name is not provided.',
+                'example'     => 'newpassword123',
+            ],
+            'password_confirmation' => [
+                'description' => 'Must match the password field.',
                 'example'     => 'newpassword123',
             ],
         ];
