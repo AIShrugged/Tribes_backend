@@ -9,6 +9,13 @@ class Participant extends Model
 {
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return [
+            'profile_confidence' => 'integer',
+        ];
+    }
+
     public function profile(): ?BelongsTo
     {
         return $this->belongsTo(Profile::class);
