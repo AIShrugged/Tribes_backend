@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\Chat;
+use App\Models\Conversation;
 use App\Models\User;
 
 class ChatPolicy
@@ -12,9 +12,9 @@ class ChatPolicy
         return true;
     }
 
-    public function view(User $user, Chat $chat): bool
+    public function view(User $user, Conversation $conversation): bool
     {
-        return $chat->user_id === $user->id;
+        return $conversation->hasParticipant($user);
     }
 
     public function create(User $user): bool
@@ -22,18 +22,18 @@ class ChatPolicy
         return true;
     }
 
-    public function update(User $user, Chat $chat): bool
+    public function update(User $user, Conversation $conversation): bool
     {
-        return $chat->user_id === $user->id;
+        return $conversation->isOwner($user);
     }
 
-    public function delete(User $user, Chat $chat): bool
+    public function delete(User $user, Conversation $conversation): bool
     {
-        return $chat->user_id === $user->id;
+        return $conversation->isOwner($user);
     }
 
-    public function sendMessage(User $user, Chat $chat): bool
+    public function sendMessage(User $user, Conversation $conversation): bool
     {
-        return $chat->user_id === $user->id;
+        return $conversation->hasParticipant($user);
     }
 }

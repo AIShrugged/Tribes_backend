@@ -16,18 +16,6 @@ class ChatMessageRequest extends ApiResourceRequest
         ];
     }
 
-    protected function prepareForValidation(): void
-    {
-        if ($this->route('chat')) {
-            $this->merge(['chat_id' => (int) $this->route('chat')]);
-        }
-    }
-
-    public function getChatId(): int
-    {
-        return $this->chat_id;
-    }
-
     public function getMessageContent(): string
     {
         return $this->input('content');

@@ -2,8 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\Chat;
-use App\Models\ChatMessage;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\Tools\ToolInterface;
@@ -226,9 +225,9 @@ class ChatAgentServiceTest extends TestCase
         return $this->app->make(AgentService::class);
     }
 
-    private function makeHistoryMessage(string $role, string $content): ChatMessage
+    private function makeHistoryMessage(string $role, string $content): Message
     {
-        $message          = new ChatMessage();
+        $message          = new Message();
         $message->role    = $role;
         $message->content = $content;
 

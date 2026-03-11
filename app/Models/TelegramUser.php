@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class TelegramUser extends Model
 {
@@ -22,6 +23,18 @@ class TelegramUser extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function conversations(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Conversation::class,
+            ConversationParticipant::class,
+            'participantable_id',
+            'id',
+            'telegram_user_id',
+            'conversation_id'
+        )->where('conversation_participants.participantable_type', self::class);
     }
 
     /**

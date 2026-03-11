@@ -2,9 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\Chat;
-use App\Models\ChatMessage;
+use App\Enums\ChannelType;
+use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\User;
+use App\Services\Chat\ConversationService;
+use App\Services\Chat\MessageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -14,17 +17,18 @@ class ChatMessageControllerTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
-    protected Chat $chat;
+    protected Conversation $conversation;
+    protected ConversationService $conversationService;
+    protected MessageService $messageService;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->user = User::factory()->create();
-        $this->chat = Chat::create([
-            'user_id' => $this->user->id,
-            'title'   => 'Test Chat',
-        ]);
+        $this->user                = User::factory()->create();
+        $this->conversationService = $this->app->make(ConversationService::class);
+        $this->messageService      = $this->app->make(MessageService::class);
+        $this->conversation        = $this->conversationService->createWebConversation($this->user, 'Test Chat');
     }
 
     // --- GET /api/v1/chats/{chat}/messages ---
@@ -32,7 +36,7 @@ class ChatMessageControllerTest extends TestCase
     /** @test */
     public function it_requires_authentication_to_list_messages(): void
     {
-        $response = $this->getJson("/api/v1/chats/{$this->chat->id}/messages");
+        $response = $this->getJson("/api/v1/chats/{$this->conversation->id}/messages");
 
         $response->assertStatus(401);
     }
@@ -40,11 +44,11 @@ class ChatMessageControllerTest extends TestCase
     /** @test */
     public function it_returns_messages_for_own_chat(): void
     {
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Hello']);
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'assistant', 'content' => 'Hi there']);
+        $this->messageService->createUserMessage($this->conversation, $this->user, 'Hello');
+        $this->messageService->createAssistantMessage($this->conversation, 'Hi there');
 
         $response = $this->actingAs($this->user)
-            ->getJson("/api/v1/chats/{$this->chat->id}/messages");
+            ->getJson("/api/v1/chats/{$this->conversation->id}/messages");
 
         $response->assertStatus(200)
             ->assertJsonPath('data.0.role', 'user')
@@ -59,7 +63,7 @@ class ChatMessageControllerTest extends TestCase
         $otherUser = User::factory()->create();
 
         $response = $this->actingAs($otherUser)
-            ->getJson("/api/v1/chats/{$this->chat->id}/messages");
+            ->getJson("/api/v1/chats/{$this->conversation->id}/messages");
 
         $response->assertStatus(404);
     }
@@ -67,12 +71,12 @@ class ChatMessageControllerTest extends TestCase
     /** @test */
     public function it_returns_messages_in_chronological_order(): void
     {
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'First']);
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'assistant', 'content' => 'Second']);
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Third']);
+        $this->messageService->createUserMessage($this->conversation, $this->user, 'First');
+        $this->messageService->createAssistantMessage($this->conversation, 'Second');
+        $this->messageService->createUserMessage($this->conversation, $this->user, 'Third');
 
         $response = $this->actingAs($this->user)
-            ->getJson("/api/v1/chats/{$this->chat->id}/messages");
+            ->getJson("/api/v1/chats/{$this->conversation->id}/messages");
 
         $response->assertStatus(200);
         $data = $response->json('data');
@@ -84,10 +88,10 @@ class ChatMessageControllerTest extends TestCase
     /** @test */
     public function it_returns_message_fields_in_correct_format(): void
     {
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Test']);
+        $this->messageService->createUserMessage($this->conversation, $this->user, 'Test');
 
         $response = $this->actingAs($this->user)
-            ->getJson("/api/v1/chats/{$this->chat->id}/messages");
+            ->getJson("/api/v1/chats/{$this->conversation->id}/messages");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -100,7 +104,7 @@ class ChatMessageControllerTest extends TestCase
     /** @test */
     public function it_requires_authentication_to_send_message(): void
     {
-        $response = $this->postJson("/api/v1/chats/{$this->chat->id}/messages", [
+        $response = $this->postJson("/api/v1/chats/{$this->conversation->id}/messages", [
             'content' => 'Hello',
         ]);
 
@@ -123,25 +127,25 @@ class ChatMessageControllerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/v1/chats/{$this->chat->id}/messages", [
+            ->postJson("/api/v1/chats/{$this->conversation->id}/messages", [
                 'content' => 'Вопрос пользователя',
             ]);
 
         $response->assertStatus(200)
             ->assertJsonPath('data.role', 'assistant')
             ->assertJsonPath('data.content', 'Это ответ агента')
-            ->assertJsonPath('data.chat_id', $this->chat->id);
+            ->assertJsonPath('data.chat_id', $this->conversation->id);
 
-        // Оба сообщения сохранены в БД
-        $this->assertDatabaseHas('chat_messages', [
-            'chat_id' => $this->chat->id,
-            'role'    => 'user',
-            'content' => 'Вопрос пользователя',
+        // Оба сообщения сохранены в messages
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $this->conversation->id,
+            'role'            => 'user',
+            'content'         => 'Вопрос пользователя',
         ]);
-        $this->assertDatabaseHas('chat_messages', [
-            'chat_id' => $this->chat->id,
-            'role'    => 'assistant',
-            'content' => 'Это ответ агента',
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $this->conversation->id,
+            'role'            => 'assistant',
+            'content'         => 'Это ответ агента',
         ]);
     }
 
@@ -151,7 +155,7 @@ class ChatMessageControllerTest extends TestCase
         $otherUser = User::factory()->create();
 
         $response = $this->actingAs($otherUser)
-            ->postJson("/api/v1/chats/{$this->chat->id}/messages", [
+            ->postJson("/api/v1/chats/{$this->conversation->id}/messages", [
                 'content' => 'Hello',
             ]);
 
@@ -162,7 +166,7 @@ class ChatMessageControllerTest extends TestCase
     public function it_validates_content_is_required(): void
     {
         $response = $this->actingAs($this->user)
-            ->postJson("/api/v1/chats/{$this->chat->id}/messages", []);
+            ->postJson("/api/v1/chats/{$this->conversation->id}/messages", []);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['content']);
@@ -172,7 +176,7 @@ class ChatMessageControllerTest extends TestCase
     public function it_validates_content_max_length(): void
     {
         $response = $this->actingAs($this->user)
-            ->postJson("/api/v1/chats/{$this->chat->id}/messages", [
+            ->postJson("/api/v1/chats/{$this->conversation->id}/messages", [
                 'content' => str_repeat('a', 10001),
             ]);
 
@@ -196,12 +200,12 @@ class ChatMessageControllerTest extends TestCase
     /** @test */
     public function it_returns_chat_list_for_authenticated_user(): void
     {
-        Chat::create(['user_id' => $this->user->id, 'title' => 'Chat 1']);
-        Chat::create(['user_id' => $this->user->id, 'title' => 'Chat 2']);
+        $this->conversationService->createWebConversation($this->user, 'Chat 1');
+        $this->conversationService->createWebConversation($this->user, 'Chat 2');
 
         // Чужой чат — не должен попасть в список
         $otherUser = User::factory()->create();
-        Chat::create(['user_id' => $otherUser->id, 'title' => 'Other chat']);
+        $this->conversationService->createWebConversation($otherUser, 'Other chat');
 
         $response = $this->actingAs($this->user)
             ->getJson('/api/v1/chats');
@@ -209,7 +213,7 @@ class ChatMessageControllerTest extends TestCase
         $response->assertStatus(200);
 
         $data = $response->json('data');
-        // Пользователь видит только свои чаты (изначально создан 1 в setUp + 2 новых = 3)
+        // Пользователь видит только свои чаты (созданный в setUp + 2 новых = 3)
         $this->assertCount(3, $data);
     }
 
@@ -224,9 +228,9 @@ class ChatMessageControllerTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonPath('data.title', 'Мой новый чат');
 
-        $this->assertDatabaseHas('chats', [
-            'user_id' => $this->user->id,
-            'title'   => 'Мой новый чат',
+        $this->assertDatabaseHas('conversations', [
+            'channel_type' => ChannelType::Web->value,
+            'title'        => 'Мой новый чат',
         ]);
     }
 
