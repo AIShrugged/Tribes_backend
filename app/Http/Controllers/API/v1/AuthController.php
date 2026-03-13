@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AuthRequest;
+use App\Http\Requests\API\v1\CreateTokenRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\ProfileLinkingService;
@@ -112,11 +113,34 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        $user->tokens()->delete();
+        $user->tokens()->where('name', 'authToken')->delete();
 
         $token = $user->createToken('authToken')->plainTextToken;
 
         return response()->json(['token' => $token], 201);
+    }
+
+    /**
+     * Create token
+     *
+     * Issue a new named token for the authenticated user. Maximum 3 tokens per user.
+     *
+     * @response 201 scenario="OK" {"token": "2|abc123token", "name": "my-api-key"}
+     * @response 422 scenario="Token limit reached" {"message": "Token limit reached. Maximum 3 tokens allowed."}
+     */
+    #[Authenticated]
+    public function createToken(CreateTokenRequest $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->tokens()->count() >= 3) {
+            return response()->json(['message' => 'Token limit reached. Maximum 3 tokens allowed.'], 422);
+        }
+
+        $name = $request->getName();
+        $token = $user->createToken($name)->plainTextToken;
+
+        return response()->json(['token' => $token, 'name' => $name], 201);
     }
 
     /**
@@ -138,7 +162,7 @@ class AuthController extends Controller
             ], 204);
         }
 
-        $request->user()->currentAccessToken()->delete();
+        $request->user()->currentAccessToken()?->delete();
 
         return response()->json([
             'message' => 'Logged out',

@@ -66,6 +66,7 @@ class UserProfileService
         $currentTokenId = $user->currentAccessToken()?->id;
 
         $user->tokens()
+            ->where('name', 'authToken')
             ->when($currentTokenId, fn($q) => $q->where('id', '!=', $currentTokenId))
             ->delete();
     }
