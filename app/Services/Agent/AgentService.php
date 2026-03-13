@@ -109,7 +109,7 @@ class AgentService
 
         // Register context-free tools (available for all channels)
         $this->toolRegistry->register(new Tools\GetUserInfoTool);
-        $this->toolRegistry->register(new Tools\SearchMeetingsTool);
+        $this->toolRegistry->register(new Tools\SearchMeetingsTool($user));
         $this->toolRegistry->register(new Tools\GetMeetingSummaryTool);
         $this->toolRegistry->register(new Tools\GetMeetingTasksTool);
         $this->toolRegistry->register(new Tools\CreateTaskTool);
