@@ -5,11 +5,11 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AuthRequest;
 use App\Http\Requests\API\v1\CreateTokenRequest;
+use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\ProfileLinkingService;
 use App\Services\TeamInvitationService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Knuckles\Scribe\Attributes\Authenticated;
@@ -44,11 +44,11 @@ class AuthController extends Controller
         EmailVerificationService $emailVerificationService,
         TeamInvitationService $teamInvitationService,
         ProfileLinkingService $profileLinkingService
-    ): JsonResponse {
+    ): ApiResponse {
         $user = User::where('email', $request->getEmail())->first();
 
         if ($user) {
-            return response()->json(['message' => 'User already exists.'], 409);
+            return ApiResponse::error('User already exists.', status: 409);
         }
 
         $user = User::create($request->validated());
@@ -81,18 +81,18 @@ class AuthController extends Controller
             $emailVerificationService->sendVerificationEmail($user);
         }
 
-        $response = [
+        $data = [
             'token' => $token,
             'email_verification_sent' => !$inviteAccepted,
         ];
 
         if ($inviteAccepted) {
-            $response['invite_accepted'] = true;
-            $response['team_id'] = $teamId;
-            $response['organization_id'] = $organizationId;
+            $data['invite_accepted'] = true;
+            $data['team_id'] = $teamId;
+            $data['organization_id'] = $organizationId;
         }
 
-        return response()->json($response, 201);
+        return ApiResponse::success(data: $data, status: 201);
     }
 
     /**
@@ -105,19 +105,19 @@ class AuthController extends Controller
      * @response 201 scenario="OK" {"token": "1|abc123token"}
      * @response 401 scenario="Invalid credentials" {"message": "Invalid credentials"}
      */
-    public function login(AuthRequest $request): JsonResponse
+    public function login(AuthRequest $request): ApiResponse
     {
         $user = User::where('email', $request->getEmail())->first();
 
         if (!$user || !Hash::check($request->getPass(), $user->password)) {
-            return response()->json(['message' => 'Invalid credentials'], 401);
+            return ApiResponse::error('Invalid credentials', status: 401);
         }
 
         $user->tokens()->where('name', 'authToken')->delete();
 
         $token = $user->createToken('authToken')->plainTextToken;
 
-        return response()->json(['token' => $token], 201);
+        return ApiResponse::success(data: ['token' => $token], status: 201);
     }
 
     /**
@@ -129,18 +129,53 @@ class AuthController extends Controller
      * @response 422 scenario="Token limit reached" {"message": "Token limit reached. Maximum 3 tokens allowed."}
      */
     #[Authenticated]
-    public function createToken(CreateTokenRequest $request): JsonResponse
+    public function createToken(CreateTokenRequest $request): ApiResponse
     {
         $user = $request->user();
 
         if ($user->tokens()->count() >= 3) {
-            return response()->json(['message' => 'Token limit reached. Maximum 3 tokens allowed.'], 422);
+            return ApiResponse::error('Token limit reached. Maximum 3 tokens allowed.', status: 422);
         }
 
         $name = $request->getName();
         $token = $user->createToken($name)->plainTextToken;
 
-        return response()->json(['token' => $token, 'name' => $name], 201);
+        return ApiResponse::success(data: ['token' => $token, 'name' => $name], status: 201);
+    }
+
+    /**
+     * List tokens
+     *
+     * List all active tokens for the authenticated user.
+     *
+     * @response 200 scenario="OK" [{"id": 1, "name": "authToken", "created_at": "2026-01-01T00:00:00.000000Z", "last_used_at": null}]
+     */
+    #[Authenticated]
+    public function tokens(Request $request): ApiResponse
+    {
+        $tokens = $request->user()->tokens()->get(['id', 'name', 'created_at', 'last_used_at']);
+
+        return ApiResponse::list($tokens, $tokens->count());
+    }
+
+    /**
+     * Revoke token
+     *
+     * Revoke a specific token by its ID. Only tokens belonging to the authenticated user can be revoked.
+     *
+     * @response 204 scenario="OK"
+     * @response 404 scenario="Not found" {"message": "Token not found."}
+     */
+    #[Authenticated]
+    public function revokeToken(Request $request, int $tokenId): ApiResponse
+    {
+        $deleted = $request->user()->tokens()->where('id', $tokenId)->delete();
+
+        if (!$deleted) {
+            return ApiResponse::notFound();
+        }
+
+        return ApiResponse::success(status: 204);
     }
 
     /**
@@ -152,20 +187,10 @@ class AuthController extends Controller
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     #[Authenticated]
-    public function logout(Request $request): JsonResponse
+    public function logout(Request $request): ApiResponse
     {
-        $user = $request->user();
-
-        if (!$user) {
-            return response()->json([
-                'message' => 'Logged out',
-            ], 204);
-        }
-
         $request->user()->currentAccessToken()?->delete();
 
-        return response()->json([
-            'message' => 'Logged out',
-        ], 204);
+        return ApiResponse::success('Logged out', status: 204);
     }
 }

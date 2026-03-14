@@ -38,6 +38,12 @@ Route::group(['prefix' => 'v1'], function () {
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::post('auth/logout', [AuthController::class, 'logout'])
         ->middleware('auth:sanctum');
+    Route::get('auth/tokens', [AuthController::class, 'tokens'])
+        ->middleware('auth:sanctum');
+    Route::post('auth/tokens', [AuthController::class, 'createToken'])
+        ->middleware('auth:sanctum');
+    Route::delete('auth/tokens/{tokenId}', [AuthController::class, 'revokeToken'])
+        ->middleware('auth:sanctum');
 
     Route::get('auth/email/verify/{token}', [EmailVerificationController::class, 'verify'])
         ->name('auth.email.verify');

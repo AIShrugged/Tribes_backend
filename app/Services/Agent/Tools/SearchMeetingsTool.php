@@ -3,16 +3,11 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\CalendarEvent;
-use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class SearchMeetingsTool extends AbstractAgentTool
 {
-    public function __construct(private readonly User $user)
-    {
-        parent::__construct();
-    }
-
     public function getName(): string
     {
         return 'search_meetings';
@@ -65,7 +60,7 @@ class SearchMeetingsTool extends AbstractAgentTool
         // Handle null parameters
         $parameters = $parameters ?? [];
 
-        $query = CalendarEvent::query()->owned($this->user->id)->with('participants');
+        $query = CalendarEvent::query()->owned(Auth::id())->with('participants');
 
         if (!empty($parameters['query'])) {
             $query->where('title', 'ilike', '%' . $parameters['query'] . '%');
