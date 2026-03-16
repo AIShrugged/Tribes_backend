@@ -101,4 +101,18 @@ return [
         'coalesce_window_seconds' => 4,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Web Chat Runs
+    |--------------------------------------------------------------------------
+    |
+    | Retry policy and runtime metadata for async web chat agent runs.
+    |
+    */
+
+    'chat' => [
+        'max_attempts' => 3,
+        'backoff_seconds' => [10, 30],
+    ],
+
 ];

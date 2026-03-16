@@ -7,6 +7,7 @@ use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -102,8 +103,12 @@ class ChatMessageControllerTest extends TestCase
                     'content',
                     'followup_data',
                     'error_message',
+                    'failure_code',
                     'agent_run_uuid',
+                    'current_attempt',
+                    'max_attempts',
                     'completed_at',
+                    'next_retry_at',
                     'created_at',
                 ]],
             ]);
@@ -135,7 +140,9 @@ class ChatMessageControllerTest extends TestCase
             ->assertJsonPath('data.role', 'assistant')
             ->assertJsonPath('data.status', 'queued')
             ->assertJsonPath('data.content', 'Processing...')
-            ->assertJsonPath('data.chat_id', $this->chat->id);
+            ->assertJsonPath('data.chat_id', $this->chat->id)
+            ->assertJsonPath('data.current_attempt', 0)
+            ->assertJsonPath('data.max_attempts', 3);
 
         $this->assertDatabaseHas('chat_messages', [
             'chat_id' => $this->chat->id,
@@ -163,6 +170,8 @@ class ChatMessageControllerTest extends TestCase
             'status' => 'processing',
             'content' => 'Processing...',
             'agent_run_uuid' => $runUuid,
+            'current_attempt' => 1,
+            'max_attempts' => 3,
         ]);
 
         $response = $this->actingAs($this->user)
@@ -175,7 +184,41 @@ class ChatMessageControllerTest extends TestCase
             ->assertJsonPath('data.status', 'processing')
             ->assertJsonPath('data.progress_percent', 50)
             ->assertJsonPath('data.current_step_label', 'Generating response')
+            ->assertJsonPath('data.current_attempt', 1)
+            ->assertJsonPath('data.max_attempts', 3)
             ->assertJsonPath('data.message.content', 'Processing...');
+    }
+
+    #[Test]
+    public function it_returns_retry_metadata_for_retrying_run(): void
+    {
+        $runUuid = '33333333-3333-4333-8333-333333333333';
+        $nextRetryAt = Carbon::parse('2026-03-16 12:00:00');
+
+        ChatMessage::create([
+            'chat_id' => $this->chat->id,
+            'role' => 'assistant',
+            'status' => 'retrying',
+            'content' => 'Processing...',
+            'agent_run_uuid' => $runUuid,
+            'current_attempt' => 1,
+            'max_attempts' => 3,
+            'failure_code' => 'AI_REQUEST_FAILED',
+            'error_message' => 'Temporary upstream error',
+            'next_retry_at' => $nextRetryAt,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/v1/chats/{$this->chat->id}/runs/{$runUuid}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.status', 'retrying')
+            ->assertJsonPath('data.progress_percent', 25)
+            ->assertJsonPath('data.current_step_label', 'Retrying after failure')
+            ->assertJsonPath('data.current_attempt', 1)
+            ->assertJsonPath('data.max_attempts', 3)
+            ->assertJsonPath('data.failure_code', 'AI_REQUEST_FAILED')
+            ->assertJsonPath('data.error_message', 'Temporary upstream error');
     }
 
     #[Test]

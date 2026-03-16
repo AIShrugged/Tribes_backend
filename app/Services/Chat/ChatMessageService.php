@@ -2,6 +2,7 @@
 
 namespace App\Services\Chat;
 
+use App\Enums\ChatRunStatus;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use Illuminate\Database\Eloquent\Collection;
@@ -48,8 +49,10 @@ class ChatMessageService
     public function createQueuedAssistantMessage(Chat $chat, string $content = 'Processing...'): ChatMessage
     {
         return $this->create($chat, 'assistant', $content, null, [
-            'status' => 'queued',
+            'status' => ChatRunStatus::QUEUED->value,
             'agent_run_uuid' => (string) Str::uuid(),
+            'current_attempt' => 0,
+            'max_attempts' => (int) config('agent.chat.max_attempts', 3),
         ]);
     }
 
@@ -58,7 +61,7 @@ class ChatMessageService
         $message = ChatMessage::create([
             'chat_id' => $chat->id,
             'role' => $role,
-            'status' => 'completed',
+            'status' => ChatRunStatus::COMPLETED->value,
             'content' => $content,
             'followup_data' => $followupData,
             ...$attributes,

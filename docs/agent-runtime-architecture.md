@@ -257,6 +257,7 @@ Assistant `ChatMessage` states:
 
 - `queued`
 - `processing`
+- `retrying`
 - `completed`
 - `failed`
 
