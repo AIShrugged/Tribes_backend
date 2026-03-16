@@ -3,14 +3,15 @@
 namespace App\Jobs;
 
 use App\Enums\AgentTaskType;
-use App\Enums\ChatRunStatus;
 use App\Enums\OutputMode;
 use App\Exceptions\AppException;
+use App\Models\ChannelMessage;
 use App\Models\Chat;
-use App\Models\ChatMessage;
 use App\Models\User;
 use App\Services\Agent\AgentRunOptions;
 use App\Services\Agent\AgentService;
+use App\Services\Channel\ChannelBus;
+use App\Services\Channel\ChannelRuntimeService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -39,11 +40,15 @@ class ProcessChatWorkerJob implements ShouldQueue
         return array_values((array) config('agent.chat.backoff_seconds', [10, 30]));
     }
 
-    public function handle(AgentService $agentService): void
+    public function handle(
+        AgentService $agentService,
+        ChannelBus $channelBus,
+        ChannelRuntimeService $runtimeService,
+    ): void
     {
         $chat = Chat::find($this->chatId);
         $user = User::find($this->userId);
-        $assistantMessage = ChatMessage::find($this->assistantMessageId);
+        $assistantMessage = ChannelMessage::find($this->assistantMessageId);
 
         if (! $chat || ! $user || ! $assistantMessage) {
             return;
@@ -63,12 +68,14 @@ class ProcessChatWorkerJob implements ShouldQueue
         ]);
 
         try {
-            $history = $chat->messages()
+            $conversation = $channelBus->forChat($chat);
+
+            $history = $conversation->messages()
                 ->where('id', '<', $this->userMessageId)
                 ->orderBy('created_at')
                 ->get();
 
-            $userMessage = ChatMessage::find($this->userMessageId);
+            $userMessage = ChannelMessage::find($this->userMessageId);
             if (! $userMessage) {
                 throw new \RuntimeException('User message not found');
             }
@@ -86,13 +93,7 @@ class ProcessChatWorkerJob implements ShouldQueue
                 )
             );
 
-            $assistantMessage->markCompleted([
-                'content' => $responseText,
-                'completed_at' => now(),
-                'error_message' => null,
-                'failure_code' => null,
-                'next_retry_at' => null,
-            ]);
+            $runtimeService->deliverToWebChat($assistantMessage, $responseText);
         } catch (\Throwable $e) {
             $failureCode = $this->normalizeFailureCode($e);
             $nextRetryAt = $currentAttempt < $maxAttempts

@@ -6,6 +6,14 @@ Telegram agent processing is asynchronous and coalesced.
 
 Unlike web chat, Telegram does not expose a polling status endpoint. The runtime accepts webhook events, batches burst user messages into one agent turn, runs the agent in the background, and posts the final answer back to Telegram.
 
+Runtime persistence now uses the shared channel bus tables:
+
+- `channel_conversations`
+- `channel_messages`
+- `channel_identities`
+
+The old `telegram_chat_messages` table is retained only as legacy storage.
+
 ---
 
 ## Execution Flow
@@ -25,7 +33,7 @@ The webhook handler:
 1. Reads the incoming Telegram update.
 2. Skips non-text/system messages.
 3. Resolves or creates `TelegramUser`.
-4. Persists the incoming `TelegramChatMessage`.
+4. Persists the incoming message through `ChannelBus`.
 5. Ignores group messages that do not mention the bot.
 6. Validates whitelist access if configured.
 7. Schedules background branch processing with a coalescing delay.
@@ -122,7 +130,21 @@ That means Telegram is effectively "push-only" from the user perspective.
 
 ## Persistence Model
 
-Incoming user messages are stored in `telegram_chat_messages`.
+Incoming user and assistant messages are stored in `channel_messages`.
+
+Telegram routing metadata lives on the linked `channel_conversations` row:
+
+- `telegram_chat_id`
+- `message_thread_id`
+
+External authors live in `channel_identities`.
+
+For Telegram user messages this identity stores:
+
+- `channel_type = telegram`
+- `external_id = telegram_user_id`
+- linked `user_id` when the Telegram account is connected to an application user
+- username/display name metadata
 
 Batch lifecycle fields:
 
@@ -136,7 +158,7 @@ Meaning:
 - `agent_batch_uuid` + `coalesced_at` -> claimed for processing
 - `responded_at` -> response already produced for this batch
 
-Assistant replies are also persisted to `telegram_chat_messages` with:
+Assistant replies are also persisted to `channel_messages` with:
 
 - `role = assistant`
 - `agent_batch_uuid` set to the batch that produced the response
@@ -219,7 +241,8 @@ Telegram:
 - `app/Jobs/ProcessTelegramBranchJob.php`
 - `app/Jobs/ProcessTelegramWorkerJob.php`
 - `app/Services/Agent/TelegramMessageCoalescer.php`
-- `app/Models/TelegramChatMessage.php`
+- `app/Services/Channel/ChannelBus.php`
+- `app/Models/ChannelMessage.php`
 
 ---
 

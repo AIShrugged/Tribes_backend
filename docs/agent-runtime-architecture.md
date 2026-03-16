@@ -8,6 +8,7 @@ It ties together:
 
 - web chat async execution
 - Telegram async execution
+- unified channel bus
 - branch -> worker orchestration
 - model routing
 - context compaction
@@ -95,7 +96,11 @@ Shared runtime behavior lives outside transport/workers:
 - `AgentService`
 - `AgentModelRouter`
 - `ConversationCompactionService`
+- `ConversationCompactionSnapshotService`
 - `MemoryService`
+- `ChannelBus`
+- `ChannelRuntimeService`
+- `ChannelDeliveryRegistry`
 - `ToolRegistry`
 
 This is where channel-independent agent mechanics are implemented.
@@ -127,6 +132,36 @@ It is channel-agnostic. Channel-specific behavior is injected through:
 ---
 
 ## Request Lifecycle By Channel
+
+## Unified Channel Bus
+
+Both web chat and Telegram now persist runtime messages through the same storage layer:
+
+- `channel_conversations`
+- `channel_messages`
+- `channel_identities`
+
+`ChannelBus` is the write/read boundary for this layer.
+
+Message authors are modeled separately through `channel_identities`, so `channel_messages` does not carry transport-specific author fields like Telegram IDs.
+
+`ChannelRuntimeService` is the orchestration boundary above storage:
+
+- transport adapters call it to ingest inbound messages
+- branch jobs call it to turn queued work into worker jobs
+- workers call it to deliver final output through channel-specific delivery adapters
+
+Current mapping:
+
+- web chat conversation -> one `channel_conversations` row per `chats.id`
+- Telegram conversation -> one `channel_conversations` row per `telegram_chat_id + message_thread_id`
+
+Old rows from:
+
+- `chat_messages`
+- `telegram_chat_messages`
+
+are backfilled into `channel_messages` by migration and no longer act as the runtime source of truth.
 
 ### Web chat
 
@@ -228,6 +263,7 @@ Current strategy:
 - keep a configured number of recent messages verbatim
 - fold older turns into a deterministic textual summary
 - inject that summary into the system prompt
+- persist snapshot summaries per `conversationKey` for reuse across runs
 
 Important properties:
 
@@ -235,6 +271,7 @@ Important properties:
 - cheap
 - transport-agnostic
 - compatible with async workers
+- incremental for growing conversations with a stable key
 
 Current config:
 
@@ -253,7 +290,7 @@ This is intentionally simpler than semantic summarization jobs, but it already p
 
 ### Web chat state
 
-Assistant `ChatMessage` states:
+Assistant `ChannelMessage` states:
 
 - `queued`
 - `processing`

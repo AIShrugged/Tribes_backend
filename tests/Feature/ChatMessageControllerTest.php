@@ -3,9 +3,10 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessChatBranchJob;
+use App\Models\ChannelMessage;
 use App\Models\Chat;
-use App\Models\ChatMessage;
 use App\Models\User;
+use App\Services\Channel\ChannelBus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
@@ -20,6 +21,8 @@ class ChatMessageControllerTest extends TestCase
 
     protected Chat $chat;
 
+    protected ChannelBus $channelBus;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -29,6 +32,7 @@ class ChatMessageControllerTest extends TestCase
             'user_id' => $this->user->id,
             'title' => 'Test Chat',
         ]);
+        $this->channelBus = $this->app->make(ChannelBus::class);
     }
 
     // --- GET /api/v1/chats/{chat}/messages ---
@@ -44,8 +48,8 @@ class ChatMessageControllerTest extends TestCase
     #[Test]
     public function it_returns_messages_for_own_chat(): void
     {
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Hello']);
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'assistant', 'content' => 'Hi there']);
+        $this->channelBus->createChatUserMessage($this->chat, 'Hello');
+        $this->channelBus->createChatAssistantMessage($this->chat, 'Hi there');
 
         $response = $this->actingAs($this->user)
             ->getJson("/api/v1/chats/{$this->chat->id}/messages");
@@ -71,9 +75,9 @@ class ChatMessageControllerTest extends TestCase
     #[Test]
     public function it_returns_messages_in_chronological_order(): void
     {
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'First']);
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'assistant', 'content' => 'Second']);
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Third']);
+        $this->channelBus->createChatUserMessage($this->chat, 'First');
+        $this->channelBus->createChatAssistantMessage($this->chat, 'Second');
+        $this->channelBus->createChatUserMessage($this->chat, 'Third');
 
         $response = $this->actingAs($this->user)
             ->getJson("/api/v1/chats/{$this->chat->id}/messages");
@@ -88,7 +92,7 @@ class ChatMessageControllerTest extends TestCase
     #[Test]
     public function it_returns_message_fields_in_correct_format(): void
     {
-        ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Test']);
+        $this->channelBus->createChatUserMessage($this->chat, 'Test');
 
         $response = $this->actingAs($this->user)
             ->getJson("/api/v1/chats/{$this->chat->id}/messages");
@@ -144,13 +148,15 @@ class ChatMessageControllerTest extends TestCase
             ->assertJsonPath('data.current_attempt', 0)
             ->assertJsonPath('data.max_attempts', 3);
 
-        $this->assertDatabaseHas('chat_messages', [
-            'chat_id' => $this->chat->id,
+        $conversationId = $this->channelBus->forChat($this->chat)->id;
+
+        $this->assertDatabaseHas('channel_messages', [
+            'conversation_id' => $conversationId,
             'role' => 'user',
             'content' => 'Вопрос пользователя',
         ]);
-        $this->assertDatabaseHas('chat_messages', [
-            'chat_id' => $this->chat->id,
+        $this->assertDatabaseHas('channel_messages', [
+            'conversation_id' => $conversationId,
             'role' => 'assistant',
             'content' => 'Processing...',
             'status' => 'queued',
@@ -164,8 +170,8 @@ class ChatMessageControllerTest extends TestCase
     {
         $runUuid = '11111111-1111-4111-8111-111111111111';
 
-        $assistantMessage = ChatMessage::create([
-            'chat_id' => $this->chat->id,
+        $assistantMessage = ChannelMessage::create([
+            'conversation_id' => $this->channelBus->forChat($this->chat)->id,
             'role' => 'assistant',
             'status' => 'processing',
             'content' => 'Processing...',
@@ -195,8 +201,8 @@ class ChatMessageControllerTest extends TestCase
         $runUuid = '33333333-3333-4333-8333-333333333333';
         $nextRetryAt = Carbon::parse('2026-03-16 12:00:00');
 
-        ChatMessage::create([
-            'chat_id' => $this->chat->id,
+        ChannelMessage::create([
+            'conversation_id' => $this->channelBus->forChat($this->chat)->id,
             'role' => 'assistant',
             'status' => 'retrying',
             'content' => 'Processing...',
@@ -226,8 +232,8 @@ class ChatMessageControllerTest extends TestCase
     {
         $runUuid = '22222222-2222-4222-8222-222222222222';
 
-        ChatMessage::create([
-            'chat_id' => $this->chat->id,
+        ChannelMessage::create([
+            'conversation_id' => $this->channelBus->forChat($this->chat)->id,
             'role' => 'assistant',
             'status' => 'processing',
             'content' => 'Processing...',

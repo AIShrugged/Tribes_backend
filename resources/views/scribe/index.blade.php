@@ -421,6 +421,9 @@
                                                                             <li class="tocify-item level-3" data-unique="wanda-chat-POSTapi-v1-chats--chat--messages">
                                             <a href="#wanda-chat-POSTapi-v1-chats--chat--messages">Send message</a>
                                         </li>
+                                                                            <li class="tocify-item level-3" data-unique="wanda-chat-GETapi-v1-chats--chat_id--runs--runUuid-">
+                                            <a href="#wanda-chat-GETapi-v1-chats--chat_id--runs--runUuid-">Get run status</a>
+                                        </li>
                                                                     </ul>
                                                                                 <li class="tocify-item level-2" data-unique="wanda-chat-artifacts">
                                 <a href="#wanda-chat-artifacts">Artifacts</a>
@@ -3450,7 +3453,7 @@ generated yet or the event does not belong to the authenticated user.</p>
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"calendar_event_id\": 16
+    \"calendar_event_id\": 123
 }"
 </code></pre></div>
 
@@ -3467,7 +3470,7 @@ const headers = {
 };
 
 let body = {
-    "calendar_event_id": 16
+    "calendar_event_id": 123
 };
 
 fetch(url, {
@@ -3635,10 +3638,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="number" style="display: none"
                step="any"               name="calendar_event_id"                data-endpoint="GETapi-v1-calendar-events--calendar_event_id--meeting-summary"
-               value="16"
+               value="123"
                data-component="body">
     <br>
-<p>The <code>id</code> of an existing record in the calendar_events table. Example: <code>16</code></p>
+<p>Calendar event ID. This value is taken from the route parameter and does not need to be sent in the request body. The <code>id</code> of an existing record in the calendar_events table. Example: <code>123</code></p>
         </div>
         </form>
 
@@ -14333,8 +14336,16 @@ fetch(url, {
         &quot;id&quot;: 12,
         &quot;chat_id&quot;: 1,
         &quot;role&quot;: &quot;assistant&quot;,
-        &quot;content&quot;: &quot;Last week&#039;s key points: 1) Q1 budget approved, 2) New hire process started.&quot;,
+        &quot;status&quot;: &quot;queued&quot;,
+        &quot;content&quot;: &quot;Processing...&quot;,
         &quot;followup_data&quot;: null,
+        &quot;error_message&quot;: null,
+        &quot;failure_code&quot;: null,
+        &quot;agent_run_uuid&quot;: &quot;3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11&quot;,
+        &quot;current_attempt&quot;: 0,
+        &quot;max_attempts&quot;: 3,
+        &quot;completed_at&quot;: null,
+        &quot;next_retry_at&quot;: null,
         &quot;created_at&quot;: &quot;2026-02-10T20:01:00.000000Z&quot;
     },
     &quot;message&quot;: &quot;Success&quot;,
@@ -14494,6 +14505,278 @@ You can check the Dev Tools console for debugging information.</code></pre>
 <p>Must not be greater than 10000 characters. Example: <code>b</code></p>
             </div>
                 </form>
+
+                    <h2 id="wanda-chat-GETapi-v1-chats--chat_id--runs--runUuid-">Get run status</h2>
+
+<p>
+<small class="badge badge-darkred">requires authentication</small>
+</p>
+
+<p>Polls the status of an asynchronous assistant run created by sending a message.
+Use the <code>agent_run_uuid</code> returned from <code>POST /chats/{chat}/messages</code>.</p>
+
+<span id="example-requests-GETapi-v1-chats--chat_id--runs--runUuid-">
+<blockquote>Example request:</blockquote>
+
+
+<div class="bash-example">
+    <pre><code class="language-bash">curl --request GET \
+    --get "http://localhost/api/v1/chats/5/runs/6ff8f7f6-1eb3-3525-be4a-3932c805afed" \
+    --header "Authorization: Bearer {YOUR_AUTH_KEY}" \
+    --header "Content-Type: application/json" \
+    --header "Accept: application/json"</code></pre></div>
+
+
+<div class="javascript-example">
+    <pre><code class="language-javascript">const url = new URL(
+    "http://localhost/api/v1/chats/5/runs/6ff8f7f6-1eb3-3525-be4a-3932c805afed"
+);
+
+const headers = {
+    "Authorization": "Bearer {YOUR_AUTH_KEY}",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+};
+
+fetch(url, {
+    method: "GET",
+    headers,
+}).then(response =&gt; response.json());</code></pre></div>
+
+</span>
+
+<span id="example-responses-GETapi-v1-chats--chat_id--runs--runUuid-">
+            <blockquote>
+            <p>Example response (200, Queued):</p>
+        </blockquote>
+                <pre>
+
+<code class="language-json" style="max-height: 300px;">{
+    &quot;success&quot;: true,
+    &quot;data&quot;: {
+        &quot;agent_run_uuid&quot;: &quot;3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11&quot;,
+        &quot;chat_id&quot;: 1,
+        &quot;message_id&quot;: 12,
+        &quot;status&quot;: &quot;queued&quot;,
+        &quot;progress_percent&quot;: 5,
+        &quot;current_step_label&quot;: &quot;Queued&quot;,
+        &quot;error_message&quot;: null,
+        &quot;failure_code&quot;: null,
+        &quot;current_attempt&quot;: 0,
+        &quot;max_attempts&quot;: 3,
+        &quot;completed_at&quot;: null,
+        &quot;next_retry_at&quot;: null,
+        &quot;message&quot;: {
+            &quot;id&quot;: 12,
+            &quot;role&quot;: &quot;assistant&quot;,
+            &quot;content&quot;: &quot;Processing...&quot;,
+            &quot;created_at&quot;: &quot;2026-03-16T10:00:00.000000Z&quot;
+        }
+    },
+    &quot;message&quot;: &quot;Success&quot;,
+    &quot;status&quot;: 200,
+    &quot;meta&quot;: []
+}</code>
+ </pre>
+            <blockquote>
+            <p>Example response (200, Retrying):</p>
+        </blockquote>
+                <pre>
+
+<code class="language-json" style="max-height: 300px;">{
+    &quot;success&quot;: true,
+    &quot;data&quot;: {
+        &quot;agent_run_uuid&quot;: &quot;3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11&quot;,
+        &quot;chat_id&quot;: 1,
+        &quot;message_id&quot;: 12,
+        &quot;status&quot;: &quot;retrying&quot;,
+        &quot;progress_percent&quot;: 25,
+        &quot;current_step_label&quot;: &quot;Retrying after failure&quot;,
+        &quot;error_message&quot;: &quot;Temporary upstream error&quot;,
+        &quot;failure_code&quot;: &quot;AI_REQUEST_FAILED&quot;,
+        &quot;current_attempt&quot;: 1,
+        &quot;max_attempts&quot;: 3,
+        &quot;completed_at&quot;: null,
+        &quot;next_retry_at&quot;: &quot;2026-03-16T10:00:10.000000Z&quot;,
+        &quot;message&quot;: {
+            &quot;id&quot;: 12,
+            &quot;role&quot;: &quot;assistant&quot;,
+            &quot;content&quot;: &quot;Processing...&quot;,
+            &quot;created_at&quot;: &quot;2026-03-16T10:00:00.000000Z&quot;
+        }
+    },
+    &quot;message&quot;: &quot;Success&quot;,
+    &quot;status&quot;: 200,
+    &quot;meta&quot;: []
+}</code>
+ </pre>
+            <blockquote>
+            <p>Example response (200, Completed):</p>
+        </blockquote>
+                <pre>
+
+<code class="language-json" style="max-height: 300px;">{
+    &quot;success&quot;: true,
+    &quot;data&quot;: {
+        &quot;agent_run_uuid&quot;: &quot;3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11&quot;,
+        &quot;chat_id&quot;: 1,
+        &quot;message_id&quot;: 12,
+        &quot;status&quot;: &quot;completed&quot;,
+        &quot;progress_percent&quot;: 100,
+        &quot;current_step_label&quot;: &quot;Completed&quot;,
+        &quot;error_message&quot;: null,
+        &quot;failure_code&quot;: null,
+        &quot;current_attempt&quot;: 1,
+        &quot;max_attempts&quot;: 3,
+        &quot;completed_at&quot;: &quot;2026-03-16T10:00:05.000000Z&quot;,
+        &quot;next_retry_at&quot;: null,
+        &quot;message&quot;: {
+            &quot;id&quot;: 12,
+            &quot;role&quot;: &quot;assistant&quot;,
+            &quot;content&quot;: &quot;Final answer&quot;,
+            &quot;created_at&quot;: &quot;2026-03-16T10:00:00.000000Z&quot;
+        }
+    },
+    &quot;message&quot;: &quot;Success&quot;,
+    &quot;status&quot;: 200,
+    &quot;meta&quot;: []
+}</code>
+ </pre>
+            <blockquote>
+            <p>Example response (404, Not Found):</p>
+        </blockquote>
+                <pre>
+
+<code class="language-json" style="max-height: 300px;">{
+    &quot;success&quot;: false,
+    &quot;data&quot;: null,
+    &quot;message&quot;: &quot;Run not found&quot;,
+    &quot;status&quot;: 404,
+    &quot;meta&quot;: []
+}</code>
+ </pre>
+    </span>
+<span id="execution-results-GETapi-v1-chats--chat_id--runs--runUuid-" hidden>
+    <blockquote>Received response<span
+                id="execution-response-status-GETapi-v1-chats--chat_id--runs--runUuid-"></span>:
+    </blockquote>
+    <pre class="json"><code id="execution-response-content-GETapi-v1-chats--chat_id--runs--runUuid-"
+      data-empty-response-text="<Empty response>" style="max-height: 400px;"></code></pre>
+</span>
+<span id="execution-error-GETapi-v1-chats--chat_id--runs--runUuid-" hidden>
+    <blockquote>Request failed with error:</blockquote>
+    <pre><code id="execution-error-message-GETapi-v1-chats--chat_id--runs--runUuid-">
+
+Tip: Check that you&#039;re properly connected to the network.
+If you&#039;re a maintainer of ths API, verify that your API is running and you&#039;ve enabled CORS.
+You can check the Dev Tools console for debugging information.</code></pre>
+</span>
+<form id="form-GETapi-v1-chats--chat_id--runs--runUuid-" data-method="GET"
+      data-path="api/v1/chats/{chat_id}/runs/{runUuid}"
+      data-authed="1"
+      data-hasfiles="0"
+      data-isarraybody="0"
+      autocomplete="off"
+      onsubmit="event.preventDefault(); executeTryOut('GETapi-v1-chats--chat_id--runs--runUuid-', this);">
+    <h3>
+        Request&nbsp;&nbsp;&nbsp;
+                    <button type="button"
+                    style="background-color: #8fbcd4; padding: 5px 10px; border-radius: 5px; border-width: thin;"
+                    id="btn-tryout-GETapi-v1-chats--chat_id--runs--runUuid-"
+                    onclick="tryItOut('GETapi-v1-chats--chat_id--runs--runUuid-');">Try it out ⚡
+            </button>
+            <button type="button"
+                    style="background-color: #c97a7e; padding: 5px 10px; border-radius: 5px; border-width: thin;"
+                    id="btn-canceltryout-GETapi-v1-chats--chat_id--runs--runUuid-"
+                    onclick="cancelTryOut('GETapi-v1-chats--chat_id--runs--runUuid-');" hidden>Cancel 🛑
+            </button>&nbsp;&nbsp;
+            <button type="submit"
+                    style="background-color: #6ac174; padding: 5px 10px; border-radius: 5px; border-width: thin;"
+                    id="btn-executetryout-GETapi-v1-chats--chat_id--runs--runUuid-"
+                    data-initial-text="Send Request 💥"
+                    data-loading-text="⏱ Sending..."
+                    hidden>Send Request 💥
+            </button>
+            </h3>
+            <p>
+            <small class="badge badge-green">GET</small>
+            <b><code>api/v1/chats/{chat_id}/runs/{runUuid}</code></b>
+        </p>
+                <h4 class="fancy-heading-panel"><b>Headers</b></h4>
+                                <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>Authorization</code></b>&nbsp;&nbsp;
+&nbsp;
+ &nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="Authorization" class="auth-value"               data-endpoint="GETapi-v1-chats--chat_id--runs--runUuid-"
+               value="Bearer {YOUR_AUTH_KEY}"
+               data-component="header">
+    <br>
+<p>Example: <code>Bearer {YOUR_AUTH_KEY}</code></p>
+            </div>
+                                <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>Content-Type</code></b>&nbsp;&nbsp;
+&nbsp;
+ &nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="Content-Type"                data-endpoint="GETapi-v1-chats--chat_id--runs--runUuid-"
+               value="application/json"
+               data-component="header">
+    <br>
+<p>Example: <code>application/json</code></p>
+            </div>
+                                <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>Accept</code></b>&nbsp;&nbsp;
+&nbsp;
+ &nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="Accept"                data-endpoint="GETapi-v1-chats--chat_id--runs--runUuid-"
+               value="application/json"
+               data-component="header">
+    <br>
+<p>Example: <code>application/json</code></p>
+            </div>
+                        <h4 class="fancy-heading-panel"><b>URL Parameters</b></h4>
+                    <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>chat_id</code></b>&nbsp;&nbsp;
+<small>integer</small>&nbsp;
+ &nbsp;
+ &nbsp;
+                <input type="number" style="display: none"
+               step="any"               name="chat_id"                data-endpoint="GETapi-v1-chats--chat_id--runs--runUuid-"
+               value="5"
+               data-component="url">
+    <br>
+<p>The ID of the chat. Example: <code>5</code></p>
+            </div>
+                    <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>runUuid</code></b>&nbsp;&nbsp;
+<small>string</small>&nbsp;
+ &nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="runUuid"                data-endpoint="GETapi-v1-chats--chat_id--runs--runUuid-"
+               value="6ff8f7f6-1eb3-3525-be4a-3932c805afed"
+               data-component="url">
+    <br>
+<p>The agent run UUID returned when the queued assistant message was created. Example: <code>6ff8f7f6-1eb3-3525-be4a-3932c805afed</code></p>
+            </div>
+                    <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>chat</code></b>&nbsp;&nbsp;
+<small>integer</small>&nbsp;
+ &nbsp;
+ &nbsp;
+                <input type="number" style="display: none"
+               step="any"               name="chat"                data-endpoint="GETapi-v1-chats--chat_id--runs--runUuid-"
+               value="1"
+               data-component="url">
+    <br>
+<p>The Chat ID. Example: <code>1</code></p>
+            </div>
+                    </form>
 
                                 <h2 id="wanda-chat-artifacts">Artifacts</h2>
                                                     <h2 id="wanda-chat-GETapi-v1-chats--chat_id--artifacts">Get artifact state</h2>

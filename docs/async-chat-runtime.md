@@ -13,6 +13,15 @@ When a client sends a message, the API:
 
 This keeps the HTTP request fast and makes long-running agent/tool execution pollable.
 
+Under the hood, chat runtime messages now live in the shared channel bus tables:
+
+- `channel_conversations`
+- `channel_messages`
+
+The legacy `chat_messages` table is no longer the runtime source of truth.
+
+Longer chat history is also compacted through snapshot-backed summaries keyed by conversation, so repeated runs do not have to rebuild the full older-history summary every time.
+
 ---
 
 ## Execution Flow
@@ -64,6 +73,7 @@ Current web chat pipeline:
 
 ```text
 WandaBotService
+  -> ChannelBus
   -> ProcessChatBranchJob
     -> ProcessChatWorkerJob
       -> AgentService::run(...)
@@ -185,6 +195,7 @@ Relevant feature coverage lives in:
 
 - `tests/Feature/ChatMessageControllerTest.php`
 - `tests/Feature/ChatAgentServiceTest.php`
+- `tests/Unit/ChatMessageStateTest.php`
 
 Run in Docker:
 

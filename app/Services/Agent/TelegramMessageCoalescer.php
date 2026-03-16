@@ -2,13 +2,15 @@
 
 namespace App\Services\Agent;
 
-use App\Models\TelegramChatMessage;
+use App\Services\Channel\ChannelBus;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class TelegramMessageCoalescer
 {
+    public function __construct(
+        private readonly ChannelBus $channelBus,
+    ) {}
+
     public function claimPendingBatch(int $chatId, ?int $messageThreadId = null): ?TelegramCoalescedBatch
     {
         $lock = Cache::lock($this->lockKey($chatId, $messageThreadId), 15);
@@ -18,55 +20,21 @@ class TelegramMessageCoalescer
         }
 
         try {
-            return DB::transaction(function () use ($chatId, $messageThreadId) {
-                $query = TelegramChatMessage::query()
-                    ->where('telegram_chat_id', $chatId)
-                    ->where('role', 'user')
-                    ->whereNull('coalesced_at')
-                    ->whereNull('responded_at')
-                    ->orderBy('id');
+            $batch = $this->channelBus->claimTelegramPendingBatch($chatId, $messageThreadId);
 
-                if ($messageThreadId === null) {
-                    $query->whereNull('message_thread_id');
-                } else {
-                    $query->where('message_thread_id', $messageThreadId);
-                }
+            if (! $batch || ! $batch['author_identity']) {
+                return null;
+            }
 
-                $messages = $query->lockForUpdate()->get();
-
-                if ($messages->isEmpty()) {
-                    return null;
-                }
-
-                $batchUuid = (string) Str::uuid();
-                $now = now();
-
-                TelegramChatMessage::query()
-                    ->whereIn('id', $messages->pluck('id'))
-                    ->update([
-                        'agent_batch_uuid' => $batchUuid,
-                        'coalesced_at' => $now,
-                    ]);
-
-                $messages->each(function (TelegramChatMessage $message) use ($batchUuid, $now) {
-                    $message->agent_batch_uuid = $batchUuid;
-                    $message->coalesced_at = $now;
-                });
-
-                $content = $messages
-                    ->pluck('content')
-                    ->map(fn (string $text, int $index) => ($index + 1).'. '.trim($text))
-                    ->implode("\n");
-
-                return new TelegramCoalescedBatch(
-                    batchUuid: $batchUuid,
-                    chatId: $chatId,
-                    telegramUser: $messages->last()->telegramUser,
-                    messages: $messages,
-                    content: $content,
-                    messageThreadId: $messageThreadId,
-                );
-            });
+            return new TelegramCoalescedBatch(
+                batchUuid: $batch['batch_uuid'],
+                chatId: $batch['chat_id'],
+                authorIdentity: $batch['author_identity'],
+                participants: $batch['participants'],
+                messages: $batch['messages'],
+                content: $batch['content'],
+                messageThreadId: $batch['message_thread_id'],
+            );
         } finally {
             $lock->release();
         }
@@ -74,19 +42,12 @@ class TelegramMessageCoalescer
 
     public function markBatchResponded(string $batchUuid): void
     {
-        TelegramChatMessage::query()
-            ->where('agent_batch_uuid', $batchUuid)
-            ->update(['responded_at' => now()]);
+        $this->channelBus->markTelegramBatchResponded($batchUuid);
     }
 
     public function releaseBatch(string $batchUuid): void
     {
-        TelegramChatMessage::query()
-            ->where('agent_batch_uuid', $batchUuid)
-            ->update([
-                'agent_batch_uuid' => null,
-                'coalesced_at' => null,
-            ]);
+        $this->channelBus->releaseTelegramBatch($batchUuid);
     }
 
     private function lockKey(int $chatId, ?int $messageThreadId): string

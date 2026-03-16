@@ -3,9 +3,10 @@
 namespace Tests\Unit;
 
 use App\Enums\ChatRunStatus;
+use App\Models\ChannelMessage;
 use App\Models\Chat;
-use App\Models\ChatMessage;
 use App\Models\User;
+use App\Services\Channel\ChannelBus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use LogicException;
 use PHPUnit\Framework\Attributes\Test;
@@ -17,6 +18,8 @@ class ChatMessageStateTest extends TestCase
 
     private Chat $chat;
 
+    private ChannelBus $channelBus;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -26,13 +29,14 @@ class ChatMessageStateTest extends TestCase
             'user_id' => $user->id,
             'title' => 'State test chat',
         ]);
+        $this->channelBus = $this->app->make(ChannelBus::class);
     }
 
     #[Test]
     public function it_allows_valid_state_transitions(): void
     {
-        $message = ChatMessage::create([
-            'chat_id' => $this->chat->id,
+        $message = ChannelMessage::create([
+            'conversation_id' => $this->channelBus->forChat($this->chat)->id,
             'role' => 'assistant',
             'status' => ChatRunStatus::QUEUED->value,
             'content' => 'Processing...',
@@ -57,15 +61,15 @@ class ChatMessageStateTest extends TestCase
     #[Test]
     public function it_rejects_invalid_state_transitions(): void
     {
-        $message = ChatMessage::create([
-            'chat_id' => $this->chat->id,
+        $message = ChannelMessage::create([
+            'conversation_id' => $this->channelBus->forChat($this->chat)->id,
             'role' => 'assistant',
             'status' => ChatRunStatus::COMPLETED->value,
             'content' => 'Done',
         ]);
 
         $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('Invalid chat run transition: completed -> processing');
+        $this->expectExceptionMessage('Invalid channel message transition: completed -> processing');
 
         $message->markProcessing();
     }

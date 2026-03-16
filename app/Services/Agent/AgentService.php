@@ -133,7 +133,7 @@ class AgentService
         // Load memory context
         $memoryContext = $this->memoryService->composeMemoryContext($user, $channel);
 
-        $compactedHistory = $this->compactionService->compact($history);
+        $compactedHistory = $this->compactionService->compact($history, $options->conversationKey);
 
         // Prepare system prompt
         $systemPrompt = $this->getSystemPrompt(
