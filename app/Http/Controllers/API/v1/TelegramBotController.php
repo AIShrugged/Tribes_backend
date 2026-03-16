@@ -2,13 +2,11 @@
 
 namespace App\Http\Controllers\API\v1;
 
-use App\Enums\OutputMode;
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessTelegramBranchJob;
 use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
-use App\Services\Agent\Tools\GetChatHistoryTool;
-use App\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
@@ -23,13 +21,10 @@ class TelegramBotController extends Controller
 
     private AgentService $agentService;
 
-    private ToolRegistry $toolRegistry;
-
-    public function __construct(AgentService $agentService, ToolRegistry $toolRegistry)
+    public function __construct(AgentService $agentService)
     {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
-        $this->toolRegistry = $toolRegistry;
     }
 
     /**
@@ -41,20 +36,20 @@ class TelegramBotController extends Controller
             $update = $this->telegram->getWebhookUpdate();
 
             if ($update->isType('message') && ($message = $update->getMessage())) {
-                $chatId          = $message->getChat()->getId();
-                $chatType        = $message->getChat()->getType();
-                $text            = $message->getText();
-                $telegramUserId  = $message->getFrom()?->getId();
-                $username        = $message->getFrom()?->getUsername();
+                $chatId = $message->getChat()->getId();
+                $chatType = $message->getChat()->getType();
+                $text = $message->getText();
+                $telegramUserId = $message->getFrom()?->getId();
+                $username = $message->getFrom()?->getUsername();
                 $messageThreadId = $message->get('message_thread_id');
 
                 // Skip system messages (new_chat_member, left_chat_member, etc.) without text
                 if ($text === null || trim($text) === '') {
                     Log::info('Telegram system event received (no text)', [
-                        'chat_id'           => $chatId,
-                        'chat_type'         => $chatType,
-                        'new_chat_member'   => $message->getNewChatMember()?->getUsername(),
-                        'left_chat_member'  => $message->getLeftChatMember()?->getUsername(),
+                        'chat_id' => $chatId,
+                        'chat_type' => $chatType,
+                        'new_chat_member' => $message->getNewChatMember()?->getUsername(),
+                        'left_chat_member' => $message->getLeftChatMember()?->getUsername(),
                     ]);
 
                     return response()->json(['ok' => true]);
@@ -64,7 +59,7 @@ class TelegramBotController extends Controller
                 if (! $telegramUserId) {
                     Log::info('Telegram message without user info', [
                         'chat_id' => $chatId,
-                        'text'    => $text,
+                        'text' => $text,
                     ]);
 
                     return response()->json(['ok' => true]);
@@ -72,18 +67,19 @@ class TelegramBotController extends Controller
 
                 // Find or create telegram user and resolve application user
                 $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
-                $user         = $telegramUser->user;
+                $user = $telegramUser->user;
 
                 // Save incoming user message (save ALL messages, not just mentions)
-                TelegramChatMessage::create([
+                $incomingMessage = TelegramChatMessage::create([
                     'telegram_chat_id' => $chatId,
                     'telegram_user_id' => $telegramUser->telegram_user_id,
-                    'role'             => 'user',
-                    'content'          => $text,
+                    'message_thread_id' => $messageThreadId,
+                    'role' => 'user',
+                    'content' => $text,
                 ]);
 
                 // Only respond when bot is mentioned (except in private chats)
-                $botUsername  = config('telegram.bot_username');
+                $botUsername = config('telegram.bot_username');
                 $isPrivateChat = $chatType === 'private';
                 if (! $isPrivateChat && (! $botUsername || ! $this->isBotMentioned($text, $botUsername))) {
                     return response()->json(['ok' => true]);
@@ -92,10 +88,10 @@ class TelegramBotController extends Controller
                 // Check whitelist (empty = allow all)
                 if (! $this->isUserAllowed($telegramUserId)) {
                     Log::info('Unauthorized user message (ignored)', [
-                        'chat_id'  => $chatId,
-                        'user_id'  => $telegramUserId,
+                        'chat_id' => $chatId,
+                        'user_id' => $telegramUserId,
                         'username' => $username,
-                        'text'     => $text,
+                        'text' => $text,
                     ]);
 
                     return response()->json(['ok' => true]);
@@ -110,12 +106,16 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
+                if ($incomingMessage->content !== $text) {
+                    $incomingMessage->update(['content' => $text]);
+                }
+
                 Log::info('Telegram message received', [
-                    'chat_id'   => $chatId,
+                    'chat_id' => $chatId,
                     'chat_type' => $chatType,
-                    'user_id'   => $telegramUserId,
-                    'username'  => $username,
-                    'text'      => $text,
+                    'user_id' => $telegramUserId,
+                    'username' => $username,
+                    'text' => $text,
                 ]);
 
                 // Handle /stop command
@@ -124,7 +124,7 @@ class TelegramBotController extends Controller
                         $this->agentService->requestStop($user->id);
                     }
                     $stopMessage = '⛔️ Stop signal sent. Current processing will be interrupted.';
-                    $sendParams  = ['chat_id' => $chatId, 'text' => $stopMessage];
+                    $sendParams = ['chat_id' => $chatId, 'text' => $stopMessage];
                     if ($messageThreadId) {
                         $sendParams['message_thread_id'] = $messageThreadId;
                     }
@@ -133,8 +133,9 @@ class TelegramBotController extends Controller
                     TelegramChatMessage::create([
                         'telegram_chat_id' => $chatId,
                         'telegram_user_id' => $telegramUser->telegram_user_id,
-                        'role'             => 'assistant',
-                        'content'          => $stopMessage,
+                        'message_thread_id' => $messageThreadId,
+                        'role' => 'assistant',
+                        'content' => $stopMessage,
                     ]);
 
                     return response()->json(['ok' => true]);
@@ -149,26 +150,8 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
-                // Register Telegram-specific tool for this chat's history
-                $this->toolRegistry->register(new GetChatHistoryTool($chatId));
-
-                // Process message through channel-agnostic agent
-                $response = $this->agentService->processMessage($user, collect(), $text, 'telegram', OutputMode::MD);
-
-                // Send response back to chat
-                $sendParams = ['chat_id' => $chatId, 'text' => $response, 'parse_mode' => 'Markdown'];
-                if ($messageThreadId) {
-                    $sendParams['message_thread_id'] = $messageThreadId;
-                }
-                $this->telegram->sendMessage($sendParams);
-
-                // Save bot response
-                TelegramChatMessage::create([
-                    'telegram_chat_id' => $chatId,
-                    'telegram_user_id' => $telegramUser->telegram_user_id,
-                    'role'             => 'assistant',
-                    'content'          => $response,
-                ]);
+                ProcessTelegramBranchJob::dispatch($chatId, $messageThreadId)
+                    ->delay(now()->addSeconds((int) config('agent.telegram.coalesce_window_seconds', 4)));
             }
 
             return response()->json(['ok' => true]);
@@ -183,8 +166,8 @@ class TelegramBotController extends Controller
         } catch (\Throwable $e) {
             Log::error('Telegram webhook unexpected error', [
                 'error' => $e->getMessage(),
-                'file'  => $e->getFile(),
-                'line'  => $e->getLine(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString(),
             ]);
 

@@ -17,8 +17,10 @@ use App\Services\OpenRouterClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
-use Tests\TestCase;
 use Mockery;
+use Mockery\MockInterface;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
 
 class FollowupGenerationTest extends TestCase
 {
@@ -93,7 +95,7 @@ class FollowupGenerationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function transcript_parsed_event_dispatches_followup_jobs_for_all_user_teams()
     {
         Queue::fake();
@@ -126,7 +128,7 @@ class FollowupGenerationTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function transcript_parsed_event_does_not_create_jobs_if_user_has_no_teams()
     {
         Queue::fake();
@@ -141,7 +143,7 @@ class FollowupGenerationTest extends TestCase
         Queue::assertNotPushed(GenerateFollowupJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function followup_is_created_with_correct_data()
     {
         // Мокаем OpenRouter клиент
@@ -165,8 +167,8 @@ class FollowupGenerationTest extends TestCase
             'calendar_event_id' => $this->calendarEvent->id,
             'participant_id' => $participant->id,
             'text' => 'Hello everyone, let\'s discuss the project.',
-            'start_relative' => '00:00:00',
-            'end_relative' => '00:00:05',
+            'start_relative' => 0.0,
+            'end_relative' => 5.0,
             'start_absolute' => now(),
             'end_absolute' => now()->addSeconds(5),
         ]);
@@ -190,7 +192,7 @@ class FollowupGenerationTest extends TestCase
         $this->assertCount(2, $text['action_items']);
     }
 
-    /** @test */
+    #[Test]
     public function followup_status_is_failed_when_openrouter_fails()
     {
         // Мокаем OpenRouter клиент с ошибкой
@@ -210,7 +212,7 @@ class FollowupGenerationTest extends TestCase
         $this->assertEmpty($followup->text);
     }
 
-    /** @test */
+    #[Test]
     public function followup_uses_team_methodology()
     {
         // Мокаем OpenRouter клиент
@@ -229,7 +231,7 @@ class FollowupGenerationTest extends TestCase
         $this->assertEquals($this->methodology->id, $followup->methodology_id);
     }
 
-    /** @test */
+    #[Test]
     public function transcript_is_built_correctly_from_entries()
     {
         // Создаем участников
@@ -248,8 +250,8 @@ class FollowupGenerationTest extends TestCase
             'calendar_event_id' => $this->calendarEvent->id,
             'participant_id' => $participant1->id,
             'text' => 'Hello everyone',
-            'start_relative' => '00:00:00',
-            'end_relative' => '00:00:03',
+            'start_relative' => 0.0,
+            'end_relative' => 3.0,
             'start_absolute' => now(),
             'end_absolute' => now()->addSeconds(3),
         ]);
@@ -258,15 +260,15 @@ class FollowupGenerationTest extends TestCase
             'calendar_event_id' => $this->calendarEvent->id,
             'participant_id' => $participant2->id,
             'text' => 'Hi John!',
-            'start_relative' => '00:00:03',
-            'end_relative' => '00:00:05',
+            'start_relative' => 3.0,
+            'end_relative' => 5.0,
             'start_absolute' => now()->addSeconds(3),
             'end_absolute' => now()->addSeconds(5),
         ]);
 
         // Мокаем OpenRouter клиент и проверяем формат транскрипта
-        $mockClient = Mockery::mock(OpenRouterClient::class);
-        $mockClient->shouldReceive('chat')
+        $mockClient = Mockery::mock(OpenRouterClient::class, function (MockInterface $mock) {
+            $mock->shouldReceive('chat')
             ->once()
             ->withArgs(function ($messages) {
                 // Проверяем, что транскрипт содержит правильный формат
@@ -275,12 +277,15 @@ class FollowupGenerationTest extends TestCase
                     && str_contains($transcriptMessage, 'Jane Smith: Hi John!');
             })
             ->andReturn('{"test": "data"}');
+        });
 
         $this->app->instance(OpenRouterClient::class, $mockClient);
 
         // Вызываем сервис генерации
         $service = $this->app->make(FollowupService::class);
         $service->generate($this->calendarEvent, $this->team, $this->user);
+
+        $this->addToAssertionCount(1);
     }
 
     protected function tearDown(): void

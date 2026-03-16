@@ -5,13 +5,14 @@ namespace Tests\Unit;
 use App\Enums\EmailStatus;
 use App\Models\Email;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class EmailModelTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_creates_email_with_pending_status()
     {
         $email = Email::create([
@@ -32,7 +33,7 @@ class EmailModelTest extends TestCase
         $this->assertTrue($email->isPending());
     }
 
-    /** @test */
+    #[Test]
     public function it_marks_email_as_sent()
     {
         $email = Email::create([
@@ -51,7 +52,7 @@ class EmailModelTest extends TestCase
         $this->assertNotNull($email->sent_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_marks_email_as_sent_without_message_id()
     {
         $email = Email::create([
@@ -70,7 +71,7 @@ class EmailModelTest extends TestCase
         $this->assertNotNull($email->sent_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_marks_email_as_failed()
     {
         $email = Email::create([
@@ -88,7 +89,7 @@ class EmailModelTest extends TestCase
         $this->assertEquals('Connection timeout', $email->error_message);
     }
 
-    /** @test */
+    #[Test]
     public function it_increments_retry_count()
     {
         $email = Email::create([
@@ -109,7 +110,7 @@ class EmailModelTest extends TestCase
         $this->assertEquals(2, $email->fresh()->retry_count);
     }
 
-    /** @test */
+    #[Test]
     public function it_casts_to_array_properly()
     {
         $email = Email::create([
@@ -130,7 +131,7 @@ class EmailModelTest extends TestCase
         $this->assertCount(1, $email->attachments);
     }
 
-    /** @test */
+    #[Test]
     public function it_casts_status_to_enum()
     {
         $email = Email::create([
@@ -146,7 +147,7 @@ class EmailModelTest extends TestCase
         $this->assertEquals(EmailStatus::SENT, $email->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_checks_sent_status()
     {
         $email = Email::create([
@@ -163,7 +164,7 @@ class EmailModelTest extends TestCase
         $this->assertFalse($email->isPending());
     }
 
-    /** @test */
+    #[Test]
     public function it_checks_failed_status()
     {
         $email = Email::create([
@@ -180,7 +181,7 @@ class EmailModelTest extends TestCase
         $this->assertFalse($email->isPending());
     }
 
-    /** @test */
+    #[Test]
     public function it_checks_pending_status()
     {
         $email = Email::create([

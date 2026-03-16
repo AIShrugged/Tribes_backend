@@ -8,6 +8,7 @@ use App\Services\Email\EmailBuilder;
 use App\Services\Email\EmailService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class EmailServiceTest extends TestCase
@@ -23,7 +24,7 @@ class EmailServiceTest extends TestCase
         $this->emailService = app(EmailService::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_email_builder_instance()
     {
         $builder = $this->emailService->builder();
@@ -31,7 +32,7 @@ class EmailServiceTest extends TestCase
         $this->assertInstanceOf(EmailBuilder::class, $builder);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_via_provider()
     {
         Http::fake([
@@ -55,7 +56,7 @@ class EmailServiceTest extends TestCase
         $this->assertTrue($email->isSent());
     }
 
-    /** @test */
+    #[Test]
     public function it_integrates_builder_and_sender()
     {
         Http::fake([
@@ -84,7 +85,7 @@ class EmailServiceTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_provider_failure()
     {
         Http::fake([
@@ -107,7 +108,7 @@ class EmailServiceTest extends TestCase
         $this->assertEquals('Invalid API key', $email->error_message);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_with_multiple_recipients()
     {
         Http::fake([
@@ -131,7 +132,7 @@ class EmailServiceTest extends TestCase
         $this->assertCount(3, $email->to);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_with_attachments()
     {
         Http::fake([
@@ -163,7 +164,7 @@ class EmailServiceTest extends TestCase
         unlink($tempFile);
     }
 
-    /** @test */
+    #[Test]
     public function multiple_emails_can_be_sent_independently()
     {
         Http::fake([

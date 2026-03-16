@@ -5,6 +5,7 @@ namespace App\Services\Chat;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Str;
 
 class ChatMessageService
 {
@@ -22,6 +23,18 @@ class ChatMessageService
         return $chat->messages()->count();
     }
 
+    public function findAssistantRun(Chat $chat, string $runUuid): ?ChatMessage
+    {
+        if (! Str::isUuid($runUuid)) {
+            return null;
+        }
+
+        return $chat->messages()
+            ->where('role', 'assistant')
+            ->where('agent_run_uuid', $runUuid)
+            ->first();
+    }
+
     public function createUserMessage(Chat $chat, string $content): ChatMessage
     {
         return $this->create($chat, 'user', $content);
@@ -32,13 +45,23 @@ class ChatMessageService
         return $this->create($chat, 'assistant', $content, $followupData);
     }
 
-    private function create(Chat $chat, string $role, string $content, ?array $followupData = null): ChatMessage
+    public function createQueuedAssistantMessage(Chat $chat, string $content = 'Processing...'): ChatMessage
+    {
+        return $this->create($chat, 'assistant', $content, null, [
+            'status' => 'queued',
+            'agent_run_uuid' => (string) Str::uuid(),
+        ]);
+    }
+
+    private function create(Chat $chat, string $role, string $content, ?array $followupData = null, array $attributes = []): ChatMessage
     {
         $message = ChatMessage::create([
-            'chat_id'       => $chat->id,
-            'role'          => $role,
-            'content'       => $content,
+            'chat_id' => $chat->id,
+            'role' => $role,
+            'status' => 'completed',
+            'content' => $content,
             'followup_data' => $followupData,
+            ...$attributes,
         ]);
 
         $chat->touch();

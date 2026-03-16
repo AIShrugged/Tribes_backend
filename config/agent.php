@@ -52,8 +52,53 @@ return [
     */
 
     'sql_column_blacklist' => [
-        'users'        => ['password', 'remember_token'],
+        'users' => ['password', 'remember_token'],
         'source_oauths' => ['access_token', 'refresh_token'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Model Routing
+    |--------------------------------------------------------------------------
+    |
+    | Centralized defaults for agent task types. Settings values may override
+    | these keys via `model.<task_type>`.
+    |
+    */
+
+    'models' => [
+        'interactive' => 'anthropic/claude-sonnet-4.6',
+        'summarization' => 'anthropic/claude-sonnet-4.6',
+        'extraction' => 'openai/gpt-4.1-mini',
+        'background' => 'openai/gpt-4.1-mini',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Context Compaction
+    |--------------------------------------------------------------------------
+    |
+    | Keep recent messages verbatim and fold older turns into a deterministic
+    | summary before sending them to the LLM.
+    |
+    */
+
+    'compaction' => [
+        'keep_recent_messages' => 8,
+        'max_summary_chars' => 2500,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Telegram Coalescing
+    |--------------------------------------------------------------------------
+    |
+    | Burst Telegram messages are batched into a single agent turn.
+    |
+    */
+
+    'telegram' => [
+        'coalesce_window_seconds' => 4,
     ],
 
 ];

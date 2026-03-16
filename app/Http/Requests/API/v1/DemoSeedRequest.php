@@ -15,6 +15,24 @@ class DemoSeedRequest extends FormRequest
         ];
     }
 
+    public function bodyParameters(): array
+    {
+        return [
+            'teams_count' => [
+                'description' => 'How many demo teams to create.',
+                'example' => 1,
+            ],
+            'employees_per_team' => [
+                'description' => 'How many demo employees to create per team.',
+                'example' => 7,
+            ],
+            'meetings_per_team' => [
+                'description' => 'How many demo meetings to generate for each team.',
+                'example' => 3,
+            ],
+        ];
+    }
+
     public function getParams(): array
     {
         return [

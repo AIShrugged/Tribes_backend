@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessChatBranchJob;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class ChatMessageControllerTest extends TestCase
@@ -14,6 +16,7 @@ class ChatMessageControllerTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected Chat $chat;
 
     protected function setUp(): void
@@ -23,13 +26,13 @@ class ChatMessageControllerTest extends TestCase
         $this->user = User::factory()->create();
         $this->chat = Chat::create([
             'user_id' => $this->user->id,
-            'title'   => 'Test Chat',
+            'title' => 'Test Chat',
         ]);
     }
 
     // --- GET /api/v1/chats/{chat}/messages ---
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication_to_list_messages(): void
     {
         $response = $this->getJson("/api/v1/chats/{$this->chat->id}/messages");
@@ -37,7 +40,7 @@ class ChatMessageControllerTest extends TestCase
         $response->assertStatus(401);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_messages_for_own_chat(): void
     {
         ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Hello']);
@@ -53,7 +56,7 @@ class ChatMessageControllerTest extends TestCase
             ->assertJsonPath('data.1.content', 'Hi there');
     }
 
-    /** @test */
+    #[Test]
     public function it_cannot_view_messages_of_another_users_chat(): void
     {
         $otherUser = User::factory()->create();
@@ -64,7 +67,7 @@ class ChatMessageControllerTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_messages_in_chronological_order(): void
     {
         ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'First']);
@@ -81,7 +84,7 @@ class ChatMessageControllerTest extends TestCase
         $this->assertEquals('Third', $data[2]['content']);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_message_fields_in_correct_format(): void
     {
         ChatMessage::create(['chat_id' => $this->chat->id, 'role' => 'user', 'content' => 'Test']);
@@ -91,13 +94,24 @@ class ChatMessageControllerTest extends TestCase
 
         $response->assertStatus(200)
             ->assertJsonStructure([
-                'data' => [['id', 'chat_id', 'role', 'content', 'followup_data', 'created_at']],
+                'data' => [[
+                    'id',
+                    'chat_id',
+                    'role',
+                    'status',
+                    'content',
+                    'followup_data',
+                    'error_message',
+                    'agent_run_uuid',
+                    'completed_at',
+                    'created_at',
+                ]],
             ]);
     }
 
     // --- POST /api/v1/chats/{chat}/messages ---
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication_to_send_message(): void
     {
         $response = $this->postJson("/api/v1/chats/{$this->chat->id}/messages", [
@@ -107,20 +121,10 @@ class ChatMessageControllerTest extends TestCase
         $response->assertStatus(401);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_message_and_gets_agent_response(): void
     {
-        Http::fake([
-            'openrouter.ai/*' => Http::response([
-                'choices' => [[
-                    'message' => [
-                        'role'    => 'assistant',
-                        'content' => 'Это ответ агента',
-                    ],
-                    'finish_reason' => 'stop',
-                ]],
-            ], 200),
-        ]);
+        Queue::fake();
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/v1/chats/{$this->chat->id}/messages", [
@@ -129,23 +133,83 @@ class ChatMessageControllerTest extends TestCase
 
         $response->assertStatus(200)
             ->assertJsonPath('data.role', 'assistant')
-            ->assertJsonPath('data.content', 'Это ответ агента')
+            ->assertJsonPath('data.status', 'queued')
+            ->assertJsonPath('data.content', 'Processing...')
             ->assertJsonPath('data.chat_id', $this->chat->id);
 
-        // Оба сообщения сохранены в БД
         $this->assertDatabaseHas('chat_messages', [
             'chat_id' => $this->chat->id,
-            'role'    => 'user',
+            'role' => 'user',
             'content' => 'Вопрос пользователя',
         ]);
         $this->assertDatabaseHas('chat_messages', [
             'chat_id' => $this->chat->id,
-            'role'    => 'assistant',
-            'content' => 'Это ответ агента',
+            'role' => 'assistant',
+            'content' => 'Processing...',
+            'status' => 'queued',
         ]);
+
+        Queue::assertPushed(ProcessChatBranchJob::class);
     }
 
-    /** @test */
+    #[Test]
+    public function it_returns_run_status_for_own_chat(): void
+    {
+        $runUuid = '11111111-1111-4111-8111-111111111111';
+
+        $assistantMessage = ChatMessage::create([
+            'chat_id' => $this->chat->id,
+            'role' => 'assistant',
+            'status' => 'processing',
+            'content' => 'Processing...',
+            'agent_run_uuid' => $runUuid,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/v1/chats/{$this->chat->id}/runs/{$runUuid}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.agent_run_uuid', $runUuid)
+            ->assertJsonPath('data.chat_id', $this->chat->id)
+            ->assertJsonPath('data.message_id', $assistantMessage->id)
+            ->assertJsonPath('data.status', 'processing')
+            ->assertJsonPath('data.progress_percent', 50)
+            ->assertJsonPath('data.current_step_label', 'Generating response')
+            ->assertJsonPath('data.message.content', 'Processing...');
+    }
+
+    #[Test]
+    public function it_cannot_view_run_status_of_another_users_chat(): void
+    {
+        $runUuid = '22222222-2222-4222-8222-222222222222';
+
+        ChatMessage::create([
+            'chat_id' => $this->chat->id,
+            'role' => 'assistant',
+            'status' => 'processing',
+            'content' => 'Processing...',
+            'agent_run_uuid' => $runUuid,
+        ]);
+
+        $otherUser = User::factory()->create();
+
+        $response = $this->actingAs($otherUser)
+            ->getJson("/api/v1/chats/{$this->chat->id}/runs/{$runUuid}");
+
+        $response->assertStatus(404);
+    }
+
+    #[Test]
+    public function it_returns_404_for_unknown_run_uuid(): void
+    {
+        $response = $this->actingAs($this->user)
+            ->getJson("/api/v1/chats/{$this->chat->id}/runs/missing-run");
+
+        $response->assertStatus(404)
+            ->assertJsonPath('message', 'Run not found');
+    }
+
+    #[Test]
     public function it_cannot_send_message_to_another_users_chat(): void
     {
         $otherUser = User::factory()->create();
@@ -158,7 +222,7 @@ class ChatMessageControllerTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_content_is_required(): void
     {
         $response = $this->actingAs($this->user)
@@ -168,7 +232,7 @@ class ChatMessageControllerTest extends TestCase
             ->assertJsonValidationErrors(['content']);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_content_max_length(): void
     {
         $response = $this->actingAs($this->user)
@@ -180,7 +244,7 @@ class ChatMessageControllerTest extends TestCase
             ->assertJsonValidationErrors(['content']);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_404_for_nonexistent_chat(): void
     {
         $response = $this->actingAs($this->user)
@@ -193,7 +257,7 @@ class ChatMessageControllerTest extends TestCase
 
     // --- GET /api/v1/chats ---
 
-    /** @test */
+    #[Test]
     public function it_returns_chat_list_for_authenticated_user(): void
     {
         Chat::create(['user_id' => $this->user->id, 'title' => 'Chat 1']);
@@ -213,7 +277,7 @@ class ChatMessageControllerTest extends TestCase
         $this->assertCount(3, $data);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_a_new_chat(): void
     {
         $response = $this->actingAs($this->user)
@@ -226,11 +290,11 @@ class ChatMessageControllerTest extends TestCase
 
         $this->assertDatabaseHas('chats', [
             'user_id' => $this->user->id,
-            'title'   => 'Мой новый чат',
+            'title' => 'Мой новый чат',
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication_to_list_chats(): void
     {
         $response = $this->getJson('/api/v1/chats');

@@ -8,6 +8,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class MethodologyListTest extends TestCase
@@ -73,7 +74,7 @@ class MethodologyListTest extends TestCase
         return "/api/v1/organizations/{$this->organization->id}/methodologies";
     }
 
-    /** @test */
+    #[Test]
     public function manager_sees_all_org_methodologies_and_defaults()
     {
         $methodologyA = $this->createMethodology('Scrum');
@@ -91,7 +92,7 @@ class MethodologyListTest extends TestCase
         $this->assertContains($this->defaultMethodology->id, $ids);
     }
 
-    /** @test */
+    #[Test]
     public function employee_sees_default_methodology()
     {
         Sanctum::actingAs($this->employee);
@@ -104,7 +105,7 @@ class MethodologyListTest extends TestCase
         $this->assertContains($this->defaultMethodology->id, $ids);
     }
 
-    /** @test */
+    #[Test]
     public function employee_sees_methodology_assigned_to_their_team()
     {
         $this->team->users()->attach($this->employee);
@@ -119,7 +120,7 @@ class MethodologyListTest extends TestCase
         $this->assertContains($methodology->id, $ids);
     }
 
-    /** @test */
+    #[Test]
     public function employee_does_not_see_methodology_assigned_to_other_team()
     {
         $otherTeam = Team::create([
@@ -140,7 +141,7 @@ class MethodologyListTest extends TestCase
         $this->assertNotContains($methodology->id, $ids);
     }
 
-    /** @test */
+    #[Test]
     public function unauthenticated_user_gets_401()
     {
         $response = $this->getJson($this->url());
@@ -148,7 +149,7 @@ class MethodologyListTest extends TestCase
         $response->assertUnauthorized();
     }
 
-    /** @test */
+    #[Test]
     public function user_not_in_organization_gets_404()
     {
         $outsider = User::factory()->create();

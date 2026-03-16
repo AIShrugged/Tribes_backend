@@ -24,6 +24,11 @@ class ToolRegistry
         return $this->tools;
     }
 
+    public function clear(): void
+    {
+        $this->tools = [];
+    }
+
     /**
      * Get tools in OpenAI function calling format
      */

@@ -11,6 +11,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class FollowupPolicyTest extends TestCase
@@ -105,7 +106,7 @@ class FollowupPolicyTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function team_member_can_view_their_followups()
     {
         Sanctum::actingAs($this->user);
@@ -129,7 +130,7 @@ class FollowupPolicyTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function team_member_can_view_specific_followup()
     {
         Sanctum::actingAs($this->user);
@@ -149,7 +150,7 @@ class FollowupPolicyTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function organization_manager_can_view_team_followups()
     {
         Sanctum::actingAs($this->manager);
@@ -159,7 +160,7 @@ class FollowupPolicyTest extends TestCase
         $response->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function organization_manager_can_view_specific_followup()
     {
         Sanctum::actingAs($this->manager);
@@ -175,7 +176,7 @@ class FollowupPolicyTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function user_without_access_cannot_view_team_followups()
     {
         Sanctum::actingAs($this->otherUser);
@@ -185,7 +186,7 @@ class FollowupPolicyTest extends TestCase
         $response->assertStatus(404); // 404 вместо 403 для безопасности
     }
 
-    /** @test */
+    #[Test]
     public function user_without_access_cannot_view_specific_followup()
     {
         Sanctum::actingAs($this->otherUser);
@@ -195,7 +196,7 @@ class FollowupPolicyTest extends TestCase
         $response->assertStatus(404); // Not found because owned scope filters it out
     }
 
-    /** @test */
+    #[Test]
     public function team_member_only_sees_their_own_followups()
     {
         // Создаем другого пользователя в той же команде
@@ -226,7 +227,7 @@ class FollowupPolicyTest extends TestCase
         $this->assertNotEquals($otherFollowup->id, $data[0]['id']);
     }
 
-    /** @test */
+    #[Test]
     public function manager_sees_all_team_followups()
     {
         // Создаем другого пользователя в той же команде
@@ -255,7 +256,7 @@ class FollowupPolicyTest extends TestCase
         $this->assertCount(2, $data);
     }
 
-    /** @test */
+    #[Test]
     public function unauthenticated_user_cannot_access_followups()
     {
         $response = $this->getJson("/api/v1/teams/{$this->team->id}/followups");

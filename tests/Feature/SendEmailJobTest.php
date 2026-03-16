@@ -9,13 +9,14 @@ use App\Services\Email\EmailService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class SendEmailJobTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_sends_email_when_job_is_executed()
     {
         Http::fake([
@@ -43,7 +44,7 @@ class SendEmailJobTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_be_dispatched_to_queue()
     {
         Queue::fake();
@@ -64,7 +65,7 @@ class SendEmailJobTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_email_send_failure()
     {
         Http::fake([
@@ -91,7 +92,7 @@ class SendEmailJobTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function job_has_correct_retry_configuration()
     {
         $dto = new EmailDTO(
@@ -108,7 +109,7 @@ class SendEmailJobTest extends TestCase
         $this->assertEquals(60, $job->backoff);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_multiple_emails_via_jobs()
     {
         Http::fake([
@@ -145,7 +146,7 @@ class SendEmailJobTest extends TestCase
         $this->assertDatabaseHas('emails', ['subject' => 'Second Email']);
     }
 
-    /** @test */
+    #[Test]
     public function it_preserves_dto_data_in_serialization()
     {
         $dto = new EmailDTO(

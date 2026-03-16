@@ -11,12 +11,17 @@ class ChatMessage extends Model
     protected $fillable = [
         'chat_id',
         'role',
+        'status',
         'content',
         'followup_data',
+        'error_message',
+        'agent_run_uuid',
+        'completed_at',
     ];
 
     protected $casts = [
         'followup_data' => 'array',
+        'completed_at' => 'datetime',
     ];
 
     public function chat(): BelongsTo
@@ -39,8 +44,13 @@ class ChatMessage extends Model
         return $this->role === 'assistant';
     }
 
+    public function isProcessing(): bool
+    {
+        return $this->status === 'processing' || $this->status === 'queued';
+    }
+
     public function hasFollowup(): bool
     {
-        return !empty($this->followup_data);
+        return ! empty($this->followup_data);
     }
 }

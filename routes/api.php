@@ -150,6 +150,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::apiResource('chats', ChatController::class);
         Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
+        Route::get('chats/{chat}/runs/{runUuid}', [ChatMessageController::class, 'showRunStatus']);
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
 
         // Followup Export
