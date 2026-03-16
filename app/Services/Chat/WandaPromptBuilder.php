@@ -3,7 +3,7 @@
 namespace App\Services\Chat;
 
 use App\Domain\DTO\AI\MessageDTO;
-use App\Models\ChatMessage;
+use App\Models\ChannelMessage;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -160,7 +160,7 @@ PROMPT;
     }
 
     /**
-     * @param Collection<ChatMessage> $history
+     * @param Collection<ChannelMessage> $history
      * @return MessageDTO[]
      */
     public function buildMessages(User $user, Collection $history, string $userMessage): array

@@ -4,9 +4,8 @@ namespace App\Services\Agent\Tools;
 
 use App\Enums\MeetingTaskStatus;
 use App\Models\CalendarEvent;
-use App\Models\ChatMessage;
+use App\Models\ChannelMessage;
 use App\Models\Task;
-use App\Models\TelegramChatMessage;
 
 /**
  * Creates a new task, optionally linked to a meeting, chat message, or Telegram message.
@@ -19,9 +18,10 @@ use App\Models\TelegramChatMessage;
 class CreateTaskTool extends AbstractAgentTool
 {
     private const TASKABLE_MAP = [
-        'calendar_event'         => CalendarEvent::class,
-        'chat_message'           => ChatMessage::class,
-        'telegram_chat_message'  => TelegramChatMessage::class,
+        'calendar_event' => CalendarEvent::class,
+        'channel_message' => ChannelMessage::class,
+        'chat_message' => ChannelMessage::class,
+        'telegram_chat_message' => ChannelMessage::class,
     ];
 
     public function getName(): string
@@ -61,8 +61,8 @@ class CreateTaskTool extends AbstractAgentTool
                 ],
                 'taskable_type' => [
                     'type'        => 'string',
-                    'enum'        => ['calendar_event', 'chat_message', 'telegram_chat_message'],
-                    'description' => 'Type of the entity this task is linked to (optional). One of: calendar_event, chat_message, telegram_chat_message.',
+                    'enum'        => ['calendar_event', 'channel_message', 'chat_message', 'telegram_chat_message'],
+                    'description' => 'Type of the entity this task is linked to (optional). One of: calendar_event, channel_message, chat_message, telegram_chat_message.',
                 ],
                 'taskable_id' => [
                     'type'        => 'integer',

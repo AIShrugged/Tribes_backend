@@ -4,14 +4,15 @@ namespace App\Jobs;
 
 use App\Enums\AgentTaskType;
 use App\Enums\OutputMode;
-use App\Models\TelegramChatMessage;
-use App\Models\TelegramUser;
+use App\Models\ChannelIdentity;
 use App\Models\User;
 use App\Services\Agent\AgentRunOptions;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\TelegramMessageCoalescer;
 use App\Services\Agent\Tools\GetChatHistoryTool;
 use App\Services\Agent\Tools\ToolRegistry;
+use App\Services\Channel\ChannelBus;
+use App\Services\Channel\ChannelRuntimeService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,7 @@ class ProcessTelegramWorkerJob implements ShouldQueue
 
     public function __construct(
         public int $chatId,
-        public int $telegramUserId,
+        public int $authorIdentityId,
         public int $userId,
         public string $batchUuid,
         public string $content,
@@ -34,11 +35,13 @@ class ProcessTelegramWorkerJob implements ShouldQueue
         AgentService $agentService,
         ToolRegistry $toolRegistry,
         TelegramMessageCoalescer $coalescer,
+        ChannelBus $channelBus,
+        ChannelRuntimeService $runtimeService,
     ): void {
-        $telegramUser = TelegramUser::find($this->telegramUserId);
+        $authorIdentity = ChannelIdentity::find($this->authorIdentityId);
         $user = User::find($this->userId);
 
-        if (! $telegramUser || ! $user) {
+        if (! $authorIdentity || ! $user) {
             $coalescer->releaseBatch($this->batchUuid);
 
             return;
@@ -59,28 +62,15 @@ class ProcessTelegramWorkerJob implements ShouldQueue
                 )
             );
 
-            $telegram = new Api(config('telegram.bot_token'));
-            $params = [
-                'chat_id' => $this->chatId,
-                'text' => $response,
-                'parse_mode' => 'Markdown',
-            ];
-
-            if ($this->messageThreadId) {
-                $params['message_thread_id'] = $this->messageThreadId;
-            }
-
-            $telegram->sendMessage($params);
-
-            TelegramChatMessage::create([
-                'telegram_chat_id' => $this->chatId,
-                'telegram_user_id' => $telegramUser->telegram_user_id,
-                'message_thread_id' => $this->messageThreadId,
-                'role' => 'assistant',
-                'content' => $response,
-                'agent_batch_uuid' => $this->batchUuid,
-                'responded_at' => now(),
-            ]);
+            $runtimeService->deliverToConversation(
+                $channelBus->forTelegram($this->chatId, $this->messageThreadId),
+                $response,
+                $authorIdentity,
+                [
+                    'agent_batch_uuid' => $this->batchUuid,
+                    'responded_at' => now(),
+                ]
+            );
 
             $coalescer->markBatchResponded($this->batchUuid);
         } catch (\Throwable $e) {

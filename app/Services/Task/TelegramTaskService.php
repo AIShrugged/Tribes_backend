@@ -3,16 +3,17 @@
 namespace App\Services\Task;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Enums\ConversationChannelType;
 use App\Enums\MeetingTaskStatus;
+use App\Models\ChannelConversation;
+use App\Models\ChannelMessage;
 use App\Models\Task;
-use App\Models\TelegramChatMessage;
 use App\Services\OpenRouterClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
 class TelegramTaskService
 {
-    /** How many hours back to scan for new messages */
     private const SCAN_WINDOW_HOURS = 4;
 
     public function __construct(
@@ -20,28 +21,28 @@ class TelegramTaskService
     ) {
     }
 
-    /**
-     * Process all Telegram chats that have recent messages.
-     * Returns the number of chats processed.
-     */
     public function processAll(): int
     {
-        $chatIds = TelegramChatMessage::where('created_at', '>=', now()->subHours(self::SCAN_WINDOW_HOURS))
-            ->select('telegram_chat_id')
+        $conversationIds = ChannelMessage::query()
+            ->where('created_at', '>=', now()->subHours(self::SCAN_WINDOW_HOURS))
+            ->whereHas('conversation', function ($query) {
+                $query->where('channel_type', ConversationChannelType::TELEGRAM->value);
+            })
+            ->select('conversation_id')
             ->distinct()
-            ->pluck('telegram_chat_id');
+            ->pluck('conversation_id');
 
         $processed = 0;
 
-        foreach ($chatIds as $chatId) {
+        foreach ($conversationIds as $conversationId) {
             try {
-                if ($this->processChat($chatId)) {
+                if ($this->processConversation((int) $conversationId)) {
                     $processed++;
                 }
             } catch (\Throwable $e) {
                 Log::error('TelegramTaskService: failed to process chat', [
-                    'telegram_chat_id' => $chatId,
-                    'error'            => $e->getMessage(),
+                    'conversation_id' => $conversationId,
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -49,13 +50,25 @@ class TelegramTaskService
         return $processed;
     }
 
-    /**
-     * Process a single Telegram chat: extract new tasks and update statuses.
-     * Returns true if any tasks were created or updated.
-     */
     public function processChat(int $chatId): bool
     {
-        $recentMessages = TelegramChatMessage::where('telegram_chat_id', $chatId)
+        $conversation = ChannelConversation::query()
+            ->where('channel_type', ConversationChannelType::TELEGRAM->value)
+            ->where('telegram_chat_id', $chatId)
+            ->whereNull('message_thread_id')
+            ->first();
+
+        if (! $conversation) {
+            return false;
+        }
+
+        return $this->processConversation($conversation->id);
+    }
+
+    private function processConversation(int $conversationId): bool
+    {
+        $recentMessages = ChannelMessage::query()
+            ->where('conversation_id', $conversationId)
             ->where('role', 'user')
             ->where('created_at', '>=', now()->subHours(self::SCAN_WINDOW_HOURS))
             ->orderBy('created_at')
@@ -65,9 +78,9 @@ class TelegramTaskService
             return false;
         }
 
-        $allMessageIds = TelegramChatMessage::where('telegram_chat_id', $chatId)->pluck('id');
+        $allMessageIds = ChannelMessage::where('conversation_id', $conversationId)->pluck('id');
 
-        $openTasks = Task::where('taskable_type', TelegramChatMessage::class)
+        $openTasks = Task::where('taskable_type', ChannelMessage::class)
             ->whereIn('taskable_id', $allMessageIds)
             ->whereNotIn('status', [MeetingTaskStatus::DONE->value, MeetingTaskStatus::CANCELLED->value])
             ->get();
@@ -89,26 +102,26 @@ class TelegramTaskService
             $messageId = $taskData['message_id'] ?? $recentMessages->last()->id;
 
             Task::create([
-                'taskable_type' => TelegramChatMessage::class,
-                'taskable_id'   => $messageId,
-                'title'         => $title,
-                'description'   => $taskData['description'] ?? null,
+                'taskable_type' => ChannelMessage::class,
+                'taskable_id' => $messageId,
+                'title' => $title,
+                'description' => $taskData['description'] ?? null,
                 'assignee_name' => $taskData['assignee_name'] ?? null,
-                'due_date'      => $taskData['due_date'] ?? null,
-                'status'        => MeetingTaskStatus::OPEN->value,
+                'due_date' => $taskData['due_date'] ?? null,
+                'status' => MeetingTaskStatus::OPEN->value,
             ]);
 
             $changed = true;
 
             Log::info('TelegramTaskService: task created', [
-                'telegram_chat_id' => $chatId,
-                'title'            => $title,
-                'message_id'       => $messageId,
+                'conversation_id' => $conversationId,
+                'title' => $title,
+                'message_id' => $messageId,
             ]);
         }
 
         foreach ($result['status_updates'] ?? [] as $update) {
-            $task      = $openTasks->firstWhere('id', $update['task_id'] ?? null);
+            $task = $openTasks->firstWhere('id', $update['task_id'] ?? null);
             $newStatus = $update['status'] ?? null;
 
             if (! $task || ! $newStatus) {
@@ -124,7 +137,7 @@ class TelegramTaskService
             $changed = true;
 
             Log::info('TelegramTaskService: task status updated', [
-                'task_id'    => $task->id,
+                'task_id' => $task->id,
                 'new_status' => $newStatus,
             ]);
         }

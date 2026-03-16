@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\Channel\ChannelRuntimeService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -16,9 +17,9 @@ class ProcessChatBranchJob implements ShouldQueue
         public int $assistantMessageId,
     ) {}
 
-    public function handle(): void
+    public function handle(ChannelRuntimeService $runtimeService): void
     {
-        ProcessChatWorkerJob::dispatch(
+        $runtimeService->handleChatBranch(
             $this->chatId,
             $this->userId,
             $this->userMessageId,

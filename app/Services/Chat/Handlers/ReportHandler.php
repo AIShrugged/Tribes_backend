@@ -13,7 +13,7 @@ use App\Services\Chat\Visualization\SvgChartRenderer;
 use App\Services\Chat\WandaPromptBuilder;
 use App\Services\Chat\WandaResponseParser;
 use App\Models\Chat;
-use App\Models\ChatMessage;
+use App\Models\ChannelMessage;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
@@ -35,7 +35,7 @@ class ReportHandler
     ) {
     }
 
-    public function handle(User $user, Chat $chat, string $content): ChatMessage
+    public function handle(User $user, Chat $chat, string $content): ChannelMessage
     {
         $history = $this->messageService->getRecentHistory($chat);
         $messages = $this->promptBuilder->buildMessages($user, $history, $content);

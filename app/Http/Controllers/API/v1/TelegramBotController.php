@@ -3,10 +3,9 @@
 namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\ProcessTelegramBranchJob;
-use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
+use App\Services\Channel\ChannelRuntimeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
@@ -21,7 +20,7 @@ class TelegramBotController extends Controller
 
     private AgentService $agentService;
 
-    public function __construct(AgentService $agentService)
+    public function __construct(AgentService $agentService, private readonly ChannelRuntimeService $runtimeService)
     {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
@@ -70,13 +69,12 @@ class TelegramBotController extends Controller
                 $user = $telegramUser->user;
 
                 // Save incoming user message (save ALL messages, not just mentions)
-                $incomingMessage = TelegramChatMessage::create([
-                    'telegram_chat_id' => $chatId,
-                    'telegram_user_id' => $telegramUser->telegram_user_id,
-                    'message_thread_id' => $messageThreadId,
-                    'role' => 'user',
-                    'content' => $text,
-                ]);
+                $incomingMessage = $this->runtimeService->recordTelegramInbound(
+                    $telegramUser,
+                    $chatId,
+                    $messageThreadId,
+                    $text,
+                );
 
                 // Only respond when bot is mentioned (except in private chats)
                 $botUsername = config('telegram.bot_username');
@@ -130,13 +128,10 @@ class TelegramBotController extends Controller
                     }
                     $this->telegram->sendMessage($sendParams);
 
-                    TelegramChatMessage::create([
-                        'telegram_chat_id' => $chatId,
-                        'telegram_user_id' => $telegramUser->telegram_user_id,
-                        'message_thread_id' => $messageThreadId,
-                        'role' => 'assistant',
-                        'content' => $stopMessage,
-                    ]);
+                    $this->runtimeService->deliverToConversation(
+                        $incomingMessage->conversation()->firstOrFail(),
+                        $stopMessage,
+                    );
 
                     return response()->json(['ok' => true]);
                 }
@@ -150,8 +145,7 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
-                ProcessTelegramBranchJob::dispatch($chatId, $messageThreadId)
-                    ->delay(now()->addSeconds((int) config('agent.telegram.coalesce_window_seconds', 4)));
+                $this->runtimeService->scheduleTelegramBranch($chatId, $messageThreadId);
             }
 
             return response()->json(['ok' => true]);

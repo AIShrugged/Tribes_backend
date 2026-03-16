@@ -2,29 +2,19 @@
 
 namespace App\Services\Chat;
 
-use App\Jobs\ProcessChatBranchJob;
+use App\Models\ChannelMessage;
 use App\Models\Chat;
-use App\Models\ChatMessage;
 use App\Models\User;
+use App\Services\Channel\ChannelRuntimeService;
 
 class WandaBotService
 {
     public function __construct(
-        private readonly ChatMessageService $messageService,
+        private readonly ChannelRuntimeService $runtimeService,
     ) {}
 
-    public function processMessage(User $user, Chat $chat, string $content): ChatMessage
+    public function processMessage(User $user, Chat $chat, string $content): ChannelMessage
     {
-        $userMessage = $this->messageService->createUserMessage($chat, $content);
-        $assistantMessage = $this->messageService->createQueuedAssistantMessage($chat);
-
-        ProcessChatBranchJob::dispatch(
-            $chat->id,
-            $user->id,
-            $userMessage->id,
-            $assistantMessage->id,
-        );
-
-        return $assistantMessage;
+        return $this->runtimeService->queueWebChatRun($user, $chat, $content);
     }
 }
