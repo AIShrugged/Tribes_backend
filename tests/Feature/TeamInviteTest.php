@@ -12,6 +12,7 @@ use App\Services\TeamInvitationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class TeamInviteTest extends TestCase
@@ -63,7 +64,7 @@ class TeamInviteTest extends TestCase
         $this->organization->users()->attach($this->employee, ['role' => 'employee']);
     }
 
-    /** @test */
+    #[Test]
     public function manager_can_send_invite()
     {
         Queue::fake();
@@ -97,7 +98,7 @@ class TeamInviteTest extends TestCase
         Queue::assertPushed(SendEmailJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function non_manager_cannot_send_invite()
     {
         Sanctum::actingAs($this->employee);
@@ -109,7 +110,7 @@ class TeamInviteTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_invite_existing_team_member()
     {
         Sanctum::actingAs($this->manager);
@@ -127,7 +128,7 @@ class TeamInviteTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function cannot_send_duplicate_pending_invite()
     {
         Sanctum::actingAs($this->manager);
@@ -145,7 +146,7 @@ class TeamInviteTest extends TestCase
         $response->assertStatus(409);
     }
 
-    /** @test */
+    #[Test]
     public function manager_can_view_invites_list()
     {
         Sanctum::actingAs($this->manager);
@@ -162,7 +163,7 @@ class TeamInviteTest extends TestCase
             ->assertJsonCount(3, 'data');
     }
 
-    /** @test */
+    #[Test]
     public function manager_can_view_invites_with_pagination()
     {
         Sanctum::actingAs($this->manager);
@@ -181,7 +182,7 @@ class TeamInviteTest extends TestCase
         $this->assertEquals(15, $response->headers->get('Items-Count'));
     }
 
-    /** @test */
+    #[Test]
     public function manager_can_cancel_invite()
     {
         Sanctum::actingAs($this->manager);
@@ -201,7 +202,7 @@ class TeamInviteTest extends TestCase
         $this->assertEquals(InviteStatus::CANCELLED, $invite->status);
     }
 
-    /** @test */
+    #[Test]
     public function existing_user_can_accept_invite()
     {
         config(['app.frontend_url' => 'https://example.com']);
@@ -224,7 +225,7 @@ class TeamInviteTest extends TestCase
         $this->assertTrue($existingUser->isOrganizationMember($this->organization));
     }
 
-    /** @test */
+    #[Test]
     public function non_existing_user_redirects_to_register()
     {
         config(['app.frontend_url' => 'https://example.com']);
@@ -236,12 +237,12 @@ class TeamInviteTest extends TestCase
 
         $response->assertRedirect();
         $location = $response->headers->get('Location');
-        $this->assertStringContainsString('https://example.com/register', $location);
+        $this->assertStringContainsString('https://example.com/auth/register', $location);
         $this->assertStringContainsString('invite=' . $invite->plain_token, $location);
         $this->assertStringContainsString('email=newuser%40example.com', $location);
     }
 
-    /** @test */
+    #[Test]
     public function expired_invite_cannot_be_accepted()
     {
         config(['app.frontend_url' => 'https://example.com']);
@@ -260,7 +261,7 @@ class TeamInviteTest extends TestCase
         $this->assertStringContainsString('reason=expired', $location);
     }
 
-    /** @test */
+    #[Test]
     public function cancelled_invite_cannot_be_accepted()
     {
         config(['app.frontend_url' => 'https://example.com']);
@@ -279,7 +280,7 @@ class TeamInviteTest extends TestCase
         $this->assertStringContainsString('reason=cancelled', $location);
     }
 
-    /** @test */
+    #[Test]
     public function invalid_token_returns_error()
     {
         config(['app.frontend_url' => 'https://example.com']);
@@ -292,7 +293,7 @@ class TeamInviteTest extends TestCase
         $this->assertStringContainsString('reason=invalid_token', $location);
     }
 
-    /** @test */
+    #[Test]
     public function registration_with_invite_token_joins_team()
     {
         Queue::fake();
@@ -308,12 +309,10 @@ class TeamInviteTest extends TestCase
         ]);
 
         $response->assertStatus(201)
-            ->assertJson([
-                'invite_accepted' => true,
-                'team_id' => $this->team->id,
-                'organization_id' => $this->organization->id,
-                'email_verification_sent' => false,
-            ]);
+            ->assertJsonPath('data.invite_accepted', true)
+            ->assertJsonPath('data.team_id', $this->team->id)
+            ->assertJsonPath('data.organization_id', $this->organization->id)
+            ->assertJsonPath('data.email_verification_sent', false);
 
         $user = User::where('email', 'newuser@example.com')->first();
         $this->assertNotNull($user);
@@ -325,7 +324,7 @@ class TeamInviteTest extends TestCase
         $this->assertEquals(InviteStatus::ACCEPTED, $invite->status);
     }
 
-    /** @test */
+    #[Test]
     public function registration_without_invite_requires_email_verification()
     {
         Queue::fake();
@@ -337,9 +336,7 @@ class TeamInviteTest extends TestCase
         ]);
 
         $response->assertStatus(201)
-            ->assertJson([
-                'email_verification_sent' => true,
-            ]);
+            ->assertJsonPath('data.email_verification_sent', true);
 
         $user = User::where('email', 'newuser@example.com')->first();
         $this->assertNotNull($user);
@@ -348,7 +345,7 @@ class TeamInviteTest extends TestCase
         Queue::assertPushed(SendEmailJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function registration_with_invalid_invite_still_registers_but_requires_verification()
     {
         Queue::fake();
@@ -361,19 +358,15 @@ class TeamInviteTest extends TestCase
         ]);
 
         $response->assertStatus(201)
-            ->assertJson([
-                'email_verification_sent' => true,
-            ])
-            ->assertJsonMissing([
-                'invite_accepted' => true,
-            ]);
+            ->assertJsonPath('data.email_verification_sent', true)
+            ->assertJsonMissingPath('data.invite_accepted');
 
         $user = User::where('email', 'newuser@example.com')->first();
         $this->assertNotNull($user);
         $this->assertNull($user->email_verified_at);
     }
 
-    /** @test */
+    #[Test]
     public function registration_with_mismatched_email_does_not_accept_invite()
     {
         Queue::fake();
@@ -389,18 +382,14 @@ class TeamInviteTest extends TestCase
         ]);
 
         $response->assertStatus(201)
-            ->assertJson([
-                'email_verification_sent' => true,
-            ])
-            ->assertJsonMissing([
-                'invite_accepted' => true,
-            ]);
+            ->assertJsonPath('data.email_verification_sent', true)
+            ->assertJsonMissingPath('data.invite_accepted');
 
         $user = User::where('email', 'different@example.com')->first();
         $this->assertFalse($user->belongsToTeam($this->team));
     }
 
-    /** @test */
+    #[Test]
     public function non_manager_cannot_view_invites()
     {
         Sanctum::actingAs($this->employee);
@@ -410,7 +399,7 @@ class TeamInviteTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function non_manager_cannot_cancel_invite()
     {
         Sanctum::actingAs($this->employee);
@@ -423,7 +412,7 @@ class TeamInviteTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function unauthenticated_user_cannot_manage_invites()
     {
         $response = $this->getJson("/api/v1/teams/{$this->team->id}/invites");

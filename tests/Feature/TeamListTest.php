@@ -8,6 +8,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class TeamListTest extends TestCase
@@ -53,7 +54,7 @@ class TeamListTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function manager_sees_all_teams_in_organization()
     {
         $teamA = $this->createTeam('Team A', 'team-a');
@@ -72,7 +73,7 @@ class TeamListTest extends TestCase
         $this->assertContains($teamB->id, $ids);
     }
 
-    /** @test */
+    #[Test]
     public function employee_sees_only_teams_they_belong_to()
     {
         $teamA = $this->createTeam('Team A', 'team-a');
@@ -91,7 +92,7 @@ class TeamListTest extends TestCase
         $this->assertEquals($teamA->id, $response->json('data.0.id'));
     }
 
-    /** @test */
+    #[Test]
     public function employee_not_in_any_team_sees_empty_list()
     {
         $this->createTeam('Team A', 'team-a');
@@ -106,7 +107,7 @@ class TeamListTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
-    /** @test */
+    #[Test]
     public function employee_does_not_see_teams_they_are_not_member_of()
     {
         $teamA = $this->createTeam('Team A', 'team-a');
@@ -122,7 +123,7 @@ class TeamListTest extends TestCase
         $this->assertNotContains($teamB->id, $ids);
     }
 
-    /** @test */
+    #[Test]
     public function unauthenticated_user_gets_401()
     {
         $response = $this->getJson("/api/v1/organizations/{$this->organization->id}/teams");
@@ -130,7 +131,7 @@ class TeamListTest extends TestCase
         $response->assertUnauthorized();
     }
 
-    /** @test */
+    #[Test]
     public function user_not_in_organization_gets_403()
     {
         $outsider = User::factory()->create();
@@ -141,7 +142,7 @@ class TeamListTest extends TestCase
         $response->assertNotFound();
     }
 
-    /** @test */
+    #[Test]
     public function manager_sees_teams_from_own_organization_only()
     {
         $otherOrg = Organization::create([

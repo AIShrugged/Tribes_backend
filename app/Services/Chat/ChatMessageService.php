@@ -2,57 +2,49 @@
 
 namespace App\Services\Chat;
 
+use App\Models\ChannelMessage;
 use App\Models\Chat;
-use App\Models\ChatMessage;
+use App\Services\Channel\ChannelBus;
 use Illuminate\Database\Eloquent\Collection;
 
 class ChatMessageService
 {
+    public function __construct(
+        private readonly ChannelBus $channelBus,
+    ) {}
+
     public function getMessages(Chat $chat, int $offset = 0, int $limit = 50): Collection
     {
-        return $chat->messages()
-            ->orderBy('created_at')
-            ->offset($offset)
-            ->limit($limit)
-            ->get();
+        return $this->channelBus->getChatMessages($chat, $offset, $limit);
     }
 
     public function countMessages(Chat $chat): int
     {
-        return $chat->messages()->count();
+        return $this->channelBus->countChatMessages($chat);
     }
 
-    public function createUserMessage(Chat $chat, string $content): ChatMessage
+    public function findAssistantRun(Chat $chat, string $runUuid): ?ChannelMessage
     {
-        return $this->create($chat, 'user', $content);
+        return $this->channelBus->findChatAssistantRun($chat, $runUuid);
     }
 
-    public function createAssistantMessage(Chat $chat, string $content, ?array $followupData = null): ChatMessage
+    public function createUserMessage(Chat $chat, string $content): ChannelMessage
     {
-        return $this->create($chat, 'assistant', $content, $followupData);
+        return $this->channelBus->createChatUserMessage($chat, $content);
     }
 
-    private function create(Chat $chat, string $role, string $content, ?array $followupData = null): ChatMessage
+    public function createAssistantMessage(Chat $chat, string $content, ?array $followupData = null): ChannelMessage
     {
-        $message = ChatMessage::create([
-            'chat_id'       => $chat->id,
-            'role'          => $role,
-            'content'       => $content,
-            'followup_data' => $followupData,
-        ]);
+        return $this->channelBus->createChatAssistantMessage($chat, $content, $followupData);
+    }
 
-        $chat->touch();
-
-        return $message;
+    public function createQueuedAssistantMessage(Chat $chat, string $content = 'Processing...'): ChannelMessage
+    {
+        return $this->channelBus->createQueuedChatAssistantMessage($chat, $content);
     }
 
     public function getRecentHistory(Chat $chat, int $limit = 20): Collection
     {
-        return $chat->messages()
-            ->orderByDesc('created_at')
-            ->limit($limit)
-            ->get()
-            ->reverse()
-            ->values();
+        return $this->channelBus->getRecentChatHistory($chat, $limit);
     }
 }

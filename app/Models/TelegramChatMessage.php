@@ -12,11 +12,14 @@ class TelegramChatMessage extends Model
 
     protected $casts = [
         'telegram_chat_id' => 'integer',
+        'message_thread_id' => 'integer',
+        'coalesced_at' => 'datetime',
+        'responded_at' => 'datetime',
     ];
 
     public function telegramUser(): BelongsTo
     {
-        return $this->belongsTo(TelegramUser::class);
+        return $this->belongsTo(TelegramUser::class, 'telegram_user_id', 'telegram_user_id');
     }
 
     public function tasks(): MorphMany

@@ -5,11 +5,12 @@ namespace Tests\Unit;
 use App\Domain\DTO\EmailDTO;
 use App\Services\Email\EmailBuilder;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class EmailBuilderTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_builds_email_dto_with_all_fields()
     {
         $builder = new EmailBuilder();
@@ -30,7 +31,7 @@ class EmailBuilderTest extends TestCase
         $this->assertEmpty($dto->attachments);
     }
 
-    /** @test */
+    #[Test]
     public function it_builds_email_dto_without_from_name()
     {
         $builder = new EmailBuilder();
@@ -46,7 +47,7 @@ class EmailBuilderTest extends TestCase
         $this->assertNull($dto->fromName);
     }
 
-    /** @test */
+    #[Test]
     public function it_accepts_multiple_recipients()
     {
         $builder = new EmailBuilder();
@@ -63,7 +64,7 @@ class EmailBuilderTest extends TestCase
         $this->assertContains('recipient2@example.com', $dto->to);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_add_recipients_sequentially()
     {
         $builder = new EmailBuilder();
@@ -79,7 +80,7 @@ class EmailBuilderTest extends TestCase
         $this->assertCount(2, $dto->to);
     }
 
-    /** @test */
+    #[Test]
     public function it_removes_duplicate_recipients()
     {
         $builder = new EmailBuilder();
@@ -95,7 +96,7 @@ class EmailBuilderTest extends TestCase
         $this->assertCount(1, $dto->to);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_for_invalid_from_email()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -105,7 +106,7 @@ class EmailBuilderTest extends TestCase
         $builder->from('invalid-email');
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_for_invalid_recipient_email()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -117,7 +118,7 @@ class EmailBuilderTest extends TestCase
             ->to('invalid-email');
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_from_is_missing()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -131,7 +132,7 @@ class EmailBuilderTest extends TestCase
             ->build();
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_recipients_are_missing()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -145,7 +146,7 @@ class EmailBuilderTest extends TestCase
             ->build();
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_subject_is_missing()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -159,7 +160,7 @@ class EmailBuilderTest extends TestCase
             ->build();
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_when_html_body_is_missing()
     {
         $this->expectException(InvalidArgumentException::class);
@@ -173,7 +174,7 @@ class EmailBuilderTest extends TestCase
             ->build();
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_attachments()
     {
         $builder = new EmailBuilder();
@@ -197,7 +198,7 @@ class EmailBuilderTest extends TestCase
         unlink($tempFile);
     }
 
-    /** @test */
+    #[Test]
     public function it_adds_attachments_with_custom_name()
     {
         $builder = new EmailBuilder();
@@ -219,7 +220,7 @@ class EmailBuilderTest extends TestCase
         unlink($tempFile);
     }
 
-    /** @test */
+    #[Test]
     public function it_throws_exception_for_non_existent_attachment()
     {
         $this->expectException(InvalidArgumentException::class);

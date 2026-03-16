@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Chat;
 use App\Models\ChatMessage;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\Agent\AgentService;
 use App\Services\Agent\Tools\ToolInterface;
@@ -11,6 +11,7 @@ use App\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
@@ -21,7 +22,10 @@ class ChatAgentServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected bool $mockLlm = false;
+
     protected User $user;
+
     protected ToolRegistry $toolRegistry;
 
     protected function setUp(): void
@@ -31,11 +35,11 @@ class ChatAgentServiceTest extends TestCase
         $this->user = User::factory()->create();
 
         // Чистый реестр без реальных инструментов, чтобы не делать реальных запросов
-        $this->toolRegistry = new ToolRegistry();
+        $this->toolRegistry = new ToolRegistry;
         $this->app->instance(ToolRegistry::class, $this->toolRegistry);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_llm_response_as_string(): void
     {
         Http::fake([
@@ -44,14 +48,14 @@ class ChatAgentServiceTest extends TestCase
 
         $result = $this->makeService()->processMessage(
             $this->user,
-            new Collection(),
+            new Collection,
             'Вопрос пользователя'
         );
 
         $this->assertEquals('Ответ на вопрос', $result);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_current_message_to_llm(): void
     {
         $capturedMessages = null;
@@ -64,19 +68,19 @@ class ChatAgentServiceTest extends TestCase
 
         $this->makeService()->processMessage(
             $this->user,
-            new Collection(),
+            new Collection,
             'Текущий вопрос'
         );
 
         $this->assertNotNull($capturedMessages);
         $userMessages = array_filter($capturedMessages, fn ($m) => $m['role'] === 'user');
-        $lastUser     = array_values(array_reverse($userMessages))[0] ?? null;
+        $lastUser = array_values(array_reverse($userMessages))[0] ?? null;
 
         $this->assertNotNull($lastUser);
         $this->assertStringContainsString('Текущий вопрос', $lastUser['content']);
     }
 
-    /** @test */
+    #[Test]
     public function it_includes_history_in_llm_messages(): void
     {
         $history = new Collection([
@@ -101,7 +105,7 @@ class ChatAgentServiceTest extends TestCase
         $this->assertStringContainsString('Новый вопрос', $capturedMessages[2]['content']);
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_system_prompt_to_llm(): void
     {
         $capturedSystem = null;
@@ -112,13 +116,63 @@ class ChatAgentServiceTest extends TestCase
             return Http::response($this->makeTextResponse('OK'), 200);
         });
 
-        $this->makeService()->processMessage($this->user, new Collection(), 'Question');
+        $this->makeService()->processMessage($this->user, new Collection, 'Question');
 
         $this->assertNotNull($capturedSystem);
         $this->assertNotEmpty($capturedSystem);
     }
 
-    /** @test */
+    #[Test]
+    public function it_uses_model_router_for_interactive_runs(): void
+    {
+        Setting::set('model.interactive', 'test/router-model');
+
+        $capturedModel = null;
+
+        Http::fake(function ($request) use (&$capturedModel) {
+            $capturedModel = $request->data()['model'] ?? null;
+
+            return Http::response($this->makeTextResponse('OK'), 200);
+        });
+
+        $this->makeService()->processMessage($this->user, new Collection, 'Question');
+
+        $this->assertSame('test/router-model', $capturedModel);
+    }
+
+    #[Test]
+    public function it_compacts_old_history_into_system_prompt(): void
+    {
+        config()->set('agent.compaction.keep_recent_messages', 2);
+
+        $history = new Collection([
+            $this->makeHistoryMessage('user', 'Question 1'),
+            $this->makeHistoryMessage('assistant', 'Answer 1'),
+            $this->makeHistoryMessage('user', 'Question 2'),
+            $this->makeHistoryMessage('assistant', 'Answer 2'),
+            $this->makeHistoryMessage('user', 'Question 3'),
+        ]);
+
+        $capturedMessages = null;
+        $capturedSystem = null;
+
+        Http::fake(function ($request) use (&$capturedMessages, &$capturedSystem) {
+            $capturedMessages = $request->data()['messages'] ?? null;
+            $capturedSystem = $request->data()['system'] ?? null;
+
+            return Http::response($this->makeTextResponse('OK'), 200);
+        });
+
+        $this->makeService()->processMessage($this->user, $history, 'New question');
+
+        $this->assertCount(3, $capturedMessages);
+        $this->assertStringContainsString('Earlier conversation summary', $capturedSystem);
+        $this->assertStringContainsString('Question 1', $capturedSystem);
+        $this->assertEquals('Answer 2', $capturedMessages[0]['content']);
+        $this->assertEquals('Question 3', $capturedMessages[1]['content']);
+    }
+
+    #[Test]
     public function it_handles_tool_calls_and_returns_final_answer(): void
     {
         $fakeTool = $this->createMockTool('test_tool', ['result' => 'данные из инструмента']);
@@ -138,7 +192,7 @@ class ChatAgentServiceTest extends TestCase
 
         $result = $this->makeService()->processMessage(
             $this->user,
-            new Collection(),
+            new Collection,
             'Запусти инструмент'
         );
 
@@ -146,7 +200,7 @@ class ChatAgentServiceTest extends TestCase
         $this->assertEquals(2, $callCount);
     }
 
-    /** @test */
+    #[Test]
     public function it_passes_tool_result_to_llm_on_next_iteration(): void
     {
         $fakeTool = $this->createMockTool('my_tool', ['data' => 'важные данные']);
@@ -167,7 +221,7 @@ class ChatAgentServiceTest extends TestCase
             return Http::response($this->makeTextResponse('Done'), 200);
         });
 
-        $this->makeService()->processMessage($this->user, new Collection(), 'Use tool');
+        $this->makeService()->processMessage($this->user, new Collection, 'Use tool');
 
         $this->assertNotNull($secondCallMessages);
         $toolMessages = array_filter($secondCallMessages, fn ($m) => ($m['role'] ?? '') === 'tool');
@@ -180,7 +234,7 @@ class ChatAgentServiceTest extends TestCase
         $this->assertEquals('важные данные', $decoded['data'] ?? null);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_unknown_tool_gracefully(): void
     {
         // Никаких инструментов не зарегистрировано
@@ -193,7 +247,7 @@ class ChatAgentServiceTest extends TestCase
 
         $result = $this->makeService()->processMessage(
             $this->user,
-            new Collection(),
+            new Collection,
             'Use unknown tool'
         );
 
@@ -201,7 +255,7 @@ class ChatAgentServiceTest extends TestCase
         $this->assertNotEmpty($result);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_llm_http_error_gracefully(): void
     {
         Http::fake([
@@ -210,7 +264,7 @@ class ChatAgentServiceTest extends TestCase
 
         $result = $this->makeService()->processMessage(
             $this->user,
-            new Collection(),
+            new Collection,
             'Question'
         );
 
@@ -228,8 +282,8 @@ class ChatAgentServiceTest extends TestCase
 
     private function makeHistoryMessage(string $role, string $content): ChatMessage
     {
-        $message          = new ChatMessage();
-        $message->role    = $role;
+        $message = new ChatMessage;
+        $message->role = $role;
         $message->content = $content;
 
         return $message;
@@ -240,7 +294,7 @@ class ChatAgentServiceTest extends TestCase
         return [
             'choices' => [[
                 'message' => [
-                    'role'    => 'assistant',
+                    'role' => 'assistant',
                     'content' => $content,
                 ],
                 'finish_reason' => 'stop',
@@ -253,13 +307,13 @@ class ChatAgentServiceTest extends TestCase
         return [
             'choices' => [[
                 'message' => [
-                    'role'       => 'assistant',
-                    'content'    => null,
+                    'role' => 'assistant',
+                    'content' => null,
                     'tool_calls' => [[
-                        'id'       => $callId,
-                        'type'     => 'function',
+                        'id' => $callId,
+                        'type' => 'function',
                         'function' => [
-                            'name'      => $toolName,
+                            'name' => $toolName,
                             'arguments' => json_encode($args),
                         ],
                     ]],
@@ -271,7 +325,8 @@ class ChatAgentServiceTest extends TestCase
 
     private function createMockTool(string $name, mixed $result): ToolInterface
     {
-        return new class($name, $result) implements ToolInterface {
+        return new class($name, $result) implements ToolInterface
+        {
             public function __construct(
                 private readonly string $toolName,
                 private readonly mixed $toolResult,

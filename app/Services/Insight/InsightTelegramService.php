@@ -4,10 +4,11 @@ namespace App\Services\Insight;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Domain\DTO\Insight\InsightExtractedDataDTO;
+use App\Enums\ConversationChannelType;
 use App\Models\Channel;
+use App\Models\ChannelMessage;
 use App\Models\InsightSource;
 use App\Models\Profile;
-use App\Models\TelegramChatMessage;
 use App\Models\TelegramUser;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -110,7 +111,15 @@ class InsightTelegramService
 
         $lastMessageId = $lastSource?->source_id ?? 0;
 
-        $newMessages = TelegramChatMessage::where('telegram_user_id', $telegramUser->telegram_user_id)
+        $newMessages = ChannelMessage::query()
+            ->whereHas('authorIdentity', function ($query) use ($telegramUser) {
+                $query
+                    ->where('channel_type', ConversationChannelType::TELEGRAM->value)
+                    ->where('external_id', (string) $telegramUser->telegram_user_id);
+            })
+            ->whereHas('conversation', function ($query) {
+                $query->where('channel_type', ConversationChannelType::TELEGRAM->value);
+            })
             ->where('id', '>', $lastMessageId)
             ->orderBy('id')
             ->get();
@@ -208,7 +217,7 @@ class InsightTelegramService
 
     private function buildConversationText(Collection $messages): string
     {
-        return $messages->map(function (TelegramChatMessage $message) {
+        return $messages->map(function (ChannelMessage $message) {
             $role = $message->role === 'user' ? 'User' : 'Assistant';
             $time = $message->created_at->format('Y-m-d H:i');
 

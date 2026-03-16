@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\ChatMessageRequest;
 use App\Http\Resources\API\v1\ChatMessageResource;
+use App\Http\Resources\API\v1\ChatRunStatusResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Chat;
 use App\Services\Chat\ChatMessageService;
@@ -24,8 +25,7 @@ class ChatMessageController extends Controller
         private readonly ChatService $chatService,
         private readonly ChatMessageService $messageService,
         private readonly WandaBotService $wandaBotService
-    ) {
-    }
+    ) {}
 
     /**
      * List messages
@@ -34,6 +34,7 @@ class ChatMessageController extends Controller
      * The total count is returned in the `Items-Count` response header.
      *
      * @subgroup Chat Messages
+     *
      * @authenticated
      *
      * @urlParam chat integer required The Chat ID. Example: 1
@@ -83,12 +84,44 @@ class ChatMessageController extends Controller
     }
 
     /**
-     * Send message
+     * Get run status
      *
-     * Sends a user message to the Wanda AI bot and returns the bot's response.
-     * Both the user message and the assistant reply are persisted in the chat history.
+     * Polls the status of an asynchronous assistant run created by sending a message.
+     * Use the `agent_run_uuid` returned from `POST /chats/{chat}/messages`.
      *
      * @subgroup Chat Messages
+     *
+     * @authenticated
+     *
+     * @urlParam chat integer required The Chat ID. Example: 1
+     * @urlParam runUuid string required The agent run UUID returned when the queued assistant message was created.
+     *
+     * @response 200 scenario="Queued" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"queued","progress_percent":5,"current_step_label":"Queued","error_message":null,"failure_code":null,"current_attempt":0,"max_attempts":3,"completed_at":null,"next_retry_at":null,"message":{"id":12,"role":"assistant","content":"Processing...","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
+     * @response 200 scenario="Retrying" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"retrying","progress_percent":25,"current_step_label":"Retrying after failure","error_message":"Temporary upstream error","failure_code":"AI_REQUEST_FAILED","current_attempt":1,"max_attempts":3,"completed_at":null,"next_retry_at":"2026-03-16T10:00:10.000000Z","message":{"id":12,"role":"assistant","content":"Processing...","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
+     * @response 200 scenario="Completed" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"completed","progress_percent":100,"current_step_label":"Completed","error_message":null,"failure_code":null,"current_attempt":1,"max_attempts":3,"completed_at":"2026-03-16T10:00:05.000000Z","next_retry_at":null,"message":{"id":12,"role":"assistant","content":"Final answer","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
+     * @response 404 scenario="Not Found" {"success":false,"data":null,"message":"Run not found","status":404,"meta":[]}
+     */
+    public function showRunStatus(Chat $chat, string $runUuid): ApiResponse
+    {
+        $this->authorize('view', $chat);
+
+        $runMessage = $this->messageService->findAssistantRun($chat, $runUuid);
+
+        if (! $runMessage) {
+            return ApiResponse::error('Run not found', status: 404);
+        }
+
+        return ApiResponse::success(data: ChatRunStatusResource::make($runMessage));
+    }
+
+    /**
+     * Send message
+     *
+     * Sends a user message to the Wanda AI bot and returns a queued assistant message.
+     * The final assistant reply is produced asynchronously and becomes available via message polling.
+     *
+     * @subgroup Chat Messages
+     *
      * @authenticated
      *
      * @urlParam chat integer required The Chat ID. Example: 1
@@ -99,8 +132,16 @@ class ChatMessageController extends Controller
      *     "id": 12,
      *     "chat_id": 1,
      *     "role": "assistant",
-     *     "content": "Last week's key points: 1) Q1 budget approved, 2) New hire process started.",
+     *     "status": "queued",
+     *     "content": "Processing...",
      *     "followup_data": null,
+     *     "error_message": null,
+     *     "failure_code": null,
+     *     "agent_run_uuid": "3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11",
+     *     "current_attempt": 0,
+     *     "max_attempts": 3,
+     *     "completed_at": null,
+     *     "next_retry_at": null,
      *     "created_at": "2026-02-10T20:01:00.000000Z"
      *   },
      *   "message": "Success",

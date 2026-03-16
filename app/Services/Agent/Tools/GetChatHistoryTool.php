@@ -2,7 +2,8 @@
 
 namespace App\Services\Agent\Tools;
 
-use App\Models\TelegramChatMessage;
+use App\Enums\ConversationChannelType;
+use App\Models\ChannelMessage;
 use Illuminate\Support\Carbon;
 
 class GetChatHistoryTool implements ToolInterface
@@ -51,7 +52,12 @@ class GetChatHistoryTool implements ToolInterface
         $parameters = $parameters ?? [];
         $limit = min($parameters['limit'] ?? 20, 100);
 
-        $query = TelegramChatMessage::where('telegram_chat_id', $this->telegramChatId);
+        $query = ChannelMessage::query()
+            ->whereHas('conversation', function ($conversationQuery) {
+                $conversationQuery
+                    ->where('channel_type', ConversationChannelType::TELEGRAM->value)
+                    ->where('telegram_chat_id', $this->telegramChatId);
+            });
 
         if (!empty($parameters['since'])) {
             try {
@@ -89,7 +95,9 @@ class GetChatHistoryTool implements ToolInterface
             ->map(fn($m) => [
                 'role' => $m->role,
                 'content' => $m->content,
-                'username' => $m->telegramUser?->telegram_username,
+                'author' => $m->authorIdentity?->display_name ?? $m->authorIdentity?->external_id,
+                'username' => $m->authorIdentity?->username,
+                'external_author_id' => $m->authorIdentity?->external_id,
                 'created_at' => $m->created_at->toDateTimeString(),
             ])
             ->toArray();

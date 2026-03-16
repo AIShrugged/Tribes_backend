@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class RecallWebhookTest extends TestCase
@@ -86,7 +87,7 @@ class RecallWebhookTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function webhook_receives_transcript_done_event_and_dispatches_parse_job()
     {
         Queue::fake();
@@ -130,7 +131,7 @@ class RecallWebhookTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function parse_transcript_job_creates_transcript_entries_and_dispatches_event()
     {
         Event::fake();
@@ -253,7 +254,7 @@ class RecallWebhookTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function full_webhook_to_followup_generation_flow()
     {
         Queue::fake();
@@ -330,7 +331,7 @@ class RecallWebhookTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function webhook_returns_error_for_unknown_bot()
     {
         $webhookPayload = [
@@ -346,7 +347,7 @@ class RecallWebhookTest extends TestCase
         $response->assertStatus(500);
     }
 
-    /** @test */
+    #[Test]
     public function webhook_returns_error_for_unsupported_event()
     {
         $webhookPayload = [
@@ -359,7 +360,7 @@ class RecallWebhookTest extends TestCase
         $response->assertStatus(500);
     }
 
-    /** @test */
+    #[Test]
     public function webhook_handles_recall_api_failure_gracefully()
     {
         Queue::fake();

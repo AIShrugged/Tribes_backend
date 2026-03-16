@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\EmailVerificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class EmailVerificationServiceTest extends TestCase
@@ -21,7 +22,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->service = app(EmailVerificationService::class);
     }
 
-    /** @test */
+    #[Test]
     public function token_generation_is_unique()
     {
         $user1 = User::factory()->create();
@@ -34,7 +35,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->assertNotEquals($verification1->plain_token, $verification2->plain_token);
     }
 
-    /** @test */
+    #[Test]
     public function token_expiry_calculated_correctly()
     {
         config(['app.email_verification_expiry' => 30]);
@@ -52,7 +53,7 @@ class EmailVerificationServiceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function verification_record_created()
     {
         $user = User::factory()->create();
@@ -68,7 +69,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->assertNull($verification->verified_at);
     }
 
-    /** @test */
+    #[Test]
     public function cleanup_removes_only_expired_records()
     {
         $user1 = User::factory()->create();
@@ -104,7 +105,7 @@ class EmailVerificationServiceTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function creating_new_verification_invalidates_existing_ones()
     {
         $user = User::factory()->create();
@@ -126,7 +127,7 @@ class EmailVerificationServiceTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function token_is_hashed_before_storage()
     {
         $user = User::factory()->create();
@@ -146,7 +147,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->assertEquals($expectedHash, $verification->token);
     }
 
-    /** @test */
+    #[Test]
     public function verify_token_marks_user_email_as_verified()
     {
         $user = User::factory()->create(['email_verified_at' => null]);
@@ -163,7 +164,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->assertNotNull($verification->verified_at);
     }
 
-    /** @test */
+    #[Test]
     public function verify_token_fails_with_invalid_token()
     {
         $result = $this->service->verifyToken('invalid-token-123');
@@ -171,7 +172,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->assertFalse($result);
     }
 
-    /** @test */
+    #[Test]
     public function is_token_expired_returns_true_for_expired_token()
     {
         $user = User::factory()->create();
@@ -183,7 +184,7 @@ class EmailVerificationServiceTest extends TestCase
         $this->assertTrue($isExpired);
     }
 
-    /** @test */
+    #[Test]
     public function is_token_expired_returns_false_for_valid_token()
     {
         $user = User::factory()->create();

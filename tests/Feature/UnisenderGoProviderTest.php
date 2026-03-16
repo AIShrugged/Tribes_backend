@@ -8,6 +8,7 @@ use App\Models\Email;
 use App\Services\Email\Providers\UnisenderGoProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class UnisenderGoProviderTest extends TestCase
@@ -26,7 +27,7 @@ class UnisenderGoProviderTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_successfully()
     {
         Http::fake([
@@ -61,7 +62,7 @@ class UnisenderGoProviderTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_without_from_name()
     {
         Http::fake([
@@ -89,7 +90,7 @@ class UnisenderGoProviderTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_to_multiple_recipients()
     {
         Http::fake([
@@ -118,7 +119,7 @@ class UnisenderGoProviderTest extends TestCase
         });
     }
 
-    /** @test */
+    #[Test]
     public function it_sends_email_with_attachments()
     {
         Http::fake([
@@ -156,7 +157,7 @@ class UnisenderGoProviderTest extends TestCase
         unlink($tempFile);
     }
 
-    /** @test */
+    #[Test]
     public function it_marks_email_as_failed_on_api_error()
     {
         Http::fake([
@@ -180,7 +181,7 @@ class UnisenderGoProviderTest extends TestCase
         $this->assertNull($email->sent_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_marks_email_as_failed_on_network_error()
     {
         Http::fake([
@@ -203,7 +204,7 @@ class UnisenderGoProviderTest extends TestCase
         $this->assertStringContainsString('Connection timeout', $email->error_message);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_email_model_before_sending()
     {
         Http::fake([
@@ -235,7 +236,7 @@ class UnisenderGoProviderTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_stores_correct_payload_in_database()
     {
         Http::fake([

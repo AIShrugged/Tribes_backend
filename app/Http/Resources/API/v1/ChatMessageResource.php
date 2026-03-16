@@ -10,12 +10,20 @@ class ChatMessageResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'            => $this->id,
-            'chat_id'       => $this->chat_id,
-            'role'          => $this->role,
-            'content'       => $this->content,
+            'id' => $this->id,
+            'chat_id' => $this->chat_id,
+            'role' => $this->role,
+            'status' => $this->statusValue(),
+            'content' => $this->content,
             'followup_data' => $this->followup_data,
-            'created_at'    => $this->created_at,
+            'error_message' => $this->error_message,
+            'failure_code' => $this->failure_code,
+            'agent_run_uuid' => $this->agent_run_uuid,
+            'current_attempt' => $this->current_attempt,
+            'max_attempts' => $this->max_attempts,
+            'completed_at' => $this->completed_at,
+            'next_retry_at' => $this->next_retry_at,
+            'created_at' => $this->created_at,
         ];
     }
 }

@@ -8,13 +8,14 @@ use App\Models\User;
 use App\Services\EmailVerificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class EmailVerificationTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function verification_email_sent_on_registration()
     {
         Queue::fake();
@@ -26,8 +27,8 @@ class EmailVerificationTest extends TestCase
         ]);
 
         $response->assertStatus(201)
-            ->assertJsonStructure(['token', 'email_verification_sent'])
-            ->assertJson(['email_verification_sent' => true]);
+            ->assertJsonStructure(['data' => ['token', 'email_verification_sent']])
+            ->assertJsonPath('data.email_verification_sent', true);
 
         Queue::assertPushed(SendEmailJob::class);
 
@@ -41,7 +42,7 @@ class EmailVerificationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function user_can_verify_email_with_valid_token()
     {
         $user = User::factory()->create(['email_verified_at' => null]);
@@ -57,7 +58,7 @@ class EmailVerificationTest extends TestCase
         $this->assertNotNull($user->email_verified_at);
     }
 
-    /** @test */
+    #[Test]
     public function verification_fails_with_expired_token()
     {
         $user = User::factory()->create(['email_verified_at' => null]);
@@ -77,7 +78,7 @@ class EmailVerificationTest extends TestCase
         $this->assertNull($user->email_verified_at);
     }
 
-    /** @test */
+    #[Test]
     public function verification_fails_with_invalid_token()
     {
         $response = $this->get('/api/v1/auth/email/verify/invalid-token-12345');
@@ -87,7 +88,7 @@ class EmailVerificationTest extends TestCase
         $this->assertStringContainsString('reason=invalid_token', $response->headers->get('Location'));
     }
 
-    /** @test */
+    #[Test]
     public function user_can_resend_verification_email()
     {
         Queue::fake();
@@ -109,7 +110,7 @@ class EmailVerificationTest extends TestCase
         Queue::assertPushed(SendEmailJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function resend_throttled_after_multiple_requests()
     {
         $user = User::factory()->create(['email_verified_at' => null]);
@@ -133,7 +134,7 @@ class EmailVerificationTest extends TestCase
         $this->assertTrue($throttled, 'Expected to be throttled after multiple requests');
     }
 
-    /** @test */
+    #[Test]
     public function cannot_resend_if_already_verified()
     {
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -149,7 +150,7 @@ class EmailVerificationTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function verification_redirects_to_frontend_with_correct_params()
     {
         config(['app.frontend_url' => 'https://example.com']);
@@ -166,7 +167,7 @@ class EmailVerificationTest extends TestCase
         $this->assertStringContainsString('status=success', $location);
     }
 
-    /** @test */
+    #[Test]
     public function already_verified_token_returns_error()
     {
         $user = User::factory()->create(['email_verified_at' => null]);
