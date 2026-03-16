@@ -96,8 +96,9 @@ class ChatMessageController extends Controller
      * @urlParam chat integer required The Chat ID. Example: 1
      * @urlParam runUuid string required The agent run UUID returned when the queued assistant message was created.
      *
-     * @response 200 scenario="Queued" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"queued","progress_percent":5,"current_step_label":"Queued","error_message":null,"completed_at":null,"message":{"id":12,"role":"assistant","content":"Processing...","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
-     * @response 200 scenario="Completed" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"completed","progress_percent":100,"current_step_label":"Completed","error_message":null,"completed_at":"2026-03-16T10:00:05.000000Z","message":{"id":12,"role":"assistant","content":"Final answer","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
+     * @response 200 scenario="Queued" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"queued","progress_percent":5,"current_step_label":"Queued","error_message":null,"failure_code":null,"current_attempt":0,"max_attempts":3,"completed_at":null,"next_retry_at":null,"message":{"id":12,"role":"assistant","content":"Processing...","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
+     * @response 200 scenario="Retrying" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"retrying","progress_percent":25,"current_step_label":"Retrying after failure","error_message":"Temporary upstream error","failure_code":"AI_REQUEST_FAILED","current_attempt":1,"max_attempts":3,"completed_at":null,"next_retry_at":"2026-03-16T10:00:10.000000Z","message":{"id":12,"role":"assistant","content":"Processing...","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
+     * @response 200 scenario="Completed" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"completed","progress_percent":100,"current_step_label":"Completed","error_message":null,"failure_code":null,"current_attempt":1,"max_attempts":3,"completed_at":"2026-03-16T10:00:05.000000Z","next_retry_at":null,"message":{"id":12,"role":"assistant","content":"Final answer","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
      * @response 404 scenario="Not Found" {"success":false,"data":null,"message":"Run not found","status":404,"meta":[]}
      */
     public function showRunStatus(Chat $chat, string $runUuid): ApiResponse
@@ -135,8 +136,12 @@ class ChatMessageController extends Controller
      *     "content": "Processing...",
      *     "followup_data": null,
      *     "error_message": null,
+     *     "failure_code": null,
      *     "agent_run_uuid": "3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11",
+     *     "current_attempt": 0,
+     *     "max_attempts": 3,
      *     "completed_at": null,
+     *     "next_retry_at": null,
      *     "created_at": "2026-02-10T20:01:00.000000Z"
      *   },
      *   "message": "Success",

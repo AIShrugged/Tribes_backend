@@ -53,6 +53,8 @@ Important fields:
 - `status`: initial assistant state, starts as `queued`
 - `agent_run_uuid`: stable run identifier for polling
 - `content`: placeholder text until the worker completes
+- `current_attempt`: starts at `0`, increments when a worker attempt starts
+- `max_attempts`: configured retry ceiling for this run
 
 ---
 
@@ -126,6 +128,7 @@ Assistant messages currently use these states:
 
 - `queued`: message accepted, worker not started yet
 - `processing`: worker is running the agent loop
+- `retrying`: a previous attempt failed and the job is waiting for another attempt
 - `completed`: final assistant content written successfully
 - `failed`: worker failed, `error_message` is populated
 
@@ -133,10 +136,24 @@ Current progress mapping is intentionally coarse:
 
 - `queued` -> `5`
 - `processing` -> `50`
+- `retrying` -> `25`
 - `completed` -> `100`
 - `failed` -> `100`
 
 This is a UI hint, not a strict workflow engine.
+
+Additional retry metadata exposed by the run-status endpoint:
+
+- `current_attempt`
+- `max_attempts`
+- `next_retry_at`
+- `failure_code`
+
+These fields let the UI distinguish:
+
+- first execution
+- transient failure with another retry scheduled
+- terminal failure
 
 ---
 
@@ -156,8 +173,9 @@ Recommended client flow:
 2. Render returned assistant message immediately
 3. Store `agent_run_uuid`
 4. Poll `GET /api/v1/chats/{chat}/runs/{runUuid}` every 2-3 seconds
-5. Stop polling when `status` becomes `completed` or `failed`
-6. Optionally refresh the full chat message list after completion
+5. If `status` becomes `retrying`, keep polling and optionally show a retry indicator
+6. Stop polling when `status` becomes `completed` or `failed`
+7. Optionally refresh the full chat message list after completion
 
 ---
 
