@@ -2,6 +2,8 @@
 
 namespace App\Services\Agent\Tools;
 
+use stdClass;
+
 class ToolRegistry
 {
     /**
@@ -40,9 +42,29 @@ class ToolRegistry
                 'function' => [
                     'name' => $tool->getName(),
                     'description' => $tool->getDescription(),
-                    'parameters' => $tool->getParameters(),
+                    'parameters' => $this->normalizeSchema($tool->getParameters()),
                 ],
             ];
         }, $this->tools));
+    }
+
+    /**
+     * Normalize JSON Schema so empty PHP arrays that represent objects encode as {} instead of [].
+     */
+    private function normalizeSchema(mixed $value, ?string $parentKey = null): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if ($value === [] && in_array($parentKey, ['properties', '$defs', 'definitions'], true)) {
+            return new stdClass;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->normalizeSchema($item, is_string($key) ? $key : $parentKey);
+        }
+
+        return $value;
     }
 }
