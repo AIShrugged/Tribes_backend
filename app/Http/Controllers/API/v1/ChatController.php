@@ -8,12 +8,15 @@ use App\Http\Resources\API\v1\ChatResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Chat;
 use App\Services\Chat\ChatService;
+use Dedoc\Scramble\Attributes\BodyParameter;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\PathParameter;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 
-/**
- * @group Wanda Chat
- */
+#[Group('Wanda Chat', 'AI chat sessions and conversation containers.')]
 class ChatController extends Controller
 {
     use AuthorizesRequests;
@@ -49,6 +52,12 @@ class ChatController extends Controller
      * }
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'List chats', description: 'Return paginated chats belonging to the authenticated user.')]
+    #[Response(
+        200,
+        'Chat list envelope.',
+        type: 'array{success: bool, data: array<int, \App\Http\Resources\API\v1\ChatResource>, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function index(ChatRequest $request): ApiResponse
     {
         $user = Auth::user();
@@ -84,6 +93,13 @@ class ChatController extends Controller
      * }
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'Create chat', description: 'Create a new AI chat session for the authenticated user.')]
+    #[BodyParameter('title', 'Optional chat title.', required: false, type: 'string', example: 'Q1 Strategy Discussion')]
+    #[Response(
+        200,
+        'Created chat envelope.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\ChatResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function store(ChatRequest $request): ApiResponse
     {
         $chat = $this->chatService->create(
@@ -119,6 +135,13 @@ class ChatController extends Controller
      * @response 404 scenario="Not Found" {"message": "No query results for model [Chat] 1"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'Get chat', description: 'Return a single chat owned by the authenticated user.')]
+    #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
+    #[Response(
+        200,
+        'Single chat envelope.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\ChatResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function show(ChatRequest $request, Chat $chat): ApiResponse
     {
         return ApiResponse::success(data: ChatResource::make($chat));
@@ -149,6 +172,14 @@ class ChatController extends Controller
      * @response 404 scenario="Not Found" {"message": "No query results for model [Chat] 1"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'Update chat', description: 'Update chat title for a chat owned by the authenticated user.')]
+    #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
+    #[BodyParameter('title', 'Updated chat title.', required: false, type: 'string', example: 'Updated Discussion Title')]
+    #[Response(
+        200,
+        'Updated chat envelope.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\ChatResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function update(ChatRequest $request, Chat $chat): ApiResponse
     {
         $chat = $this->chatService->update($chat, $request->getTitle());
@@ -176,6 +207,13 @@ class ChatController extends Controller
      * @response 404 scenario="Not Found" {"message": "No query results for model [Chat] 1"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'Delete chat', description: 'Delete a chat and all its messages.')]
+    #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
+    #[Response(
+        200,
+        'Chat deleted envelope.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function destroy(ChatRequest $request, Chat $chat): ApiResponse
     {
         $this->chatService->delete($chat);

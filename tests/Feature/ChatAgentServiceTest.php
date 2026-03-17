@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\AgentMemory;
+use App\Models\AgentProfile;
+use App\Models\AgentTask;
 use App\Models\ChatMessage;
 use App\Models\Setting;
 use App\Models\User;
@@ -253,6 +256,59 @@ class ChatAgentServiceTest extends TestCase
 
         $this->assertIsString($result);
         $this->assertNotEmpty($result);
+    }
+
+    #[Test]
+    public function it_can_read_agent_memories_via_tool_calls(): void
+    {
+        $profile = AgentProfile::create([
+            'key' => 'github-reviewer',
+            'name' => 'GitHub Reviewer',
+        ]);
+
+        AgentTask::create([
+            'user_id' => $this->user->id,
+            'agent_profile_id' => $profile->id,
+            'name' => 'Scan repository',
+            'prompt' => 'Scan repository',
+            'schedule_type' => 'one_off',
+            'next_run_at' => now(),
+            'input_payload' => [
+                'provider' => 'github',
+                'owner' => 'acme',
+                'repo' => 'api',
+            ],
+        ]);
+
+        AgentMemory::create([
+            'agent_profile_id' => $profile->id,
+            'scope_type' => 'repository',
+            'scope_key' => 'github:acme/api',
+            'kind' => 'architecture_fact',
+            'content' => 'Repository uses layered architecture with services and repositories.',
+            'priority' => 90,
+            'active' => true,
+            'last_seen_at' => now(),
+        ]);
+
+        Http::fake([
+            'openrouter.ai/*' => Http::sequence()
+                ->push($this->makeToolCallResponse('search_agent_memories', [
+                    'profile_key' => 'github-reviewer',
+                    'provider' => 'github',
+                    'owner' => 'acme',
+                    'repo' => 'api',
+                ]), 200)
+                ->push($this->makeTextResponse('В памяти агента есть layered architecture с services и repositories.'), 200),
+        ]);
+
+        $result = $this->makeService()->processMessage(
+            $this->user,
+            new Collection,
+            'Что агент уже знает про репозиторий acme/api?'
+        );
+
+        $this->assertStringContainsString('layered architecture', $result);
     }
 
     #[Test]

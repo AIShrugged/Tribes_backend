@@ -10,7 +10,7 @@
 8. `sudo chmod 777 -R storage/`
 
 ## How to generate docs
-`php artisan scribe:generate`
+`php artisan scramble:export --path=public/openapi.json`
 
 ## Internal docs
 

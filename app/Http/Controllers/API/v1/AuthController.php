@@ -10,35 +10,32 @@ use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\ProfileLinkingService;
 use App\Services\TeamInvitationService;
+use Dedoc\Scramble\Attributes\BodyParameter;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\PathParameter;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Knuckles\Scribe\Attributes\Authenticated;
-use Knuckles\Scribe\Attributes\Group;
 
-#[Group('Authentication')]
+#[Group('Authentication', 'Registration, login, email verification, and personal API token management.')]
 class AuthController extends Controller
 {
-    /**
-     * Register
-     *
-     * Create a new user account. Returns an auth token on success.
-     * If an invite token is provided and valid, the user is added to the team
-     * and the email is marked as verified without sending a verification email.
-     *
-     *
-     * @response 201 scenario="Registered (standard)" {
-     *   "token": "1|abc123token",
-     *   "email_verification_sent": true
-     * }
-     * @response 201 scenario="Registered via invite" {
-     *   "token": "1|abc123token",
-     *   "email_verification_sent": false,
-     *   "invite_accepted": true,
-     *   "team_id": 2,
-     *   "organization_id": 1
-     * }
-     * @response 409 scenario="User already exists" {"message": "User already exists."}
-     */
+    #[Endpoint(title: 'Register', description: 'Create a new user account and return an auth token. If invite token is valid, the user is attached to the team immediately.')]
+    #[BodyParameter('name', 'Full user name.', required: true, type: 'string', example: 'Alice Johnson')]
+    #[BodyParameter('email', 'User email.', required: true, type: 'string', example: 'alice@example.com')]
+    #[BodyParameter('password', 'User password.', required: true, type: 'string', example: 'secret123')]
+    #[BodyParameter('invite', 'Optional invite token from a team invite.', required: false, type: 'string', example: 'abc123xyz')]
+    #[Response(
+        201,
+        'Registered user auth envelope.',
+        type: 'array{success: bool, data: array{token: string, email_verification_sent: bool, invite_accepted?: bool, team_id?: int|null, organization_id?: int|null}, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        409,
+        'User already exists.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function register(
         AuthRequest $request,
         EmailVerificationService $emailVerificationService,
@@ -54,10 +51,8 @@ class AuthController extends Controller
         $user = User::create($request->validated());
         $token = $user->createToken('authToken')->plainTextToken;
 
-        // Link any anonymous profiles collected before registration
         $profileLinkingService->linkByEmail($user);
 
-        // Handle invite token if provided
         $inviteAccepted = false;
         $teamId = null;
         $organizationId = null;
@@ -70,13 +65,10 @@ class AuthController extends Controller
                 $inviteAccepted = true;
                 $teamId = $invite->team_id;
                 $organizationId = $invite->organization_id;
-
-                // Mark email as verified when registering via invite
                 $user->markEmailAsVerified();
             }
         }
 
-        // Send verification email only if not registered via invite
         if (!$inviteAccepted) {
             $emailVerificationService->sendVerificationEmail($user);
         }
@@ -95,16 +87,19 @@ class AuthController extends Controller
         return ApiResponse::success(data: $data, status: 201);
     }
 
-    /**
-     * Login
-     *
-     * Authenticate with email and password. Returns an auth token on success.
-     * All previous tokens for the user are revoked before issuing a new one.
-     *
-     *
-     * @response 201 scenario="OK" {"token": "1|abc123token"}
-     * @response 401 scenario="Invalid credentials" {"message": "Invalid credentials"}
-     */
+    #[Endpoint(title: 'Login', description: 'Authenticate with email and password and return a new auth token. Existing authToken tokens are revoked first.')]
+    #[BodyParameter('email', 'User email.', required: true, type: 'string', example: 'alice@example.com')]
+    #[BodyParameter('password', 'User password.', required: true, type: 'string', example: 'secret123')]
+    #[Response(
+        201,
+        'Login success envelope.',
+        type: 'array{success: bool, data: array{token: string}, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        401,
+        'Invalid credentials.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function login(AuthRequest $request): ApiResponse
     {
         $user = User::where('email', $request->getEmail())->first();
@@ -120,15 +115,18 @@ class AuthController extends Controller
         return ApiResponse::success(data: ['token' => $token], status: 201);
     }
 
-    /**
-     * Create token
-     *
-     * Issue a new named token for the authenticated user. Maximum 3 tokens per user.
-     *
-     * @response 201 scenario="OK" {"token": "2|abc123token", "name": "my-api-key"}
-     * @response 422 scenario="Token limit reached" {"message": "Token limit reached. Maximum 3 tokens allowed."}
-     */
-    #[Authenticated]
+    #[Endpoint(title: 'Create personal API token', description: 'Issue a new named personal token for the authenticated user. Maximum 3 tokens per user.')]
+    #[BodyParameter('name', 'Token display name.', required: true, type: 'string', example: 'my-api-key')]
+    #[Response(
+        201,
+        'Created token envelope.',
+        type: 'array{success: bool, data: array{token: string, name: string}, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        422,
+        'Token limit reached.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function createToken(CreateTokenRequest $request): ApiResponse
     {
         $user = $request->user();
@@ -143,14 +141,12 @@ class AuthController extends Controller
         return ApiResponse::success(data: ['token' => $token, 'name' => $name], status: 201);
     }
 
-    /**
-     * List tokens
-     *
-     * List all active tokens for the authenticated user.
-     *
-     * @response 200 scenario="OK" [{"id": 1, "name": "authToken", "created_at": "2026-01-01T00:00:00.000000Z", "last_used_at": null}]
-     */
-    #[Authenticated]
+    #[Endpoint(title: 'List personal API tokens', description: 'List active personal API tokens for the authenticated user.')]
+    #[Response(
+        200,
+        'Token list envelope.',
+        type: 'array{success: bool, data: array<int, array{id: int, name: string, created_at: string|null, last_used_at: string|null}>, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function tokens(Request $request): ApiResponse
     {
         $tokens = $request->user()->tokens()->get(['id', 'name', 'created_at', 'last_used_at']);
@@ -158,15 +154,14 @@ class AuthController extends Controller
         return ApiResponse::list($tokens, $tokens->count());
     }
 
-    /**
-     * Revoke token
-     *
-     * Revoke a specific token by its ID. Only tokens belonging to the authenticated user can be revoked.
-     *
-     * @response 204 scenario="OK"
-     * @response 404 scenario="Not found" {"message": "Token not found."}
-     */
-    #[Authenticated]
+    #[Endpoint(title: 'Revoke personal API token', description: 'Delete one of the authenticated user personal API tokens by id.')]
+    #[PathParameter('tokenId', 'Personal access token ID.', required: true, type: 'integer', example: 12)]
+    #[Response(204, 'Token revoked.')]
+    #[Response(
+        404,
+        'Token not found.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function revokeToken(Request $request, int $tokenId): ApiResponse
     {
         $deleted = $request->user()->tokens()->where('id', $tokenId)->delete();
@@ -178,15 +173,8 @@ class AuthController extends Controller
         return ApiResponse::success(status: 204);
     }
 
-    /**
-     * Logout
-     *
-     * Revoke the current access token.
-     *
-     * @response 204 scenario="OK" {"message": "Logged out"}
-     * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
-     */
-    #[Authenticated]
+    #[Endpoint(title: 'Logout', description: 'Revoke the current access token.')]
+    #[Response(204, 'Logged out.')]
     public function logout(Request $request): ApiResponse
     {
         $request->user()->currentAccessToken()?->delete();

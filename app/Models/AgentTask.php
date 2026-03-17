@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Models;
+
+use App\Enums\AgentScheduleType;
+use App\Enums\AgentTaskExecutionMode;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
+class AgentTask extends Model
+{
+    protected $guarded = [];
+
+    protected function casts(): array
+    {
+        return [
+            'enabled' => 'boolean',
+            'interval_seconds' => 'integer',
+            'max_attempts' => 'integer',
+            'allowed_tools' => 'array',
+            'allowed_outbound_hosts' => 'array',
+            'input_payload' => 'array',
+            'metadata' => 'array',
+            'schedule_type' => AgentScheduleType::class,
+            'execution_mode' => AgentTaskExecutionMode::class,
+            'next_run_at' => 'datetime',
+            'last_run_at' => 'datetime',
+            'last_completed_at' => 'datetime',
+            'last_failed_at' => 'datetime',
+            'locked_at' => 'datetime',
+        ];
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function profile(): BelongsTo
+    {
+        return $this->belongsTo(AgentProfile::class, 'agent_profile_id');
+    }
+
+    public function runs(): HasMany
+    {
+        return $this->hasMany(AgentTaskRun::class);
+    }
+
+    public function latestRun(): HasOne
+    {
+        return $this->hasOne(AgentTaskRun::class)->latestOfMany();
+    }
+
+    public function isOneOff(): bool
+    {
+        return $this->schedule_type === AgentScheduleType::ONE_OFF;
+    }
+
+    public function isInterval(): bool
+    {
+        return $this->schedule_type === AgentScheduleType::INTERVAL;
+    }
+
+    public function isIsolated(): bool
+    {
+        return $this->effectiveExecutionMode() === AgentTaskExecutionMode::ISOLATED;
+    }
+
+    public function isInline(): bool
+    {
+        return $this->effectiveExecutionMode() === AgentTaskExecutionMode::INLINE;
+    }
+
+    public function effectiveExecutionMode(): AgentTaskExecutionMode
+    {
+        return $this->execution_mode
+            ?? $this->profile?->execution_mode
+            ?? AgentTaskExecutionMode::INLINE;
+    }
+
+    public function effectiveSandboxProfile(): ?string
+    {
+        return $this->sandbox_profile ?: $this->profile?->sandbox_profile;
+    }
+
+    public function effectiveAllowedTools(): array
+    {
+        if (is_array($this->allowed_tools)) {
+            return $this->allowed_tools;
+        }
+
+        return is_array($this->profile?->allowed_tools) ? $this->profile->allowed_tools : [];
+    }
+
+    public function effectiveAllowedOutboundHosts(): array
+    {
+        if (is_array($this->allowed_outbound_hosts)) {
+            return array_values(array_unique(array_filter($this->allowed_outbound_hosts, fn ($host) => is_string($host) && trim($host) !== '')));
+        }
+
+        if (is_array($this->profile?->allowed_outbound_hosts)) {
+            return array_values(array_unique(array_filter($this->profile->allowed_outbound_hosts, fn ($host) => is_string($host) && trim($host) !== '')));
+        }
+
+        return [];
+    }
+
+    public function nextRunFrom(?CarbonInterface $from = null): ?CarbonInterface
+    {
+        if (! $this->isInterval()) {
+            return null;
+        }
+
+        $intervalSeconds = max(1, (int) $this->interval_seconds);
+        $base = $from ? $from->copy() : now();
+
+        return $base->addSeconds($intervalSeconds);
+    }
+}

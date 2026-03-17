@@ -7,8 +7,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\DemoSeedRequest;
 use App\Http\Responses\ApiResponse;
 use App\Services\Demo\DemoDataService;
+use Dedoc\Scramble\Attributes\BodyParameter;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Http\Request;
 
+#[Group('Demo', 'Demo workspace generation and lifecycle management.')]
 class DemoController extends Controller
 {
     public function __construct(private readonly DemoDataService $demoService)
@@ -31,6 +36,20 @@ class DemoController extends Controller
      * @response 202 scenario="Accepted" {"success":true,"data":{"status":"pending","progress_percent":null,"current_step_label":null},"message":"Demo generation started","status":202,"meta":[]}
      * @response 409 scenario="Already exists" {"success":false,"data":null,"message":"Demo generation already in progress.","status":409,"meta":{"error_code":"DEMO_ALREADY_IN_PROGRESS"}}
      */
+    #[Endpoint(title: 'Start demo data generation', description: 'Queue background generation of demo data for the authenticated user.')]
+    #[BodyParameter('teams_count', 'How many demo teams to create.', required: false, type: 'integer', example: 1)]
+    #[BodyParameter('employees_per_team', 'How many demo employees to create per team.', required: false, type: 'integer', example: 7)]
+    #[BodyParameter('meetings_per_team', 'How many demo meetings to generate for each team.', required: false, type: 'integer', example: 3)]
+    #[Response(
+        202,
+        'Demo generation accepted.',
+        type: 'array{success: bool, data: array{status: string, progress_percent: int|null, current_step_label: string|null}, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        409,
+        'Generation already exists or in progress.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function seed(DemoSeedRequest $request): ApiResponse
     {
         $user       = $request->user();
@@ -71,6 +90,17 @@ class DemoController extends Controller
      * @response 200 scenario="Failed" {"success":true,"data":{"status":"failed","progress_percent":20,"current_step_label":null,"error":"Generation error description","completed_at":null},"message":"Success","status":200,"meta":[]}
      * @response 404 scenario="No generation" {"success":false,"data":null,"message":"No demo generation found.","status":404,"meta":[]}
      */
+    #[Endpoint(title: 'Get demo generation status', description: 'Return current demo generation status for the authenticated user.')]
+    #[Response(
+        200,
+        'Demo generation status envelope.',
+        type: 'array{success: bool, data: array{status: string, progress_percent: int|null, current_step_label: string|null, error: string|null, completed_at: string|null}, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        404,
+        'No demo generation found.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function status(Request $request): ApiResponse
     {
         $generation = $this->demoService->getForUser($request->user());
@@ -99,6 +129,17 @@ class DemoController extends Controller
      * @response 200 scenario="Deleted" {"success":true,"data":null,"message":"Demo data deleted","status":200,"meta":[]}
      * @response 404 scenario="Not found" {"success":false,"data":null,"message":"No demo generation found.","status":404,"meta":[]}
      */
+    #[Endpoint(title: 'Delete demo data', description: 'Delete all demo data previously generated for the authenticated user.')]
+    #[Response(
+        200,
+        'Demo data deleted.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        404,
+        'No demo generation found.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function destroy(Request $request): ApiResponse
     {
         $generation = $this->demoService->getForUser($request->user());

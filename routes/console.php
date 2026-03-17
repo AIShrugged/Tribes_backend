@@ -33,3 +33,8 @@ Schedule::command('tasks:process-telegram')
     ->everyThreeHours()
     ->name('tasks:process-telegram')
     ->withoutOverlapping();
+
+Schedule::command('agent-tasks:dispatch --limit='.config('agent.agent_tasks.dispatch_limit', 50))
+    ->everyMinute()
+    ->name('agent-tasks:dispatch')
+    ->withoutOverlapping();
