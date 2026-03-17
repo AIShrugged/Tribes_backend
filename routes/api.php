@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\API\v1\AuthController;
+use App\Http\Controllers\API\v1\AgentMemoryController;
+use App\Http\Controllers\API\v1\AgentProfileController;
+use App\Http\Controllers\API\v1\AgentTaskController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
@@ -16,6 +19,7 @@ use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\OrganizationController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
+use App\Http\Controllers\API\v1\SandboxToolGatewayController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamInviteController;
@@ -58,6 +62,8 @@ Route::group(['prefix' => 'v1'], function () {
 
     // Telegram bot webhook
     Route::post('telegram/webhook', [TelegramBotController::class, 'webhook']);
+    Route::post('internal/agent-task-runs/{run}/tool-calls', [SandboxToolGatewayController::class, 'store']);
+    Route::post('internal/agent-task-runs/{run}/llm-completions', [SandboxToolGatewayController::class, 'complete']);
 
     Route::get('invites/accept/{token}', [TeamInviteController::class, 'accept'])
         ->name('invites.accept');
@@ -152,6 +158,27 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
         Route::get('chats/{chat}/runs/{runUuid}', [ChatMessageController::class, 'showRunStatus']);
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
+
+        // Agent profiles
+        Route::get('agent-profiles', [AgentProfileController::class, 'index']);
+        Route::post('agent-profiles', [AgentProfileController::class, 'store']);
+        Route::get('agent-profiles/{agentProfile}', [AgentProfileController::class, 'show']);
+        Route::patch('agent-profiles/{agentProfile}', [AgentProfileController::class, 'update']);
+        Route::delete('agent-profiles/{agentProfile}', [AgentProfileController::class, 'destroy']);
+        Route::post('agent-profiles/{agentProfile}/validate-payload', [AgentProfileController::class, 'validatePayload']);
+        Route::get('agent-profiles/{agentProfile}/memories', [AgentMemoryController::class, 'profileIndex']);
+
+        // Agent tasks
+        Route::get('agent-tasks', [AgentTaskController::class, 'index']);
+        Route::post('agent-tasks', [AgentTaskController::class, 'store']);
+        Route::get('agent-tasks/{agentTask}', [AgentTaskController::class, 'show']);
+        Route::patch('agent-tasks/{agentTask}', [AgentTaskController::class, 'update']);
+        Route::delete('agent-tasks/{agentTask}', [AgentTaskController::class, 'destroy']);
+        Route::get('agent-tasks/{agentTask}/memories', [AgentMemoryController::class, 'taskIndex']);
+
+        // Agent memories
+        Route::get('agent-memories', [AgentMemoryController::class, 'index']);
+        Route::get('agent-memories/{agentMemory}', [AgentMemoryController::class, 'show']);
 
         // Followup Export
         Route::get('followups/{followup}/export', [FollowupExportController::class, 'export']);

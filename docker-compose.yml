@@ -5,8 +5,13 @@ services:
             dockerfile: Dockerfile
         container_name: backend
         working_dir: /var/www
+        environment:
+            SANDBOX_INTERNAL_BASE_URL: http://nginx
+            AGENT_TASK_SANDBOX_NETWORK: spodial_hr_backend_app
+            AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: /home/anor/projects/spodial_hr_backend/storage/app/private/sandbox-runs
         volumes:
             - .:/var/www
+            - /var/run/docker.sock:/var/run/docker.sock
             #- .docker/php-fpm.conf:/usr/local/etc/php-fpm.conf            
         depends_on:
             - postgres

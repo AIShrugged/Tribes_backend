@@ -103,6 +103,11 @@ class User extends Authenticatable
         return $this->hasMany(Followup::class);
     }
 
+    public function agentTasks(): HasMany
+    {
+        return $this->hasMany(AgentTask::class);
+    }
+
     public function roleInOrganization(int|Organization $organization): ?string
     {
         return $this->organizations()

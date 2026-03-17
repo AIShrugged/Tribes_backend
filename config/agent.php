@@ -115,4 +115,26 @@ return [
         'backoff_seconds' => [10, 30],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Scheduled Agent Tasks
+    |--------------------------------------------------------------------------
+    |
+    | Runtime settings for one-off and interval-based agent tasks.
+    |
+    */
+
+    'agent_tasks' => [
+        'dispatch_limit' => 50,
+        'lock_ttl_seconds' => 600,
+        'backoff_seconds' => [30, 120],
+        'sandbox_run_token_ttl_seconds' => 3600,
+        'sandbox_internal_base_url' => env('SANDBOX_INTERNAL_BASE_URL', 'http://app'),
+        'default_sandbox_image' => env('AGENT_TASK_SANDBOX_IMAGE', 'spodial-agent-python:latest'),
+        'sandbox_network' => env('AGENT_TASK_SANDBOX_NETWORK', 'bridge'),
+        'sandbox_host_runs_root' => env('AGENT_TASK_SANDBOX_HOST_RUNS_ROOT'),
+        'sandbox_cpus' => env('AGENT_TASK_SANDBOX_CPUS', '1'),
+        'sandbox_memory' => env('AGENT_TASK_SANDBOX_MEMORY', '512m'),
+    ],
+
 ];

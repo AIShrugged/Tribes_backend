@@ -24,6 +24,9 @@ Homestead.yaml
 Thumbs.db
 /.scribe
 /public/vendor/scribe
+/public/openapi.json
 CLAUDE.md
 .claude
 .claude/*
+secrets
+secrets/*

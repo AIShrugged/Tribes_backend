@@ -17,7 +17,7 @@ case "$command" in
   backend)
     ensure_permissions
     php artisan migrate --force --no-interaction
-    php artisan scribe:generate --no-interaction || true
+    php artisan scramble:export --path=public/openapi.json --no-interaction || true
     exec php-fpm -R
   ;;
 

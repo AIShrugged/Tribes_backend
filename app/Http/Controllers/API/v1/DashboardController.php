@@ -5,11 +5,12 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Services\Dashboard\DashboardService;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Support\Facades\Auth;
 
-/**
- * @group Dashboard
- */
+#[Group('Dashboard', 'Aggregated dashboard statistics for the authenticated user.')]
 class DashboardController extends Controller
 {
     public function __construct(
@@ -72,6 +73,12 @@ class DashboardController extends Controller
      * }
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'Get dashboard statistics', description: 'Returns meeting, participant, task, follow-up, summary, and team counters for the authenticated user dashboard.')]
+    #[Response(
+        200,
+        'Dashboard statistics envelope.',
+        type: 'array{success: bool, data: array{meetings: array<string, mixed>, participants: array<string, mixed>, tasks: array<string, mixed>, followups: array<string, mixed>, summaries: array<string, mixed>, teams: array<string, mixed>}, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function index(): ApiResponse
     {
         $stats = $this->dashboardService->getStats(Auth::user());

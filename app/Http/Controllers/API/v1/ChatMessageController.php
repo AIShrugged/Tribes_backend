@@ -11,12 +11,15 @@ use App\Models\Chat;
 use App\Services\Chat\ChatMessageService;
 use App\Services\Chat\ChatService;
 use App\Services\Chat\WandaBotService;
+use Dedoc\Scramble\Attributes\BodyParameter;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\PathParameter;
+use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 
-/**
- * @group Wanda Chat
- */
+#[Group('Wanda Chat', 'Chat messages and async run status for Wanda conversations.')]
 class ChatMessageController extends Controller
 {
     use AuthorizesRequests;
@@ -67,6 +70,13 @@ class ChatMessageController extends Controller
      * @response 404 scenario="Not Found" {"message": "No query results for model [Chat] 1"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'List chat messages', description: 'Return paginated messages for a given chat.')]
+    #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
+    #[Response(
+        200,
+        'Chat message list envelope.',
+        type: 'array{success: bool, data: array<int, \App\Http\Resources\API\v1\ChatMessageResource>, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function index(ChatMessageRequest $request): ApiResponse
     {
         $chat = $this->chatService->findOrFail($request->getChatId());
@@ -101,6 +111,19 @@ class ChatMessageController extends Controller
      * @response 200 scenario="Completed" {"success":true,"data":{"agent_run_uuid":"3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11","chat_id":1,"message_id":12,"status":"completed","progress_percent":100,"current_step_label":"Completed","error_message":null,"failure_code":null,"current_attempt":1,"max_attempts":3,"completed_at":"2026-03-16T10:00:05.000000Z","next_retry_at":null,"message":{"id":12,"role":"assistant","content":"Final answer","created_at":"2026-03-16T10:00:00.000000Z"}},"message":"Success","status":200,"meta":[]}
      * @response 404 scenario="Not Found" {"success":false,"data":null,"message":"Run not found","status":404,"meta":[]}
      */
+    #[Endpoint(title: 'Get chat run status', description: 'Poll the status of an asynchronous assistant run created after sending a message.')]
+    #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
+    #[PathParameter('runUuid', 'Agent run UUID.', required: true, type: 'string', example: '3f7d1a53-4d74-4f59-9e75-1f3d4e5e2c11')]
+    #[Response(
+        200,
+        'Run status envelope.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\ChatRunStatusResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    #[Response(
+        404,
+        'Run not found.',
+        type: 'array{success: bool, data: null, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function showRunStatus(Chat $chat, string $runUuid): ApiResponse
     {
         $this->authorize('view', $chat);
@@ -156,6 +179,14 @@ class ChatMessageController extends Controller
      * @response 404 scenario="Not Found" {"message": "No query results for model [Chat] 1"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
+    #[Endpoint(title: 'Send chat message', description: 'Send a user message to Wanda and return the queued assistant message placeholder.')]
+    #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
+    #[BodyParameter('content', 'Message text to send to the bot.', required: true, type: 'string', example: 'Summarise the key points from last week\'s meetings.')]
+    #[Response(
+        200,
+        'Queued assistant message envelope.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\ChatMessageResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function store(ChatMessageRequest $request): ApiResponse
     {
         $chat = $this->chatService->findOrFail($request->getChatId());

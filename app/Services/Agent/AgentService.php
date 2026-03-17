@@ -34,6 +34,8 @@ class AgentService
 
     private ToolRegistry $toolRegistry;
 
+    private AgentToolRegistrar $toolRegistrar;
+
     private MemoryService $memoryService;
 
     private ArtifactStateService $artifactStateService;
@@ -46,6 +48,7 @@ class AgentService
 
     public function __construct(
         ToolRegistry $toolRegistry,
+        AgentToolRegistrar $toolRegistrar,
         MemoryService $memoryService,
         ArtifactStateService $artifactStateService,
         DatabaseSchemaService $databaseSchemaService,
@@ -53,6 +56,7 @@ class AgentService
         ConversationCompactionService $compactionService,
     ) {
         $this->toolRegistry = $toolRegistry;
+        $this->toolRegistrar = $toolRegistrar;
         $this->memoryService = $memoryService;
         $this->artifactStateService = $artifactStateService;
         $this->databaseSchemaService = $databaseSchemaService;
@@ -65,7 +69,7 @@ class AgentService
      */
     public function registerChatTools(Chat $chat): void
     {
-        $this->toolRegistry->register(new Tools\CreateArtifactTool($chat, $this->artifactStateService));
+        $this->toolRegistrar->registerChatTools($this->toolRegistry, $chat);
     }
 
     /**
@@ -127,6 +131,7 @@ class AgentService
 
         $channel = $options->channel;
         $mode = $options->outputMode;
+        $systemPromptExtension = $options->systemPromptExtension;
 
         $this->registerDefaultTools($user, $channel);
 
@@ -140,7 +145,8 @@ class AgentService
             $memoryContext,
             $user,
             $mode,
-            $compactedHistory->summary
+            $compactedHistory->summary,
+            $systemPromptExtension,
         );
 
         // Inject current date/time into user message so the model reliably knows the date
@@ -351,21 +357,7 @@ class AgentService
 
     private function registerDefaultTools(User $user, ?string $channel): void
     {
-        $this->toolRegistry->register(new Tools\UpdateMemoryTool($user, $channel ?? 'web'));
-        $this->toolRegistry->register(new Tools\GetCurrentUserTool($user));
-        $this->toolRegistry->register(new Tools\GetUserInfoTool);
-        $this->toolRegistry->register(new Tools\SearchMeetingsTool);
-        $this->toolRegistry->register(new Tools\GetMeetingSummaryTool);
-        $this->toolRegistry->register(new Tools\GetMeetingTasksTool);
-        $this->toolRegistry->register(new Tools\CreateTaskTool);
-        $this->toolRegistry->register(new Tools\UpdateTaskStatusTool);
-        $this->toolRegistry->register(new Tools\GetFollowupTool);
-        $this->toolRegistry->register(new Tools\GetExtractedFactsTool);
-        $this->toolRegistry->register(new Tools\GetUserInsightsTool);
-        $this->toolRegistry->register(new Tools\GetInsightProfileHistoryTool);
-        $this->toolRegistry->register(new Tools\GetTeamMembersTool);
-        $this->toolRegistry->register(new Tools\GetRelationshipInsightTool);
-        $this->toolRegistry->register(new Tools\GetUserShortTermMemoryTool);
+        $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel);
     }
 
     /**
@@ -709,7 +701,8 @@ class AgentService
         string $memoryContext,
         User $user,
         OutputMode $mode = OutputMode::PLAIN,
-        ?string $compactedHistorySummary = null
+        ?string $compactedHistorySummary = null,
+        ?string $systemPromptExtension = null,
     ): string {
         $now = now()->timezone('Europe/Moscow');
         $currentDate = $now->translatedFormat('l, d F Y');
@@ -733,6 +726,8 @@ class AgentService
             ? "## Compacted Earlier Conversation\n\n{$compactedHistorySummary}\n"
             : '';
 
+        $extensionSection = $systemPromptExtension ? "\n\n## Task-Specific Agent Context\n\n{$systemPromptExtension}\n" : '';
+
         return <<<PROMPT
 You are a helpful AI assistant integrated with a Telegram bot. You have access to various tools to help answer user questions.
 
@@ -743,6 +738,7 @@ Today is {$currentDate}, {$currentTime} (MSK, Moscow Time, UTC+3).
 {$currentUserContext}
 {$memoryContext}
 {$historySummarySection}
+{$extensionSection}
 
 {$databaseSchemaSection}
 
@@ -753,6 +749,7 @@ You have access to various tools that allow you to:
 - Access user information, teams, meetings, and transcripts
 - Execute database queries to get specific information
 - Manage conversation history and memory about users
+- Retrieve persistent agent knowledge saved from agent tasks, such as repository architecture facts and prior agent findings
 
 ## Tool Usage Priority - CRITICAL
 
@@ -784,6 +781,11 @@ When asked about a **person**, choose the right tool:
 - **`get_user_insights`** — aggregated long-term profile. Use for "who is Ivan?", "describe Ivan's strengths".
 - **`get_extracted_facts`** — source-specific facts. Use for "what did we learn about Ivan from transcripts?".
 - **`get_insight_profile_history`** — version history of a person's profile. Use for "how has Ivan changed?", "show evolution of communication style" (requires profile_id from get_user_info).
+
+When asked what you or another configured agent already knows about a repository, architecture, or prior automated findings:
+- Use **`search_agent_memories`** first
+- Prefer filtering by repository (`provider`, `owner`, `repo`) when the user mentions one
+- Summarize the saved memory clearly and say when the memory appears stale or incomplete
 
 **`get_transcript` is LAST RESORT** — only when:
    - Summary/facts are insufficient for the user's question

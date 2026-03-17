@@ -7,10 +7,12 @@ use App\Http\Requests\API\v1\UpdateUserProfileRequest;
 use App\Http\Resources\API\v1\UserResource;
 use App\Http\Responses\ApiResponse;
 use App\Services\UserProfileService;
-use Knuckles\Scribe\Attributes\Authenticated;
-use Knuckles\Scribe\Attributes\Group;
+use Dedoc\Scramble\Attributes\BodyParameter;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
+use Dedoc\Scramble\Attributes\Response;
 
-#[Group('User')]
+#[Group('User', 'Authenticated user profile management.')]
 class UserController extends Controller
 {
     public function __construct(
@@ -41,7 +43,16 @@ class UserController extends Controller
      * }
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
-    #[Authenticated]
+    #[Endpoint(title: 'Update profile', description: 'Update the authenticated user display name and/or password. At least one of `name` or `password` must be provided.')]
+    #[BodyParameter('name', 'New display name.', required: false, type: 'string', example: 'Alice Johnson')]
+    #[BodyParameter('current_password', 'Current password, required when changing password.', required: false, type: 'string', example: 'oldpassword123')]
+    #[BodyParameter('password', 'New password, minimum 8 characters.', required: false, type: 'string', example: 'newpassword123')]
+    #[BodyParameter('password_confirmation', 'Must match password.', required: false, type: 'string', example: 'newpassword123')]
+    #[Response(
+        200,
+        'Updated user envelope.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\UserResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
     public function update(UpdateUserProfileRequest $request): ApiResponse
     {
         $updatedUser = $this->userProfileService->update(
