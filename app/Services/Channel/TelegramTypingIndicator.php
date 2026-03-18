@@ -9,6 +9,11 @@ use Telegram\Bot\Api;
 
 class TelegramTypingIndicator
 {
+    public function sessionId(int $chatId, ?int $messageThreadId = null): string
+    {
+        return sprintf('telegram:%s:%s', $chatId, $messageThreadId ?? 'root');
+    }
+
     public function start(string $sessionId, int $chatId, ?int $messageThreadId = null): void
     {
         Cache::put(

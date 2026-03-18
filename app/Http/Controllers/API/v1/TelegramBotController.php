@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Channel\ChannelRuntimeService;
+use App\Services\Channel\TelegramTypingIndicator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
@@ -20,8 +21,11 @@ class TelegramBotController extends Controller
 
     private AgentService $agentService;
 
-    public function __construct(AgentService $agentService, private readonly ChannelRuntimeService $runtimeService)
-    {
+    public function __construct(
+        AgentService $agentService,
+        private readonly ChannelRuntimeService $runtimeService,
+        private readonly TelegramTypingIndicator $typingIndicator,
+    ) {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
     }
@@ -162,6 +166,9 @@ class TelegramBotController extends Controller
 
                     return response()->json(['ok' => true]);
                 }
+
+                $typingSessionId = $this->typingIndicator->sessionId($chatId, $messageThreadId);
+                $this->typingIndicator->start($typingSessionId, $chatId, $messageThreadId);
 
                 $this->runtimeService->scheduleTelegramBranch($chatId, $messageThreadId);
             }

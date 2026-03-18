@@ -50,7 +50,8 @@ class ProcessTelegramWorkerJob implements ShouldQueue
 
         try {
             $toolRegistry->register(new GetChatHistoryTool($this->chatId));
-            $typingIndicator->start($this->batchUuid, $this->chatId, $this->messageThreadId);
+            $typingSessionId = $typingIndicator->sessionId($this->chatId, $this->messageThreadId);
+            $typingIndicator->start($typingSessionId, $this->chatId, $this->messageThreadId);
 
             $response = $agentService->run(
                 $user,
@@ -89,7 +90,7 @@ class ProcessTelegramWorkerJob implements ShouldQueue
 
             throw $e;
         } finally {
-            $typingIndicator->stop($this->batchUuid);
+            $typingIndicator->stop($typingSessionId ?? $typingIndicator->sessionId($this->chatId, $this->messageThreadId));
         }
     }
 }
