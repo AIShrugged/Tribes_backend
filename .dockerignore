@@ -1,4 +1,10 @@
 deploy
+!deploy/
+deploy/*
+!deploy/sandbox/
+deploy/sandbox/*
+!deploy/sandbox/python/
+!deploy/sandbox/python/**
 .gitlab-ci.yml
 .git
 .dockerignore
