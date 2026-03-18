@@ -52,6 +52,12 @@ class AgentTaskResource extends JsonResource
                 'started_at' => $latestRun->started_at,
                 'finished_at' => $latestRun->finished_at,
                 'error_message' => $latestRun->error_message,
+                'metadata' => [
+                    'sandbox_result' => data_get($latestRun->metadata, 'sandbox_result'),
+                    'sandbox' => data_get($latestRun->metadata, 'sandbox'),
+                    'tool_calls' => data_get($latestRun->metadata, 'tool_calls', []),
+                    'llm_calls' => data_get($latestRun->metadata, 'llm_calls', []),
+                ],
             ] : null,
             'metadata' => $this->metadata,
             'created_at' => $this->created_at,

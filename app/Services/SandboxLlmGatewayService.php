@@ -22,6 +22,7 @@ class SandboxLlmGatewayService
         ?string $systemPrompt = null,
         ?int $maxTokens = null,
         bool $includeTools = true,
+        array $extraTools = [],
     ): array {
         $task = $run->task()->first();
         $user = $task?->user()->first();
@@ -42,7 +43,11 @@ class SandboxLlmGatewayService
             throw new \RuntimeException('Sandbox run is already finished');
         }
 
-        $tools = $includeTools ? $this->toolExecutor->describeTools($task, $user) : [];
+        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
+        $tools = $includeTools ? $this->toolExecutor->describeTools($task, $user, $workspace) : [];
+        if ($includeTools && $extraTools !== []) {
+            $tools = array_values([...$tools, ...$extraTools]);
+        }
         $model = $this->resolveModel($task);
         $response = OpenRouterClient::chatWithTools(
             $messages,
@@ -58,6 +63,7 @@ class SandboxLlmGatewayService
             'messages_count' => count($messages),
             'tools_count' => count($tools),
             'include_tools' => $includeTools,
+            'extra_tools_count' => count($extraTools),
             'called_at' => now()->toIso8601String(),
             'finish_reason' => $response['choices'][0]['finish_reason'] ?? null,
         ];

@@ -13,5 +13,6 @@ class AgentRunOptions
         public readonly AgentTaskType $taskType = AgentTaskType::INTERACTIVE,
         public readonly ?string $conversationKey = null,
         public readonly ?string $systemPromptExtension = null,
+        public readonly ?\Closure $progressCallback = null,
     ) {}
 }

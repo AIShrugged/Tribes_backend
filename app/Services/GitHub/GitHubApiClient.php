@@ -53,6 +53,17 @@ class GitHubApiClient
         return $this->get("/repos/{$owner}/{$repo}/contents/".ltrim($path, '/'), $query);
     }
 
+    public function downloadArchive(string $owner, string $repo, string $ref, string $destinationPath): void
+    {
+        $response = $this->request()
+            ->withOptions(['sink' => $destinationPath])
+            ->get($this->url("/repos/{$owner}/{$repo}/zipball/".rawurlencode($ref)));
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('GitHub archive download failed: '.$response->body());
+        }
+    }
+
     private function get(string $path, array $query = []): array
     {
         $response = $this->request()

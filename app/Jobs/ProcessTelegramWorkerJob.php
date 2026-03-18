@@ -13,10 +13,10 @@ use App\Services\Agent\Tools\GetChatHistoryTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Channel\ChannelBus;
 use App\Services\Channel\ChannelRuntimeService;
+use App\Services\Channel\TelegramTypingIndicator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Telegram\Bot\Api;
 
 class ProcessTelegramWorkerJob implements ShouldQueue
 {
@@ -37,6 +37,7 @@ class ProcessTelegramWorkerJob implements ShouldQueue
         TelegramMessageCoalescer $coalescer,
         ChannelBus $channelBus,
         ChannelRuntimeService $runtimeService,
+        TelegramTypingIndicator $typingIndicator,
     ): void {
         $authorIdentity = ChannelIdentity::find($this->authorIdentityId);
         $user = User::find($this->userId);
@@ -49,6 +50,7 @@ class ProcessTelegramWorkerJob implements ShouldQueue
 
         try {
             $toolRegistry->register(new GetChatHistoryTool($this->chatId));
+            $typingIndicator->start($this->batchUuid, $this->chatId, $this->messageThreadId);
 
             $response = $agentService->run(
                 $user,
@@ -58,7 +60,10 @@ class ProcessTelegramWorkerJob implements ShouldQueue
                     channel: 'telegram',
                     outputMode: OutputMode::MD,
                     taskType: AgentTaskType::INTERACTIVE,
-                    conversationKey: 'telegram:'.$this->chatId,
+                    conversationKey: sprintf('telegram:%s:%s', $this->chatId, $this->messageThreadId ?? 'root'),
+                    progressCallback: function () use ($typingIndicator): void {
+                        $typingIndicator->touch($this->batchUuid);
+                    },
                 )
             );
 
@@ -83,6 +88,8 @@ class ProcessTelegramWorkerJob implements ShouldQueue
             $coalescer->releaseBatch($this->batchUuid);
 
             throw $e;
+        } finally {
+            $typingIndicator->stop($this->batchUuid);
         }
     }
 }

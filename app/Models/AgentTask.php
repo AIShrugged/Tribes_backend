@@ -108,6 +108,39 @@ class AgentTask extends Model
         return [];
     }
 
+    public function restrictsOutboundHosts(): bool
+    {
+        return ! ((bool) data_get($this->metadata, 'network_policy.restrict_hosts', true) === false);
+    }
+
+    public function usesPersistentSandboxWorkspace(): bool
+    {
+        return (bool) data_get($this->metadata, 'persistent_workspace.enabled', false);
+    }
+
+    public function persistentSandboxWorkspaceKey(): ?string
+    {
+        $explicit = trim((string) data_get($this->metadata, 'persistent_workspace.key', ''));
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        $payload = $this->input_payload ?? [];
+        if (! is_array($payload)) {
+            return null;
+        }
+
+        $provider = trim((string) ($payload['provider'] ?? ''));
+        $owner = trim((string) ($payload['owner'] ?? ''));
+        $repo = trim((string) ($payload['repo'] ?? ''));
+
+        if ($provider === '' || $owner === '' || $repo === '') {
+            return null;
+        }
+
+        return strtolower($provider.'-'.$owner.'-'.$repo);
+    }
+
     public function nextRunFrom(?CarbonInterface $from = null): ?CarbonInterface
     {
         if (! $this->isInterval()) {

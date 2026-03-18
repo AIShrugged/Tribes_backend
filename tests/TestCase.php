@@ -5,7 +5,10 @@ namespace Tests;
 use Illuminate\Foundation\Testing\Concerns\InteractsWithContainer;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use PDO;
+use PDOException;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -13,8 +16,12 @@ abstract class TestCase extends BaseTestCase
 
     protected bool $mockLlm = true;
 
+    protected static bool $testingDatabasePrepared = false;
+
     protected function setUp(): void
     {
+        $this->ensureTestingDatabaseExists();
+
         parent::setUp();
 
         if (! $this->mockLlm) {
@@ -119,5 +126,55 @@ abstract class TestCase extends BaseTestCase
         }
 
         return json_encode(new \stdClass());
+    }
+
+    private function ensureTestingDatabaseExists(): void
+    {
+        if (self::$testingDatabasePrepared) {
+            return;
+        }
+
+        if ((string) env('DB_CONNECTION') !== 'pgsql') {
+            self::$testingDatabasePrepared = true;
+
+            return;
+        }
+
+        $database = (string) env('DB_DATABASE', '');
+        if ($database === '') {
+            self::$testingDatabasePrepared = true;
+
+            return;
+        }
+
+        try {
+            $dsn = sprintf(
+                'pgsql:host=%s;port=%s;dbname=%s',
+                (string) env('DB_HOST', 'postgres'),
+                (string) env('DB_PORT', '5432'),
+                (string) env('DB_ROOT_DATABASE', 'postgres'),
+            );
+
+            $pdo = new PDO(
+                $dsn,
+                (string) env('DB_USERNAME', 'root'),
+                (string) env('DB_PASSWORD', ''),
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
+            );
+
+            $statement = $pdo->prepare('SELECT 1 FROM pg_database WHERE datname = :database');
+            $statement->execute(['database' => $database]);
+
+            if ($statement->fetchColumn() === false) {
+                $pdo->exec(sprintf('CREATE DATABASE "%s"', str_replace('"', '""', $database)));
+            }
+
+            self::$testingDatabasePrepared = true;
+        } catch (PDOException $exception) {
+            throw new \RuntimeException(
+                sprintf('Unable to prepare PostgreSQL test database [%s]: %s', $database, $exception->getMessage()),
+                previous: $exception,
+            );
+        }
     }
 }

@@ -60,6 +60,13 @@ services:
       SESSION_DRIVER: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+
+      BUILD_SANDBOX_IMAGE_ON_START: "1"
+      SANDBOX_INTERNAL_BASE_URL: http://nginx
+      AGENT_TASK_SANDBOX_IMAGE: "${AGENT_TASK_SANDBOX_IMAGE:-spodial-agent-python:latest}"
+      AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
+      AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
+      AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK:-app}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,6 +74,8 @@ services:
         condition: service_started
     networks:
       - app
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     command: ["queue-worker"]
     restart: unless-stopped
 

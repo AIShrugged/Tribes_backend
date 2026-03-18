@@ -13,6 +13,24 @@ graceful_sleep() {
   sleep "${GRACEFUL_SHUTDOWN_SECONDS:-10}"
 }
 
+build_sandbox_image_if_enabled() {
+  if [ "${BUILD_SANDBOX_IMAGE_ON_START:-0}" != "1" ]; then
+    return 0
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "docker CLI is unavailable; skipping sandbox image build"
+    return 0
+  fi
+
+  sandbox_image="${AGENT_TASK_SANDBOX_IMAGE:-spodial-agent-python:latest}"
+  sandbox_dockerfile="${AGENT_TASK_SANDBOX_DOCKERFILE:-deploy/sandbox/python/Dockerfile}"
+  sandbox_context="${AGENT_TASK_SANDBOX_BUILD_CONTEXT:-deploy/sandbox/python}"
+
+  echo "Building sandbox image ${sandbox_image} from ${sandbox_dockerfile}"
+  docker build -t "${sandbox_image}" -f "/var/www/${sandbox_dockerfile}" "/var/www/${sandbox_context}"
+}
+
 case "$command" in
   backend)
     ensure_permissions
@@ -28,6 +46,7 @@ case "$command" in
 
   queue-worker)
     ensure_permissions
+    build_sandbox_image_if_enabled
 
     stop_worker() {
       echo "Stopping queue worker..."

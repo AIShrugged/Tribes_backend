@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AgentMemory;
 use App\Models\AgentTask;
+use Illuminate\Support\Collection;
 
 class AgentTaskContextBuilder
 {
@@ -61,8 +62,9 @@ class AgentTaskContextBuilder
 
         $repositoryScopeKey = $this->memoryIngestionService->deriveRepositoryScopeKey($task);
 
-        return $profile->memories()
+        $memories = $profile->memories()
             ->where('active', true)
+            ->where('kind', '!=', 'artifact_fact')
             ->where(function ($query) use ($task, $repositoryScopeKey): void {
                 $query->where(function ($sub): void {
                     $sub->where('scope_type', 'profile')->whereNull('scope_key');
@@ -77,8 +79,11 @@ class AgentTaskContextBuilder
                 });
             })
             ->orderByDesc('priority')
+            ->orderByDesc('updated_at')
             ->orderBy('id')
             ->get();
+
+        return $this->deduplicateMemories($memories);
     }
 
     private function renderMemoryPrompt($memories): ?string
@@ -104,5 +109,67 @@ class AgentTaskContextBuilder
         }
 
         return "## Task Payload\n\n```json\n".json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n```";
+    }
+
+    private function deduplicateMemories(Collection $memories): Collection
+    {
+        $seen = [];
+
+        return $memories->filter(function (AgentMemory $memory) use (&$seen): bool {
+            $signature = $this->memorySignature($memory);
+
+            if (isset($seen[$signature])) {
+                return false;
+            }
+
+            $seen[$signature] = true;
+
+            return true;
+        })->values();
+    }
+
+    private function memorySignature(AgentMemory $memory): string
+    {
+        $kind = (string) $memory->kind;
+        $scopeType = (string) $memory->scope_type;
+        $scopeKey = (string) ($memory->scope_key ?? '');
+        $content = trim((string) $memory->content);
+
+        $normalizedContent = match ($kind) {
+            'test_fact' => $this->normalizeTestFact($content),
+            default => mb_strtolower(trim(preg_replace('/\s+/', ' ', $content) ?? $content)),
+        };
+
+        return implode('|', [$scopeType, $scopeKey, $kind, $normalizedContent]);
+    }
+
+    private function normalizeTestFact(string $content): string
+    {
+        $patterns = [
+            '/^test command failed:\s*(.+?)\s*\(exit_code=(\d+)\)\.?$/i',
+            '/^test command failed\s*\(exit_code=(\d+)\):\s*(.+?)\.?$/i',
+            '/^test command succeeded:\s*(.+?)\s*\(exit_code=(\d+)\)\.?$/i',
+            '/^test command succeeded\s*\(exit_code=(\d+)\):\s*(.+?)\.?$/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $content, $matches) === 1) {
+                if (str_contains($pattern, 'failed')) {
+                    [$command, $exitCode] = isset($matches[2]) && str_contains($pattern, 'failed:\s*')
+                        ? [$matches[1], $matches[2]]
+                        : [$matches[2], $matches[1]];
+
+                    return 'test-failed|'.mb_strtolower(trim($command)).'|'.$exitCode;
+                }
+
+                [$command, $exitCode] = isset($matches[2]) && str_contains($pattern, 'succeeded:\s*')
+                    ? [$matches[1], $matches[2]]
+                    : [$matches[2], $matches[1]];
+
+                return 'test-succeeded|'.mb_strtolower(trim($command)).'|'.$exitCode;
+            }
+        }
+
+        return mb_strtolower(trim(preg_replace('/\s+/', ' ', $content) ?? $content));
     }
 }

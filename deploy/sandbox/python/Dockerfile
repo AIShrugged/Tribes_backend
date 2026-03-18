@@ -1,14 +1,35 @@
-FROM python:3.12-slim
+FROM docker.io/library/php:8.3-cli-alpine3.21
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-RUN useradd --create-home --uid 10001 sandbox \
-    && pip install --no-cache-dir requests==2.32.3
+RUN apk add --no-cache \
+    bash \
+    git \
+    unzip \
+    curl \
+    ca-certificates \
+    make \
+    gcc \
+    g++ \
+    musl-dev \
+    linux-headers \
+    nodejs \
+    npm \
+    python3 \
+    py3-pip \
+    postgresql-dev \
+    libzip-dev \
+    zip \
+    && docker-php-ext-install pdo pdo_pgsql bcmath zip \
+    && pip3 install --no-cache-dir --break-system-packages requests==2.32.3 \
+    && adduser -D -u 10001 sandbox
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /workspace
-COPY runner.py /opt/sandbox_runner/runner.py
+COPY . /opt/sandbox_runner/
 
 USER sandbox
 
-ENTRYPOINT ["python", "/opt/sandbox_runner/runner.py"]
+ENTRYPOINT ["python3", "/opt/sandbox_runner/runner.py"]
