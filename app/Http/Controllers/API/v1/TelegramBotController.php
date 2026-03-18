@@ -80,6 +80,12 @@ class TelegramBotController extends Controller
                 $botUsername = config('telegram.bot_username');
                 $isPrivateChat = $chatType === 'private';
                 if (! $isPrivateChat && (! $botUsername || ! $this->isBotMentioned($text, $botUsername))) {
+                    Log::debug('Telegram group message ignored because bot was not mentioned', [
+                        'chat_id' => $chatId,
+                        'user_id' => $telegramUserId,
+                        'username' => $username,
+                    ]);
+
                     return response()->json(['ok' => true]);
                 }
 
@@ -91,6 +97,12 @@ class TelegramBotController extends Controller
                         'username' => $username,
                         'text' => $text,
                     ]);
+
+                    $this->sendTelegramMessage(
+                        $chatId,
+                        'Access denied for this Telegram account.',
+                        $messageThreadId,
+                    );
 
                     return response()->json(['ok' => true]);
                 }
@@ -142,6 +154,12 @@ class TelegramBotController extends Controller
                         'telegram_user_id' => $telegramUserId,
                     ]);
 
+                    $this->sendTelegramMessage(
+                        $chatId,
+                        'Your Telegram account is not linked to an application user yet.',
+                        $messageThreadId,
+                    );
+
                     return response()->json(['ok' => true]);
                 }
 
@@ -190,5 +208,19 @@ class TelegramBotController extends Controller
     private function removeMention(string $text, string $botUsername): string
     {
         return preg_replace('/@'.preg_quote($botUsername, '/').'/i', '', $text);
+    }
+
+    private function sendTelegramMessage(int $chatId, string $text, ?int $messageThreadId = null): void
+    {
+        $params = [
+            'chat_id' => $chatId,
+            'text' => $text,
+        ];
+
+        if ($messageThreadId) {
+            $params['message_thread_id'] = $messageThreadId;
+        }
+
+        $this->telegram->sendMessage($params);
     }
 }
