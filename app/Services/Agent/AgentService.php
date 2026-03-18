@@ -128,6 +128,7 @@ class AgentService
     public function run(User $user, Collection $history, string $content, AgentRunOptions $options): string
     {
         $this->clearStopFlag($user->id);
+        $this->reportProgress($options, 'started');
 
         $channel = $options->channel;
         $mode = $options->outputMode;
@@ -223,6 +224,7 @@ class AgentService
                 }
 
                 // Call LLM
+                $this->reportProgress($options, 'before_llm');
                 $response = OpenRouterClient::chatWithTools(
                     $messages,
                     $tools,
@@ -257,6 +259,7 @@ class AgentService
                             'tool' => $toolName,
                             'args' => $toolArgs,
                         ]);
+                        $this->reportProgress($options, 'before_tool');
 
                         $tool = $this->toolRegistry->get($toolName);
 
@@ -287,6 +290,7 @@ class AgentService
                             'tool_call_id' => $toolCallId,
                             'content' => $this->truncateToolResult($toolResult, $toolName),
                         ];
+                        $this->reportProgress($options, 'after_tool');
 
                         // Validate tool result and add feedback if issues detected (Pattern 3)
                         $validation = $this->validateToolResult($toolResult, $toolName, $toolArgs);
@@ -353,6 +357,17 @@ class AgentService
         ]);
 
         return $finalAnswer;
+    }
+
+    private function reportProgress(AgentRunOptions $options, string $stage): void
+    {
+        $callback = $options->progressCallback;
+
+        if (! $callback instanceof \Closure) {
+            return;
+        }
+
+        $callback($stage);
     }
 
     private function registerDefaultTools(User $user, ?string $channel): void

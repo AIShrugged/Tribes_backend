@@ -73,6 +73,7 @@ class SandboxToolGatewayController extends Controller
     #[BodyParameter('system_prompt', 'Optional system prompt string.', required: false, type: 'string')]
     #[BodyParameter('max_tokens', 'Optional max completion tokens.', required: false, type: 'integer', example: 2048)]
     #[BodyParameter('include_tools', 'Whether allowlisted tools should be exposed for this completion. Set false for normalization/extraction passes.', required: false, type: 'bool', example: true)]
+    #[BodyParameter('extra_tools', 'Optional additional tool schemas implemented locally inside the sandbox runtime.', required: false, type: 'array')]
     #[Response(
         200,
         'Successful LLM completion envelope.',
@@ -85,6 +86,7 @@ class SandboxToolGatewayController extends Controller
             'system_prompt' => ['nullable', 'string'],
             'max_tokens' => ['nullable', 'integer', 'min:256', 'max:4096'],
             'include_tools' => ['nullable', 'boolean'],
+            'extra_tools' => ['nullable', 'array'],
         ]);
 
         $plainToken = (string) $request->header('X-Sandbox-Run-Token', '');
@@ -100,6 +102,7 @@ class SandboxToolGatewayController extends Controller
                 $validated['system_prompt'] ?? null,
                 $validated['max_tokens'] ?? null,
                 $request->boolean('include_tools', true),
+                $validated['extra_tools'] ?? [],
             );
         } catch (\RuntimeException $e) {
             $status = str_contains(strtolower($e->getMessage()), 'token') ? 401 : 403;

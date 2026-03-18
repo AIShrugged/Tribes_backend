@@ -33,7 +33,8 @@ class SandboxToolGatewayService
             throw new \RuntimeException('Sandbox run is already finished');
         }
 
-        $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments ?? []);
+        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
+        $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments ?? [], $workspace);
 
         $toolCalls = Arr::wrap(data_get($run->metadata, 'tool_calls', []));
         $toolCalls[] = [

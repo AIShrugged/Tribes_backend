@@ -1,13 +1,22 @@
+from __future__ import annotations
+
 import argparse
 import json
 import pathlib
 import socket
 import sys
 import uuid
-from urllib.parse import urlparse
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
+
+from local_tools import execute_local_tool, local_tool_names, local_tools
+from result_utils import build_fallback_result, extract_memory_candidates, normalize_final_content, repair_final_content
+from runtime_state import SandboxRuntimeState
+
+
+STATE = SandboxRuntimeState()
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,7 +32,18 @@ def write_result(path: str, payload: dict[str, Any]) -> None:
     pathlib.Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def call_llm(gateway: dict[str, Any], messages: list[dict[str, Any]], system_prompt: str | None, max_tokens: int = 2048, include_tools: bool = True) -> dict[str, Any]:
+def call_llm(
+    gateway: dict[str, Any],
+    messages: list[dict[str, Any]],
+    system_prompt: str | None,
+    max_tokens: int = 2048,
+    include_tools: bool = True,
+    extra_tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    STATE.log(
+        "Requesting LLM completion "
+        f"(messages={len(messages)}, include_tools={'yes' if include_tools else 'no'}, max_tokens={max_tokens})."
+    )
     response = requests.post(
         f"{gateway['base_url']}{gateway['llm_completion_path']}",
         headers={"X-Sandbox-Run-Token": gateway["token"]},
@@ -32,27 +52,21 @@ def call_llm(gateway: dict[str, Any], messages: list[dict[str, Any]], system_pro
             "system_prompt": system_prompt,
             "max_tokens": max_tokens,
             "include_tools": include_tools,
+            "extra_tools": extra_tools or [],
         },
         timeout=120,
     )
-
     if response.status_code >= 400:
-        raise RuntimeError(
-            f"Sandbox LLM completion failed with HTTP {response.status_code}: {response.text}"
-        )
-
+        raise RuntimeError(f"Sandbox LLM completion failed with HTTP {response.status_code}: {response.text}")
     data = response.json()
     if not data.get("success"):
         raise RuntimeError(data.get("message", "Sandbox LLM completion failed"))
-
     result = data.get("data", {})
     if not result.get("success"):
         raise RuntimeError("Sandbox LLM completion failed")
-
     message = result.get("message")
     if not isinstance(message, dict):
         raise RuntimeError("Sandbox LLM completion did not return a message")
-
     return message
 
 
@@ -68,7 +82,6 @@ def host_matches(host: str, allowed_hosts: list[str]) -> bool:
                 return True
         elif normalized == candidate:
             return True
-
     return False
 
 
@@ -76,40 +89,45 @@ def enforce_url(url: str, allowed_hosts: list[str], allowed_schemes: list[str]) 
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
     host = (parsed.hostname or "").lower()
-
     if scheme not in allowed_schemes:
         raise RuntimeError(f"Outbound scheme '{scheme or '<empty>'}' is not allowed")
-
     if host == "":
         raise RuntimeError("Outbound URL host is missing")
-
     if not host_matches(host, allowed_hosts):
         raise RuntimeError(f"Outbound host '{host}' is not allowed")
 
 
 def install_network_guard(network_policy: dict[str, Any]) -> None:
+    restrict_hosts = bool(network_policy.get("restrict_hosts", True))
     allowed_hosts = [host for host in network_policy.get("allowed_hosts", []) if isinstance(host, str)]
     allowed_schemes = [scheme.lower() for scheme in network_policy.get("allowed_schemes", ["http", "https"]) if isinstance(scheme, str)]
-
+    STATE.log(
+        "Installing network guard with allowed hosts: "
+        + (", ".join(allowed_hosts) if allowed_hosts else ("<unrestricted>" if not restrict_hosts else "<none>"))
+        + f"; schemes: {', '.join(allowed_schemes) if allowed_schemes else '<none>'}."
+    )
     original_request = requests.sessions.Session.request
     original_getaddrinfo = socket.getaddrinfo
     original_create_connection = socket.create_connection
 
     def guarded_request(self, method, url, *args, **kwargs):  # noqa: ANN001
-        enforce_url(url, allowed_hosts, allowed_schemes)
+        parsed = urlparse(url)
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in allowed_schemes:
+            raise RuntimeError(f"Outbound scheme '{scheme or '<empty>'}' is not allowed")
+        if restrict_hosts:
+            enforce_url(url, allowed_hosts, allowed_schemes)
         return original_request(self, method, url, *args, **kwargs)
 
     def guarded_getaddrinfo(host, *args, **kwargs):  # noqa: ANN001
-        if isinstance(host, str) and host != "":
-            if not host_matches(host, allowed_hosts):
-                raise RuntimeError(f"DNS resolution for host '{host}' is not allowed")
+        if restrict_hosts and isinstance(host, str) and host != "" and not host_matches(host, allowed_hosts):
+            raise RuntimeError(f"DNS resolution for host '{host}' is not allowed")
         return original_getaddrinfo(host, *args, **kwargs)
 
     def guarded_create_connection(address, *args, **kwargs):  # noqa: ANN001
         host = address[0] if isinstance(address, tuple) and address else None
-        if isinstance(host, str) and host != "":
-            if not host_matches(host, allowed_hosts):
-                raise RuntimeError(f"Socket connection to host '{host}' is not allowed")
+        if restrict_hosts and isinstance(host, str) and host != "" and not host_matches(host, allowed_hosts):
+            raise RuntimeError(f"Socket connection to host '{host}' is not allowed")
         return original_create_connection(address, *args, **kwargs)
 
     requests.sessions.Session.request = guarded_request
@@ -122,13 +140,7 @@ def build_agent_system_prompt(payload: dict[str, Any]) -> str:
     task = payload.get("task", {}) or {}
     user = payload.get("user", {}) or {}
     memory = payload.get("agent_memory", []) or []
-
-    profile_prompt = profile.get("system_prompt") or ""
-    memory_json = json.dumps(memory, ensure_ascii=False, indent=2)
-    task_payload_json = json.dumps(task.get("input_payload", {}), ensure_ascii=False, indent=2)
-    tools_json = json.dumps(payload.get("tools", []), ensure_ascii=False, indent=2)
-
-    return f"""{profile_prompt}
+    return f"""{profile.get("system_prompt") or ""}
 
 You are an autonomous sandboxed agent run.
 
@@ -140,520 +152,146 @@ Current task:
 
 Task payload:
 ```json
-{task_payload_json}
+{json.dumps(task.get("input_payload", {}), ensure_ascii=False, indent=2)}
 ```
 
 Persistent agent memory available to you:
 ```json
-{memory_json}
+{json.dumps(memory, ensure_ascii=False, indent=2)}
 ```
 
 Tools available through the host gateway:
 ```json
-{tools_json}
+{json.dumps(payload.get("tools", []), ensure_ascii=False, indent=2)}
+```
+
+Local sandbox tools available to you:
+```json
+{json.dumps(local_tools(), ensure_ascii=False, indent=2)}
 ```
 
 Rules:
 - Use tools when needed to inspect data and verify facts.
-- Resolve the repository branch before deep inspection. Prefer `dev`, then `develop`, then the default branch.
-- Record which branch and latest commit SHA you inspected, and include that as a memory candidate.
-- Do not invent repository facts, architecture, CI, or integrations that you did not verify.
-- Only state facts you observed directly from tool results or repository responses.
-- Prefer concise, high-signal facts worth persisting.
+- Prefer `workspace_detect_project` before choosing install/test commands.
+- Prefer `workspace_run_tests` over ad-hoc shell commands when your goal is to execute a project's test suite.
+- Acquire the source material you need before local execution in `/workspace`.
+- Do not invent facts you did not verify directly from tools, files, or command output.
+- Report concrete work performed in `actions`.
+- Put useful non-persistent observations in `findings`.
+- Put paths to generated logs or outputs in `artifacts`.
 - Do not say or imply that memory was updated unless you return non-empty `memory_candidates`.
-- Your final answer must be valid JSON only. Do not wrap it in markdown. Do not add prose before or after the JSON object.
-- Your task is not complete until you return exactly one valid JSON object with the required fields.
-- If you output plain text, markdown, or commentary instead of JSON, the run will fail.
-- When the task is complete, return a final answer as valid JSON with this exact shape:
+- If blocked, say exactly what prevented completion in `blocker`.
+- Your final answer must be valid JSON only.
+- Return exactly one JSON object with:
   {{
     "output": "human-readable result",
     "summary": "short summary",
-    "memory_candidates": [
-      {{
-        "kind": "fact",
-        "content": "verified fact",
-        "priority": 50
-      }}
-    ]
+    "blocker": null,
+    "actions": [],
+    "findings": [],
+    "artifacts": [],
+    "memory_candidates": []
   }}
-- `memory_candidates` must contain only validated facts. If you found nothing reliable, return an empty array.
-- If blocked, return JSON with empty `memory_candidates` and explain the blocker in `output` and `summary`.
 """
 
 
-def normalize_final_content(content: str) -> dict[str, Any]:
-    content = (content or "").strip()
-    if content == "":
-        raise RuntimeError("Agent returned an empty final response instead of the required JSON object")
-
-    if content.startswith("```"):
-        lines = content.splitlines()
-        if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].strip() == "```":
-            content = "\n".join(lines[1:-1]).strip()
-
-    try:
-        parsed = json.loads(content)
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            f"Agent final response must be valid JSON with output, summary, memory_candidates. Raw response: {content}"
-        ) from exc
-
-    if not isinstance(parsed, dict):
-        raise RuntimeError("Agent final response JSON must be an object")
-
-    if "output" not in parsed and "summary" not in parsed and "memory_candidates" not in parsed:
-        repository = parsed.get("repository")
-        description = parsed.get("description")
-        architecture = parsed.get("architecture")
-        memory_tiers = parsed.get("memory_tiers")
-        components = parsed.get("components")
-        data_layer = parsed.get("data_layer")
-        ai_integration = parsed.get("ai_integration")
-        roadmap = parsed.get("roadmap")
-        overall_design = parsed.get("overall_design")
-
-        derived_output_parts: list[str] = []
-        if isinstance(repository, str) and repository.strip() != "":
-            derived_output_parts.append(f"Repository analyzed: {repository.strip()}.")
-        system_name = parsed.get("system_name")
-        if isinstance(system_name, str) and system_name.strip() != "":
-            derived_output_parts.append(f"System analyzed: {system_name.strip()}.")
-        if isinstance(description, str) and description.strip() != "":
-            derived_output_parts.append(description.strip())
-        if isinstance(overall_design, str) and overall_design.strip() != "":
-            derived_output_parts.append(overall_design.strip())
-
-        derived_summary = None
-        if isinstance(description, str) and description.strip() != "":
-            derived_summary = description.strip()
-        elif isinstance(architecture, dict):
-            overview = architecture.get("overview")
-            if isinstance(overview, str) and overview.strip() != "":
-                derived_summary = overview.strip()
-        elif isinstance(overall_design, str) and overall_design.strip() != "":
-            derived_summary = overall_design.strip()
-
-        derived_candidates: list[dict[str, Any]] = []
-
-        def add_candidate(kind: str, text: str, priority: int = 70) -> None:
-            cleaned = text.strip()
-            if cleaned == "":
-                return
-            derived_candidates.append({
-                "kind": kind,
-                "content": cleaned,
-                "priority": priority,
-            })
-
-        if isinstance(description, str) and description.strip() != "":
-            add_candidate("architecture_fact", description, 85)
-
-        if isinstance(architecture, dict):
-            overview = architecture.get("overview")
-            if isinstance(overview, str):
-                add_candidate("architecture_fact", overview, 90)
-
-            architecture_components = architecture.get("components")
-            if isinstance(architecture_components, list):
-                component_names = [item.strip() for item in architecture_components if isinstance(item, str) and item.strip() != ""]
-                if component_names:
-                    add_candidate("architecture_fact", f"Core architecture components include: {', '.join(component_names)}.", 75)
-
-            for field, kind in [
-                ("insightExtractionPipeline", "workflow_fact"),
-                ("profileEvolution", "workflow_fact"),
-                ("relationshipsTracking", "workflow_fact"),
-            ]:
-                value = architecture.get(field)
-                if isinstance(value, str):
-                    add_candidate(kind, value, 75)
-
-            data_storage = architecture.get("dataStorage")
-            if isinstance(data_storage, dict):
-                database = data_storage.get("database")
-                features = data_storage.get("features")
-                if isinstance(database, str) and database.strip() != "":
-                    text = f"Data storage uses {database.strip()}."
-                    if isinstance(features, str) and features.strip() != "":
-                        text = f"{text} {features.strip()}"
-                    add_candidate("tooling_fact", text, 80)
-
-            integration = architecture.get("integration")
-            if isinstance(integration, dict):
-                telegram_agent = integration.get("telegramAgent")
-                if isinstance(telegram_agent, str):
-                    add_candidate("integration_fact", f"Telegram agent integration: {telegram_agent}", 70)
-
-                ai = integration.get("AI")
-                if isinstance(ai, dict):
-                    llm_gateway = ai.get("LLMgateway")
-                    model = ai.get("model")
-                    ai_parts = []
-                    if isinstance(llm_gateway, str) and llm_gateway.strip() != "":
-                        ai_parts.append(f"LLM gateway: {llm_gateway.strip()}")
-                    if isinstance(model, str) and model.strip() != "":
-                        ai_parts.append(f"model: {model.strip()}")
-                    if ai_parts:
-                        add_candidate("tooling_fact", "AI integration uses " + ", ".join(ai_parts) + ".", 75)
-
-            apis = architecture.get("APIs")
-            if isinstance(apis, list):
-                api_items = [item.strip() for item in apis if isinstance(item, str) and item.strip() != ""]
-                if api_items:
-                    add_candidate("architecture_fact", f"Exposed API areas include: {', '.join(api_items)}.", 65)
-
-        tiers_source = memory_tiers if isinstance(memory_tiers, list) else (architecture.get("memoryTiers") if isinstance(architecture, dict) else None)
-        if isinstance(tiers_source, list):
-            for tier in tiers_source:
-                if not isinstance(tier, dict):
-                    continue
-                tier_name = tier.get("name")
-                tier_description = tier.get("description")
-                tier_type = tier.get("type")
-                tier_contents = tier.get("contents")
-                tier_insights = tier.get("insights")
-                tier_ttl = tier.get("ttl")
-
-                parts = []
-                if isinstance(tier_name, str) and tier_name.strip() != "":
-                    parts.append(tier_name.strip())
-                if isinstance(tier_type, str) and tier_type.strip() != "":
-                    parts.append(f"type: {tier_type.strip()}")
-                if isinstance(tier_ttl, str) and tier_ttl.strip() != "":
-                    parts.append(f"ttl: {tier_ttl.strip()}")
-                if isinstance(tier_description, str) and tier_description.strip() != "":
-                    parts.append(tier_description.strip())
-                if isinstance(tier_contents, list):
-                    contents = [item.strip() for item in tier_contents if isinstance(item, str) and item.strip() != ""]
-                    if contents:
-                        parts.append("contents: " + ", ".join(contents))
-                if isinstance(tier_insights, list):
-                    insights = [item.strip() for item in tier_insights if isinstance(item, str) and item.strip() != ""]
-                    if insights:
-                        parts.append("insights: " + ", ".join(insights))
-                if parts:
-                    add_candidate("architecture_fact", "; ".join(parts), 80)
-
-        if isinstance(components, dict):
-            models = components.get("models")
-            if isinstance(models, list):
-                model_names = [item.strip() for item in models if isinstance(item, str) and item.strip() != ""]
-                if model_names:
-                    add_candidate("architecture_fact", f"Core data models include: {', '.join(model_names)}.", 75)
-
-            services = components.get("services")
-            if isinstance(services, list):
-                service_summaries: list[str] = []
-                for service in services:
-                    if isinstance(service, str) and service.strip() != "":
-                        service_summaries.append(service.strip())
-                    elif isinstance(service, dict):
-                        name = service.get("name")
-                        description_value = service.get("description")
-                        if isinstance(name, str) and name.strip() != "":
-                            if isinstance(description_value, str) and description_value.strip() != "":
-                                service_summaries.append(f"{name.strip()} ({description_value.strip()})")
-                            else:
-                                service_summaries.append(name.strip())
-                if service_summaries:
-                    add_candidate("architecture_fact", f"Key services include: {', '.join(service_summaries)}.", 70)
-
-        if isinstance(data_layer, dict):
-            database = data_layer.get("database")
-            architecture_value = data_layer.get("architecture")
-            parts = []
-            if isinstance(database, str) and database.strip() != "":
-                parts.append(f"Database: {database.strip()}")
-            if isinstance(architecture_value, str) and architecture_value.strip() != "":
-                parts.append(f"Data layer architecture: {architecture_value.strip()}")
-            if parts:
-                add_candidate("tooling_fact", ". ".join(parts) + ".", 75)
-
-        if isinstance(ai_integration, dict):
-            gateway_value = ai_integration.get("gateway")
-            model_value = ai_integration.get("model")
-            parts = []
-            if isinstance(gateway_value, str) and gateway_value.strip() != "":
-                parts.append(f"gateway: {gateway_value.strip()}")
-            if isinstance(model_value, str) and model_value.strip() != "":
-                parts.append(f"model: {model_value.strip()}")
-            if parts:
-                add_candidate("tooling_fact", "AI integration uses " + ", ".join(parts) + ".", 75)
-
-        if isinstance(roadmap, list):
-            roadmap_items = [item.strip() for item in roadmap if isinstance(item, str) and item.strip() != ""]
-            if roadmap_items:
-                add_candidate("roadmap_fact", f"Roadmap mentions: {', '.join(roadmap_items)}.", 50)
-
-        if isinstance(overall_design, str) and overall_design.strip() != "":
-            add_candidate("architecture_fact", overall_design, 70)
-
-        parsed = {
-            "output": " ".join(derived_output_parts).strip() or "Repository analysis completed.",
-            "summary": derived_summary or "Extracted structured repository architecture facts.",
-            "memory_candidates": derived_candidates,
-        }
-
-    output = parsed.get("output")
-    summary = parsed.get("summary")
-    memory_candidates = parsed.get("memory_candidates")
-
-    if not isinstance(output, str):
-        output = next((
-            candidate for candidate in [
-                parsed.get("final_answer"),
-                parsed.get("answer"),
-                parsed.get("result"),
-                parsed.get("message"),
-                summary,
-            ]
-            if isinstance(candidate, str) and candidate.strip() != ""
-        ), None)
-
-    if not isinstance(summary, str):
-        summary = next((
-            candidate for candidate in [
-                parsed.get("summary_text"),
-                parsed.get("short_summary"),
-                output,
-            ]
-            if isinstance(candidate, str) and candidate.strip() != ""
-        ), None)
-
-    if not isinstance(memory_candidates, list):
-        memory_candidates = next((
-            candidate for candidate in [
-                parsed.get("memories"),
-                parsed.get("memory_facts"),
-                parsed.get("facts"),
-            ]
-            if isinstance(candidate, list)
-        ), None)
-
-    if memory_candidates is None:
-        memory_candidates = []
-
-    normalized_candidates: list[dict[str, Any]] = []
-    for item in memory_candidates:
-        if isinstance(item, dict):
-            candidate_content = item.get("content")
-            if isinstance(candidate_content, str) and candidate_content.strip() != "":
-                normalized_candidates.append({
-                    "kind": str(item.get("kind") or "fact"),
-                    "content": candidate_content.strip(),
-                    "priority": int(item.get("priority") or 50),
-                })
-        elif isinstance(item, str) and item.strip() != "":
-            normalized_candidates.append({
-                "kind": "fact",
-                "content": item.strip(),
-                "priority": 50,
-            })
-
-    memory_candidates = normalized_candidates
-
-    if not isinstance(output, str) or output.strip() == "":
-        raise RuntimeError(f"Agent final response JSON must contain a non-empty output string. Raw response: {content}")
-
-    if not isinstance(summary, str) or summary.strip() == "":
-        summary = output
-
-    lower_output = output.lower()
-    lower_summary = summary.lower()
-    if len(memory_candidates) == 0 and ("memory updated" in lower_output or "memory updated" in lower_summary):
-        raise RuntimeError("Agent claimed that memory was updated but returned empty memory_candidates")
-
-    return {
-        "output": output,
-        "summary": summary,
-        "memory_candidates": memory_candidates,
-    }
+def execute_host_tool(gateway: dict[str, Any], tool_name: str, arguments: dict[str, Any] | None = None) -> Any:
+    STATE.log(f"Calling tool '{tool_name}' with arguments {json.dumps(arguments or {}, ensure_ascii=False)}.")
+    response = requests.post(
+        f"{gateway['base_url']}{gateway['tool_call_path']}",
+        headers={"X-Sandbox-Run-Token": gateway["token"]},
+        json={"tool_name": tool_name, "arguments": arguments or {}},
+        timeout=60,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"Sandbox tool call '{tool_name}' failed with HTTP {response.status_code}: {response.text}")
+    data = response.json()
+    if not data.get("success"):
+        raise RuntimeError(data.get("message", "Sandbox tool call failed"))
+    result = data.get("data", {}).get("result")
+    success_value = result.get("success") if isinstance(result, dict) and "success" in result else None
+    STATE.log(f"Tool '{tool_name}' completed" + (f" with success={success_value}." if success_value is not None else "."))
+    evidence: dict[str, Any] = {"tool_name": tool_name, "arguments": arguments or {}}
+    if isinstance(result, dict):
+        if "success" in result:
+            evidence["success"] = result.get("success")
+        if isinstance(result.get("workspace_path"), str) and result["workspace_path"].strip() != "":
+            STATE.register_workspace_dir(result["workspace_path"].strip())
+            evidence["workspace_path"] = result["workspace_path"].strip()
+        for key in ["path", "ref", "commit_sha", "branch", "project_root"]:
+            value = result.get(key) if isinstance(result, dict) else None
+            if isinstance(value, str) and value.strip() != "":
+                evidence[key] = value.strip()
+    STATE.record_action("tool_call", f"Called host tool: {tool_name}", "completed" if success_value is not False else "failed", details=f"host tool {tool_name} executed", evidence=evidence)
+    return result
 
 
-def repair_final_content(gateway: dict[str, Any], raw_content: str) -> dict[str, Any]:
-    repair_prompt = """You are a response normalizer.
+def build_tool_feedback(tool_name: str | None, tool_result: Any) -> str | None:
+    if not isinstance(tool_result, dict):
+        return None
+    if tool_result.get("success") is not False:
+        return None
 
-Your only job is to convert the provided agent output into a valid JSON object with exactly these fields:
-- output: string
-- summary: string
-- memory_candidates: array
+    error_text = str(tool_result.get("error") or "").strip()
+    command = str(tool_result.get("command") or "").strip()
+    cwd = str(tool_result.get("cwd") or "").strip()
+    stderr = str(tool_result.get("stderr") or "").strip()
 
-Rules:
-- Return JSON only. No markdown. No explanations.
-- Preserve factual content from the original response.
-- Do not invent new facts.
-- If the original response contains useful factual findings, convert them into memory_candidates.
-- If the original response claims that memory was updated, convert the factual claims into memory_candidates.
-- Each memory candidate must be an object with:
-  - kind: string
-  - content: string
-  - priority: integer 0-100
-- Always return all three top-level fields, even if some are empty.
-- `output` must be a readable final answer for the user.
-- `summary` must be a short summary string.
-- `memory_candidates` must be an array.
-- If the source text contains architecture, tooling, workflow, or repository facts, extract them into memory_candidates.
-- If no reliable memory facts are present, return an empty memory_candidates array.
+    hints: list[str] = []
+    if "Requested cwd does not exist" in error_text:
+        hints.append("The working directory was wrong. Use a discovered workspace path or run workspace_detect_project first.")
+    if "escapes /workspace" in error_text:
+        hints.append("The command tried to access a path outside /workspace. Stay within the sandbox workspace.")
+    if tool_name == "workspace_run_tests":
+        hints.append("A structured test run failed. Inspect the install/test results and decide whether another candidate command or a partial setup is more appropriate.")
+    if tool_name == "workspace_detect_project" and error_text:
+        hints.append("Project detection failed. Inspect the workspace layout before choosing commands.")
+    lowered = f"{error_text}\n{stderr}".lower()
+    if "npm ci" in command.lower() and ("package-lock" in lowered or "lockfile" in lowered):
+        hints.append("npm ci requires a lockfile. Try npm install if the repository does not ship package-lock.json.")
+    if "permission denied" in lowered:
+        hints.append("The failure is caused by filesystem permissions, not necessarily by the chosen command.")
+    if "not found" in lowered:
+        hints.append("A required binary or file was missing. Inspect stderr and choose a command that matches the workspace contents.")
 
-Example valid output:
-{
-  "output": "Repository uses Laravel and an Insight System with hierarchical memory.",
-  "summary": "Extracted key architecture facts from the repository.",
-  "memory_candidates": [
-    {
-      "kind": "architecture_fact",
-      "content": "Repository uses Laravel 12 as the backend framework.",
-      "priority": 90
-    }
-  ]
-}
-"""
-
-    repair_messages = [
-        {
-            "role": "user",
-            "content": f"Normalize this agent output into the required JSON object:\n\n{raw_content}",
-        }
-    ]
-
-    strict_repair_prompt = repair_prompt + """
-
-You failed to return a valid object previously.
-Return a JSON object right now with exactly:
-{
-  "output": "...",
-  "summary": "...",
-  "memory_candidates": []
-}
-Do not omit fields. Do not add extra top-level fields.
-"""
-
-    prompts = [repair_prompt, strict_repair_prompt]
-    last_error: Exception | None = None
-
-    for prompt in prompts:
-        repaired_message = call_llm(gateway, repair_messages, prompt, max_tokens=1600, include_tools=False)
-        tool_calls = repaired_message.get("tool_calls") or []
-        if isinstance(tool_calls, list) and tool_calls:
-            last_error = RuntimeError("Repair pass attempted tool calls instead of returning final JSON")
-            continue
-
-        repaired_content = repaired_message.get("content")
-        if not isinstance(repaired_content, str):
-            last_error = RuntimeError("Repair pass did not return textual JSON content")
-            continue
-
-        try:
-            return normalize_final_content(repaired_content)
-        except RuntimeError as exc:
-            last_error = exc
-            continue
-
-    if last_error is not None:
-        raise last_error
-
-    raise RuntimeError("Repair pass failed to produce a valid JSON response")
-
-
-def extract_memory_candidates(gateway: dict[str, Any], output: str, summary: str) -> list[dict[str, Any]]:
-    extraction_prompt = """You extract persistent memory facts from an agent result.
-
-Return JSON only with this exact shape:
-{
-  "memory_candidates": [
-    {
-      "kind": "fact",
-      "content": "verified fact",
-      "priority": 50
-    }
-  ]
-}
-
-Rules:
-- Extract only concrete, repository-specific facts.
-- Prefer architecture_fact, tooling_fact, workflow_fact, integration_fact, repo_revision_fact, roadmap_fact.
-- If branch or commit SHA was mentioned, include it as repo_revision_fact.
-- Do not invent facts that were not present.
-- If there are no reliable facts, return an empty array.
-"""
-
-    extraction_message = call_llm(gateway, [
-        {
-            "role": "user",
-            "content": f"Output:\n{output}\n\nSummary:\n{summary}\n\nExtract memory candidates.",
-        }
-    ], extraction_prompt, max_tokens=1400, include_tools=False)
-
-    tool_calls = extraction_message.get("tool_calls") or []
-    if isinstance(tool_calls, list) and tool_calls:
-        raise RuntimeError("Memory extraction pass attempted tool calls instead of returning JSON")
-
-    extraction_content = extraction_message.get("content")
-    if not isinstance(extraction_content, str):
-        return []
-
-    try:
-        parsed = json.loads(extraction_content)
-    except Exception:
-        return []
-
-    if not isinstance(parsed, dict):
-        return []
-
-    candidates = parsed.get("memory_candidates")
-    if not isinstance(candidates, list):
-        return []
-
-    normalized: list[dict[str, Any]] = []
-    for item in candidates:
-        if isinstance(item, dict):
-            candidate_content = item.get("content")
-            if isinstance(candidate_content, str) and candidate_content.strip() != "":
-                normalized.append({
-                    "kind": str(item.get("kind") or "fact"),
-                    "content": candidate_content.strip(),
-                    "priority": int(item.get("priority") or 50),
-                })
-
-    return normalized
+    feedback_parts = [f"Tool {tool_name or 'unknown'} failed."]
+    if command:
+        feedback_parts.append(f"Command: {command}.")
+    if cwd:
+        feedback_parts.append(f"cwd: {cwd}.")
+    if error_text:
+        feedback_parts.append(f"Error: {error_text}.")
+    if hints:
+        feedback_parts.append("Next-step guidance: " + " ".join(hints))
+    return " ".join(feedback_parts)
 
 
 def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     gateway = payload.get("gateway", {})
     task = payload.get("task", {})
+    STATE.log(f"Starting task {task.get('id')} run {task.get('run_id')} for payload {json.dumps(task.get('input_payload', {}), ensure_ascii=False)}.")
     system_prompt = build_agent_system_prompt(payload)
-    messages: list[dict[str, Any]] = [
-        {"role": "user", "content": task.get("prompt") or "Execute the task."}
-    ]
-
+    messages: list[dict[str, Any]] = [{"role": "user", "content": task.get("prompt") or "Execute the task."}]
     max_iterations = int(task.get("max_iterations") or 8)
-
-    def tool_call(tool_name: str, arguments: dict[str, Any] | None = None) -> Any:
-        response = requests.post(
-            f"{gateway['base_url']}{gateway['tool_call_path']}",
-            headers={"X-Sandbox-Run-Token": gateway["token"]},
-            json={
-                "tool_name": tool_name,
-                "arguments": arguments or {},
-            },
-            timeout=60,
-        )
-
-        if response.status_code >= 400:
-            raise RuntimeError(
-                f"Sandbox tool call '{tool_name}' failed with HTTP {response.status_code}: {response.text}"
-            )
-
-        data = response.json()
-        if not data.get("success"):
-            raise RuntimeError(data.get("message", "Sandbox tool call failed"))
-
-        return data.get("data", {}).get("result")
+    tool_names = [
+        function.get("name")
+        for tool in payload.get("tools", [])
+        if isinstance(tool, dict)
+        for function in [tool.get("function", {}) or {}]
+        if isinstance(function.get("name"), str)
+    ]
+    tool_names.extend(list(local_tool_names()))
+    prompt_text = str(task.get("prompt") or "")
+    requires_tests = "test" in prompt_text.lower()
+    last_assistant_content: str | None = None
+    last_normalization_error: str | None = None
+    if requires_tests and not any(name in ["workspace_run_command", "workspace_run_tests"] or "test" in name for name in tool_names):
+        STATE.record_action("run_tests", "Prepare test execution", "blocked", details="No available tool appears able to execute tests.")
+        STATE.add_finding("Task requested tests, but no obvious test-execution capability is available.")
 
     for _ in range(max_iterations):
-        assistant_message = call_llm(gateway, messages, system_prompt)
+        assistant_message = call_llm(gateway, messages, system_prompt, extra_tools=local_tools())
         messages.append(assistant_message)
-
         tool_calls = assistant_message.get("tool_calls") or []
         if isinstance(tool_calls, list) and tool_calls:
             for tool_call_item in tool_calls:
@@ -664,60 +302,114 @@ def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[st
                     arguments = json.loads(arguments_raw)
                     if not isinstance(arguments, dict):
                         arguments = {}
-                except Exception:  # noqa: BLE001
+                except Exception:
                     arguments = {}
-
-                tool_result = tool_call(tool_name, arguments)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_item.get("id") or str(uuid.uuid4()),
-                    "content": json.dumps(tool_result, ensure_ascii=False),
-                })
-
+                try:
+                    tool_result = execute_local_tool(STATE, tool_name, arguments) if isinstance(tool_name, str) and tool_name in local_tool_names() else execute_host_tool(gateway, tool_name, arguments)
+                except Exception as exc:
+                    STATE.log(f"Tool '{tool_name}' failed with error: {exc}")
+                    STATE.record_action(
+                        "tool_error",
+                        f"Tool failed: {tool_name or 'unknown'}",
+                        "failed",
+                        details=str(exc),
+                        evidence={"tool_name": tool_name, "arguments": arguments},
+                    )
+                    STATE.add_finding(f"Tool {tool_name or 'unknown'} failed: {exc}")
+                    tool_result = {"success": False, "tool_name": tool_name, "error": str(exc)}
+                messages.append({"role": "tool", "tool_call_id": tool_call_item.get("id") or str(uuid.uuid4()), "content": json.dumps(tool_result, ensure_ascii=False)})
+                feedback = build_tool_feedback(tool_name if isinstance(tool_name, str) else None, tool_result)
+                if feedback:
+                    messages.append({"role": "user", "content": feedback})
             continue
 
         content = assistant_message.get("content")
         if isinstance(content, str):
+            last_assistant_content = content
             try:
-                normalized = normalize_final_content(content)
-            except RuntimeError:
-                normalized = repair_final_content(gateway, content)
-
+                normalized = normalize_final_content(STATE, content)
+                last_normalization_error = None
+            except RuntimeError as exc:
+                last_normalization_error = str(exc)
+                try:
+                    normalized = repair_final_content(STATE, call_llm, gateway, content)
+                    last_normalization_error = None
+                except RuntimeError as repair_exc:
+                    last_normalization_error = str(repair_exc)
+                    STATE.log(f"Final response normalization failed; continuing agent loop: {repair_exc}")
+                    STATE.record_action(
+                        "normalize_response",
+                        "Normalize final agent response",
+                        "failed",
+                        details=str(repair_exc),
+                        evidence={"raw_content": content[:2000]},
+                    )
+                    STATE.add_finding(f"Agent returned a non-normalizable final response: {repair_exc}")
+                    continue
             if len(normalized["memory_candidates"]) == 0 and (normalized["output"].strip() != "" or normalized["summary"].strip() != ""):
-                extracted = extract_memory_candidates(gateway, normalized["output"], normalized["summary"])
+                STATE.log("No memory candidates returned; running extraction pass.")
+                extracted = extract_memory_candidates(
+                    call_llm,
+                    gateway,
+                    normalized["output"],
+                    normalized["summary"],
+                    normalized["actions"],
+                    normalized["findings"],
+                    normalized["artifacts"],
+                )
                 if extracted:
                     normalized["memory_candidates"] = extracted
-
+                    normalized["blocker"] = None
+                    STATE.log(f"Extraction pass recovered {len(extracted)} memory candidate(s).")
+            if requires_tests and not any(action.get("type") == "run_tests" and action.get("status") in ["completed", "failed"] for action in STATE.execution_actions):
+                STATE.add_finding("No test command was actually executed during this run.")
             return normalized
 
-    raise RuntimeError("Agent loop reached max iterations without a final answer")
+    blocker_parts = ["Agent loop reached max iterations without a valid final answer."]
+    if last_normalization_error:
+        blocker_parts.append(last_normalization_error)
+    if requires_tests and not any(action.get("type") == "run_tests" and action.get("status") in ["completed", "failed"] for action in STATE.execution_actions):
+        STATE.add_finding("No test command was actually executed during this run.")
+    fallback_output = None
+    if isinstance(last_assistant_content, str) and last_assistant_content.strip() != "":
+        fallback_output = "Last agent response could not be finalized into the required result format."
+    return build_fallback_result(
+        STATE,
+        " ".join(blocker_parts),
+        output=fallback_output,
+        summary="Run stopped at max iterations.",
+    )
 
 
 def main() -> int:
     args = parse_args()
     payload = json.loads(pathlib.Path(args.input).read_text())
-
-    network_policy = payload.get("network_policy", {})
-
-    install_network_guard(network_policy)
-
+    STATE.set_artifacts_root(args.artifacts_dir)
+    STATE.log(f"Loaded task payload from {args.input}.")
+    install_network_guard(payload.get("network_policy", {}))
     try:
         final_result = run_agent_mode(payload, args)
         result_payload = {
             "success": True,
             "output": final_result["output"],
             "summary": final_result["summary"],
+            "blocker": final_result["blocker"],
+            "actions": final_result["actions"],
+            "findings": final_result["findings"],
+            "artifacts": final_result["artifacts"],
             "memory_candidates": final_result["memory_candidates"],
         }
-    except Exception as exc:  # noqa: BLE001
-        write_result(args.output, {
-            "success": False,
-            "error": str(exc),
-        })
+        STATE.log(
+            "Run completed successfully with "
+            f"{len(final_result['memory_candidates'])} memory candidate(s)"
+            + (f"; blocker: {final_result['blocker']}." if final_result["blocker"] else ".")
+        )
+    except Exception as exc:
+        STATE.log(f"Run failed: {exc}")
+        write_result(args.output, {"success": False, "error": str(exc), "actions": STATE.execution_actions.copy(), "findings": STATE.auto_findings.copy(), "artifacts": STATE.result_artifacts.copy()})
         return 1
 
     write_result(args.output, result_payload)
-
     return 0
 
 

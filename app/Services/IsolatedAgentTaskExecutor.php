@@ -29,12 +29,13 @@ class IsolatedAgentTaskExecutor
         $gatewayBaseUrl = rtrim((string) config('agent.agent_tasks.sandbox_internal_base_url', 'http://app'), '/');
         $gatewayHost = parse_url($gatewayBaseUrl, PHP_URL_HOST);
         $allowedOutboundHosts = $context['allowed_outbound_hosts'];
-        if (is_string($gatewayHost) && $gatewayHost !== '') {
+        if ($task->restrictsOutboundHosts() && is_string($gatewayHost) && $gatewayHost !== '') {
             $allowedOutboundHosts[] = $gatewayHost;
         }
         $allowedOutboundHosts = array_values(array_unique($allowedOutboundHosts));
         $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
         $mountWorkspace = $this->resolveDockerWorkspaceMount($run->id, $workspace);
+        $persistentWorkspace = $this->resolvePersistentWorkspace($task);
         $inputDir = $workspace.'/input';
         $outputDir = $workspace.'/output';
         $artifactsDir = $workspace.'/artifacts';
@@ -42,6 +43,10 @@ class IsolatedAgentTaskExecutor
         File::ensureDirectoryExists($inputDir);
         File::ensureDirectoryExists($outputDir);
         File::ensureDirectoryExists($artifactsDir);
+        if ($persistentWorkspace !== null) {
+            File::ensureDirectoryExists($persistentWorkspace['host_path']);
+            @chmod($persistentWorkspace['host_path'], 0777);
+        }
         @chmod($workspace, 0777);
         @chmod($inputDir, 0777);
         @chmod($outputDir, 0777);
@@ -77,17 +82,37 @@ class IsolatedAgentTaskExecutor
                 'token' => $plainToken,
             ],
             'network_policy' => [
+                'restrict_hosts' => $task->restrictsOutboundHosts(),
                 'allowed_hosts' => $allowedOutboundHosts,
                 'allowed_schemes' => ['http', 'https'],
             ],
-            'tools' => $this->toolExecutor->describeTools($task, $user),
+            'sandbox' => [
+                'persistent_workspace' => $persistentWorkspace,
+            ],
+            'tools' => $this->toolExecutor->describeTools(
+                $task,
+                $user,
+                $persistentWorkspace['container_path'] ?? $workspace,
+            ),
         ];
 
         File::put($inputDir.'/task.json', json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-        $process = new Process($this->buildDockerCommand($task, $mountWorkspace));
-        $process->setTimeout((float) max(1, (int) ($task->metadata['timeout_seconds'] ?? 300)));
-        $process->run();
+        $process = new Process($this->buildDockerCommand($task, $mountWorkspace, $persistentWorkspace));
+        $process->setTimeout((float) $this->resolveSandboxTimeoutSeconds($task));
+        $process->run(function (string $type, string $buffer): void {
+            if ($buffer === '') {
+                return;
+            }
+
+            if ($type === Process::ERR) {
+                fwrite(STDERR, $buffer);
+
+                return;
+            }
+
+            fwrite(STDOUT, $buffer);
+        });
 
         $run->update([
             'metadata' => [
@@ -95,6 +120,7 @@ class IsolatedAgentTaskExecutor
                 'sandbox' => [
                     'workspace' => $workspace,
                     'mount_workspace' => $mountWorkspace,
+                    'persistent_workspace' => $persistentWorkspace,
                     'stdout' => $process->getOutput(),
                     'stderr' => $process->getErrorOutput(),
                     'exit_code' => $process->getExitCode(),
@@ -136,6 +162,10 @@ class IsolatedAgentTaskExecutor
                 ...($run->metadata ?? []),
                 'sandbox_result' => [
                     'summary' => $result['summary'] ?? null,
+                    'blocker' => $result['blocker'] ?? null,
+                    'actions' => is_array($result['actions'] ?? null) ? $result['actions'] : [],
+                    'findings' => is_array($result['findings'] ?? null) ? $result['findings'] : [],
+                    'artifacts' => is_array($result['artifacts'] ?? null) ? $result['artifacts'] : [],
                     'memory_candidates_count' => count($memoryCandidates),
                     'ingested_memories' => $ingestedMemories,
                 ],
@@ -145,12 +175,12 @@ class IsolatedAgentTaskExecutor
         return (string) ($result['output'] ?? '');
     }
 
-    private function buildDockerCommand(AgentTask $task, string $workspace): array
+    private function buildDockerCommand(AgentTask $task, string $workspace, ?array $persistentWorkspace = null): array
     {
         $image = (string) ($task->effectiveSandboxProfile() ?: config('agent.agent_tasks.default_sandbox_image', 'spodial-agent-python:latest'));
         $network = trim((string) config('agent.agent_tasks.sandbox_network', 'bridge')) ?: 'bridge';
 
-        return [
+        $command = [
             'docker',
             'run',
             '--rm',
@@ -165,6 +195,15 @@ class IsolatedAgentTaskExecutor
             (string) config('agent.agent_tasks.sandbox_memory', '512m'),
             '-v',
             $workspace.':/workspace',
+        ];
+
+        if ($persistentWorkspace !== null) {
+            $command[] = '-v';
+            $command[] = $persistentWorkspace['host_path'].':'.$persistentWorkspace['container_path'];
+        }
+
+        array_push(
+            $command,
             '-w',
             '/workspace',
             $image,
@@ -174,7 +213,9 @@ class IsolatedAgentTaskExecutor
             '/workspace/output/result.json',
             '--artifacts-dir',
             '/workspace/artifacts',
-        ];
+        );
+
+        return $command;
     }
 
     private function resolveDockerWorkspaceMount(int $runId, string $workspace): string
@@ -185,5 +226,36 @@ class IsolatedAgentTaskExecutor
         }
 
         return rtrim($hostRunsRoot, '/').'/'.$runId;
+    }
+
+    private function resolveSandboxTimeoutSeconds(AgentTask $task): int
+    {
+        $configuredDefault = (int) config('agent.agent_tasks.default_timeout_seconds', 1800);
+        $configuredMax = (int) config('agent.agent_tasks.max_timeout_seconds', 3600);
+        $requested = (int) ($task->metadata['timeout_seconds'] ?? $configuredDefault);
+
+        return max(1, min(max(1, $configuredMax), $requested));
+    }
+
+    private function resolvePersistentWorkspace(AgentTask $task): ?array
+    {
+        if (! $task->usesPersistentSandboxWorkspace()) {
+            return null;
+        }
+
+        $key = $task->persistentSandboxWorkspaceKey();
+        if ($key === null || $key === '') {
+            return null;
+        }
+
+        $root = trim((string) config('agent.agent_tasks.persistent_workspace_root', ''));
+        $hostRoot = $root !== '' ? $root : storage_path('app/private/sandbox-cache');
+        $sanitizedKey = preg_replace('/[^a-z0-9._-]+/i', '-', $key) ?: 'task-cache';
+
+        return [
+            'key' => $sanitizedKey,
+            'host_path' => rtrim($hostRoot, '/').'/'.$sanitizedKey,
+            'container_path' => '/workspace/persistent-cache',
+        ];
     }
 }

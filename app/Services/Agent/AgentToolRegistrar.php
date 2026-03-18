@@ -6,6 +6,7 @@ use App\Models\Chat;
 use App\Models\User;
 use App\Services\Agent\Tools\CreateArtifactTool;
 use App\Services\Agent\Tools\CreateTaskTool;
+use App\Services\Agent\Tools\GitHubDownloadArchiveTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\GitHubGetBranchTool;
 use App\Services\Agent\Tools\GitHubGetFileContentsTool;
@@ -41,7 +42,13 @@ class AgentToolRegistrar
         private readonly GitHubApiClient $gitHubApiClient,
     ) {}
 
-    public function registerDefaults(ToolRegistry $toolRegistry, User $user, ?string $channel): void
+    public function registerDefaults(
+        ToolRegistry $toolRegistry,
+        User $user,
+        ?string $channel,
+        ?string $sandboxWorkspacePath = null,
+        bool $preserveSandboxDependencies = false,
+    ): void
     {
         Auth::setUser($user);
 
@@ -67,6 +74,14 @@ class AgentToolRegistrar
         $toolRegistry->register(new GitHubGetRepositoryTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetTreeTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetFileContentsTool($this->gitHubApiClient));
+
+        if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
+            $toolRegistry->register(new GitHubDownloadArchiveTool(
+                $this->gitHubApiClient,
+                $sandboxWorkspacePath,
+                $preserveSandboxDependencies,
+            ));
+        }
     }
 
     public function registerChatTools(ToolRegistry $toolRegistry, Chat $chat): void

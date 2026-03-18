@@ -99,6 +99,8 @@ return [
 
     'telegram' => [
         'coalesce_window_seconds' => 4,
+        'typing_interval_seconds' => 4,
+        'typing_ttl_seconds' => 150,
     ],
 
     /*
@@ -128,11 +130,14 @@ return [
         'dispatch_limit' => 50,
         'lock_ttl_seconds' => 600,
         'backoff_seconds' => [30, 120],
+        'default_timeout_seconds' => 1800,
+        'max_timeout_seconds' => 3600,
         'sandbox_run_token_ttl_seconds' => 3600,
         'sandbox_internal_base_url' => env('SANDBOX_INTERNAL_BASE_URL', 'http://app'),
         'default_sandbox_image' => env('AGENT_TASK_SANDBOX_IMAGE', 'spodial-agent-python:latest'),
         'sandbox_network' => env('AGENT_TASK_SANDBOX_NETWORK', 'bridge'),
         'sandbox_host_runs_root' => env('AGENT_TASK_SANDBOX_HOST_RUNS_ROOT'),
+        'persistent_workspace_root' => env('AGENT_TASK_PERSISTENT_WORKSPACE_ROOT'),
         'sandbox_cpus' => env('AGENT_TASK_SANDBOX_CPUS', '1'),
         'sandbox_memory' => env('AGENT_TASK_SANDBOX_MEMORY', '512m'),
     ],
