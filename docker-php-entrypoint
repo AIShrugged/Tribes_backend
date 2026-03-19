@@ -13,6 +13,10 @@ graceful_sleep() {
   sleep "${GRACEFUL_SHUTDOWN_SECONDS:-10}"
 }
 
+ensure_workspace_storage() {
+  php artisan workspaces:ensure-storage --no-interaction || true
+}
+
 build_sandbox_image_if_enabled() {
   if [ "${BUILD_SANDBOX_IMAGE_ON_START:-0}" != "1" ]; then
     return 0
@@ -35,6 +39,7 @@ case "$command" in
   backend)
     ensure_permissions
     php artisan migrate --force --no-interaction
+    ensure_workspace_storage
     php artisan scramble:export --path=public/openapi.json --no-interaction || true
     exec php-fpm -R
   ;;
@@ -46,6 +51,7 @@ case "$command" in
 
   queue-worker)
     ensure_permissions
+    ensure_workspace_storage
     build_sandbox_image_if_enabled
 
     stop_worker() {
@@ -67,6 +73,7 @@ case "$command" in
 
   schedule)
     ensure_permissions
+    ensure_workspace_storage
 
     stop_scheduler() {
       echo "Stopping scheduler..."

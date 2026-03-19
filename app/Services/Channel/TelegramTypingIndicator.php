@@ -2,7 +2,6 @@
 
 namespace App\Services\Channel;
 
-use App\Jobs\SendTelegramTypingHeartbeatJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
@@ -16,23 +15,12 @@ class TelegramTypingIndicator
 
     public function start(string $sessionId, int $chatId, ?int $messageThreadId = null): void
     {
-        Cache::put(
-            $this->cacheKey($sessionId),
-            [
-                'chat_id' => $chatId,
-                'message_thread_id' => $messageThreadId,
-            ],
-            now()->addSeconds($this->ttlSeconds()),
-        );
+        $payload = $this->get($sessionId) ?? [];
+        $payload['chat_id'] = $chatId;
+        $payload['message_thread_id'] = $messageThreadId;
 
-        $this->sendTyping($chatId, $messageThreadId);
-
-        if (config('queue.default') === 'sync') {
-            return;
-        }
-
-        SendTelegramTypingHeartbeatJob::dispatch($sessionId)
-            ->delay(now()->addSeconds($this->intervalSeconds()));
+        $this->persist($sessionId, $payload);
+        $this->sendTypingIfDue($sessionId, $payload, true);
     }
 
     public function touch(string $sessionId): void
@@ -43,16 +31,14 @@ class TelegramTypingIndicator
             return;
         }
 
-        Cache::put(
-            $this->cacheKey($sessionId),
-            $payload,
-            now()->addSeconds($this->ttlSeconds()),
-        );
+        $this->persist($sessionId, $payload);
+        $this->sendTypingIfDue($sessionId, $payload);
     }
 
     public function stop(string $sessionId): void
     {
         Cache::forget($this->cacheKey($sessionId));
+        Cache::forget($this->lastSentCacheKey($sessionId));
     }
 
     public function get(string $sessionId): ?array
@@ -97,8 +83,43 @@ class TelegramTypingIndicator
         );
     }
 
+    private function persist(string $sessionId, array $payload): void
+    {
+        Cache::put(
+            $this->cacheKey($sessionId),
+            $payload,
+            now()->addSeconds($this->ttlSeconds()),
+        );
+    }
+
+    private function sendTypingIfDue(string $sessionId, array $payload, bool $force = false): void
+    {
+        $lastSentAt = Cache::get($this->lastSentCacheKey($sessionId));
+        $now = now()->getTimestamp();
+
+        if (! $force && is_numeric($lastSentAt) && ($now - (int) $lastSentAt) < $this->intervalSeconds()) {
+            return;
+        }
+
+        $this->sendTyping(
+            (int) $payload['chat_id'],
+            isset($payload['message_thread_id']) ? (int) $payload['message_thread_id'] : null,
+        );
+
+        Cache::put(
+            $this->lastSentCacheKey($sessionId),
+            $now,
+            now()->addSeconds($this->ttlSeconds()),
+        );
+    }
+
     private function cacheKey(string $sessionId): string
     {
         return 'telegram_typing:'.$sessionId;
+    }
+
+    private function lastSentCacheKey(string $sessionId): string
+    {
+        return 'telegram_typing_last_sent:'.$sessionId;
     }
 }

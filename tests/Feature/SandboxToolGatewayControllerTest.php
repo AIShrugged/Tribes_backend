@@ -634,6 +634,167 @@ class SandboxToolGatewayControllerTest extends TestCase
             ->assertJsonPath('data.result.details.team_id.0', 'Workspace creation is restricted to the current team scope.');
     }
 
+    #[Test]
+    public function it_deletes_owned_workspace_through_gateway_tool(): void
+    {
+        [$user, $workspace, $organization, $team] = $this->createWorkspaceContextWithScope();
+        $workspace->update(['owner_user_id' => $user->id]);
+        Storage::disk('local')->put($workspace->root_prefix.'/notes/today.txt', 'hello');
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Delete own workspace task',
+            'prompt' => 'Delete workspace',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['delete_workspace'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'delete_workspace',
+            'arguments' => [
+                'workspace_id' => $workspace->id,
+            ],
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true)
+            ->assertJsonPath('data.result.deleted', true);
+
+        $this->assertDatabaseMissing('workspaces', ['id' => $workspace->id]);
+        Storage::disk('local')->assertMissing($workspace->root_prefix.'/notes/today.txt');
+    }
+
+    #[Test]
+    public function manager_can_delete_any_workspace_inside_their_organization(): void
+    {
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create([
+                'name' => 'Default Methodology',
+                'text' => 'Default methodology text',
+                'scheme' => '{}',
+                'is_default' => true,
+            ]);
+
+        $organization = Organization::create(['name' => 'Managed Org', 'slug' => 'managed-org']);
+        $team = Team::create([
+            'organization_id' => $organization->id,
+            'methodology_id' => $methodology->id,
+            'name' => 'Managed Team',
+            'slug' => 'managed-team',
+        ]);
+
+        $manager = User::factory()->create();
+        $employee = User::factory()->create();
+        $organization->users()->attach($manager->id, ['role' => 'manager']);
+        $organization->users()->attach($employee->id, ['role' => 'employee']);
+        $team->users()->attach($manager->id);
+        $team->users()->attach($employee->id);
+
+        $workspace = Workspace::create([
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'owner_user_id' => $employee->id,
+            'name' => 'Employee Workspace',
+            'slug' => 'employee-workspace',
+            'scope_type' => 'user_team_private',
+            'root_prefix' => 'workspaces/orgs/'.$organization->id.'/teams/'.$team->id.'/users/employee-workspace',
+            'storage_disk' => 'local',
+            'status' => 'active',
+        ]);
+        Storage::disk('local')->put($workspace->root_prefix.'/notes/today.txt', 'owned by employee');
+
+        $task = AgentTask::create([
+            'user_id' => $manager->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Manager delete workspace task',
+            'prompt' => 'Delete employee workspace',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['delete_workspace'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'delete_workspace',
+            'arguments' => [
+                'workspace_id' => $workspace->id,
+            ],
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true)
+            ->assertJsonPath('data.result.deleted', true);
+
+        $this->assertDatabaseMissing('workspaces', ['id' => $workspace->id]);
+    }
+
+    #[Test]
+    public function non_manager_cannot_delete_other_users_workspace(): void
+    {
+        [$user, $workspace, $organization, $team] = $this->createWorkspaceContextWithScope();
+        $otherUser = User::factory()->create();
+        $organization->users()->attach($otherUser->id, ['role' => 'employee']);
+        $team->users()->attach($otherUser->id);
+        $workspace->update(['owner_user_id' => $otherUser->id]);
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Reject delete workspace task',
+            'prompt' => 'Delete another user workspace',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['delete_workspace'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'delete_workspace',
+            'arguments' => [
+                'workspace_id' => $workspace->id,
+            ],
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', false)
+            ->assertJsonPath('data.result.error', 'Workspace not found or access denied');
+
+        $this->assertDatabaseHas('workspaces', ['id' => $workspace->id]);
+    }
+
     private function createWorkspaceContext(bool $grantWrite = true): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()

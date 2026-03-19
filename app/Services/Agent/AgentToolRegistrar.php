@@ -39,6 +39,7 @@ use App\Services\Agent\Tools\SearchWorkspaceFilesTool;
 use App\Services\Agent\Tools\SendUserMessageTool;
 use App\Services\Agent\Tools\WriteWorkspaceFileTool;
 use App\Services\Agent\Tools\DeleteWorkspaceFileTool;
+use App\Services\Agent\Tools\DeleteWorkspaceTool;
 use App\Services\Agent\Tools\CopyWorkspaceFileTool;
 use App\Services\Agent\Tools\CreateWorkspaceDirectoryTool;
 use App\Services\Agent\Tools\MoveWorkspaceFileTool;
@@ -105,6 +106,7 @@ class AgentToolRegistrar
         $toolRegistry->register(new SendUserMessageTool($user, $this->userChannelTargetResolver, $this->channelRuntimeService));
         $toolRegistry->register(new ListWorkspacesTool($user, $this->workspaceAccessService, $organizationId, $teamId));
         $toolRegistry->register(new CreateWorkspaceTool($user, $this->workspaceProvisioningService, $this->workspaceAccessService, $organizationId, $teamId));
+        $toolRegistry->register(new DeleteWorkspaceTool($user, $this->workspaceService, $organizationId, $teamId));
         $toolRegistry->register(new ListWorkspaceFilesTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
         $toolRegistry->register(new ReadWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
         $toolRegistry->register(new SearchWorkspaceFilesTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));

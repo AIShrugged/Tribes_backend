@@ -62,8 +62,8 @@ class ProcessTelegramWorkerJob implements ShouldQueue
                     outputMode: OutputMode::MD,
                     taskType: AgentTaskType::INTERACTIVE,
                     conversationKey: sprintf('telegram:%s:%s', $this->chatId, $this->messageThreadId ?? 'root'),
-                    progressCallback: function () use ($typingIndicator): void {
-                        $typingIndicator->touch($this->batchUuid);
+                    progressCallback: function () use ($typingIndicator, $typingSessionId): void {
+                        $typingIndicator->touch($typingSessionId);
                     },
                 )
             );

@@ -3,6 +3,7 @@
 namespace App\Services\Workspace;
 
 use App\Models\Workspace;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 
@@ -194,6 +195,23 @@ class WorkspaceService
         $disk->deleteDirectory($fromStoragePath);
 
         return true;
+    }
+
+    public function deleteWorkspace(Workspace $workspace): bool
+    {
+        return DB::transaction(function () use ($workspace): bool {
+            $disk = Storage::disk($workspace->storage_disk);
+            $rootPrefix = trim($workspace->root_prefix, '/');
+
+            $files = $disk->allFiles($rootPrefix);
+            if ($files !== []) {
+                $disk->delete($files);
+            }
+
+            $disk->deleteDirectory($rootPrefix);
+
+            return (bool) $workspace->delete();
+        });
     }
 
     public function materializeWorkspaces(iterable $workspaceManifests, string $basePath): array
