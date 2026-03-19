@@ -31,7 +31,16 @@ class TelegramDelivery implements ChannelDeliveryInterface
             $params['message_thread_id'] = $request->conversation->message_thread_id;
         }
 
-        $telegram->sendMessage($params);
+        try {
+            $telegram->sendMessage($params);
+        } catch (\Throwable $exception) {
+            if (! $this->shouldRetryWithoutFormatting($exception)) {
+                throw $exception;
+            }
+
+            unset($params['parse_mode']);
+            $telegram->sendMessage($params);
+        }
 
         return $this->channelBus->appendTelegramMessage(
             (int) $request->conversation->telegram_chat_id,
@@ -41,5 +50,13 @@ class TelegramDelivery implements ChannelDeliveryInterface
             $request->content,
             $request->attributes,
         );
+    }
+
+    private function shouldRetryWithoutFormatting(\Throwable $exception): bool
+    {
+        $message = mb_strtolower($exception->getMessage());
+
+        return str_contains($message, "can't parse entities")
+            || str_contains($message, 'cant parse entities');
     }
 }

@@ -160,6 +160,40 @@ class SendUserMessageToolTest extends TestCase
     }
 
     #[Test]
+    public function it_retries_telegram_delivery_without_markdown_when_entity_parsing_fails(): void
+    {
+        $user = User::factory()->create();
+
+        TelegramUser::create([
+            'telegram_user_id' => 123456,
+            'telegram_username' => 'linked_user',
+            'user_id' => $user->id,
+        ]);
+
+        $apiMock = Mockery::mock('overload:'.Api::class);
+        $apiMock->shouldReceive('__construct')->andReturnNull();
+        $apiMock->shouldReceive('sendMessage')
+            ->once()
+            ->with(Mockery::on(fn (array $payload): bool => ($payload['parse_mode'] ?? null) === 'Markdown'))
+            ->andThrow(new \RuntimeException('Bad Request: can\'t parse entities: Can\'t find end of the entity starting at byte offset 262'));
+        $apiMock->shouldReceive('sendMessage')
+            ->once()
+            ->with(Mockery::on(fn (array $payload): bool => ! array_key_exists('parse_mode', $payload) && (int) $payload['chat_id'] === 1024736013))
+            ->andReturn((object) ['message_id' => 1]);
+
+        $tool = $this->app->make(SendUserMessageTool::class, ['user' => $user]);
+
+        $result = $tool->execute([
+            'channel' => 'telegram',
+            'content' => 'Problematic **markdown',
+            'telegram_chat_id' => 1024736013,
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(1024736013, data_get($result, 'conversation.telegram_chat_id'));
+    }
+
+    #[Test]
     public function it_rejects_send_when_user_has_no_target_conversation(): void
     {
         $user = User::factory()->create();
