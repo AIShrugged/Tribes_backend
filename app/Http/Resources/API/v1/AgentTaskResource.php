@@ -17,6 +17,11 @@ class AgentTaskResource extends JsonResource
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
+            'organization_id' => $this->organization_id,
+            'team_id' => $this->team_id,
+            'parent_agent_task_id' => $this->parent_agent_task_id,
+            'origin_agent_task_run_id' => $this->origin_agent_task_run_id,
+            'followup_depth' => $this->followup_depth,
             'agent_profile_id' => $this->agent_profile_id,
             'profile' => $profile ? [
                 'id' => $profile->id,

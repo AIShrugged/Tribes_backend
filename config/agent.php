@@ -132,6 +132,11 @@ return [
         'backoff_seconds' => [30, 120],
         'default_timeout_seconds' => 1800,
         'max_timeout_seconds' => 3600,
+        'followups' => [
+            'max_depth' => 5,
+            'max_delay_seconds' => 86400,
+            'max_per_run' => 10,
+        ],
         'sandbox_run_token_ttl_seconds' => 3600,
         'sandbox_internal_base_url' => env('SANDBOX_INTERNAL_BASE_URL', 'http://app'),
         'default_sandbox_image' => env('AGENT_TASK_SANDBOX_IMAGE', 'spodial-agent-python:latest'),

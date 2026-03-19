@@ -137,6 +137,19 @@ class ChannelBus
         $message->update(['content' => $content]);
     }
 
+    public function appendAssistantMessage(
+        ChannelConversation $conversation,
+        string $content,
+        array $attributes = []
+    ): ChannelMessage {
+        return $this->createMessage(
+            $conversation,
+            'assistant',
+            $content,
+            $attributes,
+        );
+    }
+
     public function claimTelegramPendingBatch(int $chatId, ?int $messageThreadId = null): ?array
     {
         $conversation = $this->forTelegram($chatId, $messageThreadId);

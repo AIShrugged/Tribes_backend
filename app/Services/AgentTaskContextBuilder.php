@@ -14,10 +14,11 @@ class AgentTaskContextBuilder
 
     public function build(AgentTask $task): array
     {
-        $task->loadMissing('profile');
+        $task->loadMissing('profile', 'parentTask');
 
         $profile = $task->profile;
         $memories = $this->resolveMemories($task);
+        $followupContext = $this->buildFollowupContext($task);
 
         $profilePrompt = trim((string) ($profile?->system_prompt ?? ''));
         $memoryPrompt = $this->renderMemoryPrompt($memories);
@@ -50,6 +51,26 @@ class AgentTaskContextBuilder
             'execution_mode' => $task->effectiveExecutionMode()->value,
             'sandbox_profile' => $task->effectiveSandboxProfile(),
             'input_payload' => $task->input_payload ?? [],
+            'followup_policy' => [
+                'max_depth' => (int) config('agent.agent_tasks.followups.max_depth', 5),
+                'max_per_run' => (int) config('agent.agent_tasks.followups.max_per_run', 10),
+                'max_delay_seconds' => (int) config('agent.agent_tasks.followups.max_delay_seconds', 86400),
+                'prefer_small_bounded_tasks' => true,
+                'preferred_outcomes' => [
+                    'complete one concrete deliverable inside the current run',
+                    'create a narrow follow-up task when the next step is separate, delayed, or would bloat context',
+                    'handoff reminders, PR creation, and deferred external actions as separate follow-up tasks when appropriate',
+                ],
+            ],
+            'task_lineage' => [
+                'task_id' => $task->id,
+                'organization_id' => $task->organization_id,
+                'team_id' => $task->team_id,
+                'parent_task_id' => $task->parent_agent_task_id,
+                'origin_run_id' => $task->origin_agent_task_run_id,
+                'followup_depth' => (int) ($task->followup_depth ?? 0),
+                'inherited_context_summary' => $followupContext['context_summary'],
+            ],
         ];
     }
 
@@ -109,6 +130,20 @@ class AgentTaskContextBuilder
         }
 
         return "## Task Payload\n\n```json\n".json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n```";
+    }
+
+    private function buildFollowupContext(AgentTask $task): array
+    {
+        $metadata = $task->metadata ?? [];
+        $followupMetadata = is_array($metadata['followup'] ?? null) ? $metadata['followup'] : [];
+        $contextSummary = trim((string) ($followupMetadata['context_summary'] ?? ''));
+
+        return [
+            'context_summary' => $contextSummary !== '' ? $contextSummary : null,
+            'created_from_task_id' => $followupMetadata['created_from_task_id'] ?? $task->parent_agent_task_id,
+            'created_from_run_id' => $followupMetadata['created_from_run_id'] ?? $task->origin_agent_task_run_id,
+            'parent_task_name' => $task->parentTask?->name,
+        ];
     }
 
     private function deduplicateMemories(Collection $memories): Collection

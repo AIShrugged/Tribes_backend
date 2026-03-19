@@ -4,9 +4,14 @@ namespace App\Services\Channel\Delivery;
 
 use App\Enums\ConversationChannelType;
 use App\Models\ChannelMessage;
+use App\Services\Channel\ChannelBus;
 
 class WebChatDelivery implements ChannelDeliveryInterface
 {
+    public function __construct(
+        private readonly ChannelBus $channelBus,
+    ) {}
+
     public function channelType(): ConversationChannelType
     {
         return ConversationChannelType::WEB_CHAT;
@@ -15,7 +20,11 @@ class WebChatDelivery implements ChannelDeliveryInterface
     public function deliver(ChannelDeliveryRequest $request): ?ChannelMessage
     {
         if (! $request->targetMessage) {
-            return null;
+            return $this->channelBus->appendAssistantMessage(
+                $request->conversation,
+                $request->content,
+                $request->attributes,
+            );
         }
 
         $request->targetMessage->markCompleted([

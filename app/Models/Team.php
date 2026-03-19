@@ -67,6 +67,11 @@ class Team extends Model
         return $this->hasMany(Invite::class);
     }
 
+    public function workspaces(): HasMany
+    {
+        return $this->hasMany(Workspace::class);
+    }
+
     public function getEmployeeCountAttribute(): int
     {
         return $this->users->count();

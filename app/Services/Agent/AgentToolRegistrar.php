@@ -3,8 +3,11 @@
 namespace App\Services\Agent;
 
 use App\Models\Chat;
+use App\Models\AgentTask;
+use App\Models\AgentTaskRun;
 use App\Models\User;
 use App\Services\Agent\Tools\CreateArtifactTool;
+use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
 use App\Services\Agent\Tools\CreateTaskTool;
 use App\Services\Agent\Tools\GitHubDownloadArchiveTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
@@ -28,12 +31,27 @@ use App\Services\Agent\Tools\GetUserGeneralMessagesTool;
 use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
 use App\Services\Agent\Tools\SearchAgentMemoriesTool;
 use App\Services\Agent\Tools\SearchMeetingsTool;
+use App\Services\Agent\Tools\ListWorkspacesTool;
+use App\Services\Agent\Tools\ListWorkspaceFilesTool;
+use App\Services\Agent\Tools\ReadWorkspaceFileTool;
+use App\Services\Agent\Tools\SearchWorkspaceFilesTool;
+use App\Services\Agent\Tools\SendUserMessageTool;
+use App\Services\Agent\Tools\WriteWorkspaceFileTool;
+use App\Services\Agent\Tools\DeleteWorkspaceFileTool;
+use App\Services\Agent\Tools\CopyWorkspaceFileTool;
+use App\Services\Agent\Tools\CreateWorkspaceDirectoryTool;
+use App\Services\Agent\Tools\MoveWorkspaceFileTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Agent\Tools\UpdateMemoryTool;
 use App\Services\Agent\Tools\UpdateTaskStatusTool;
 use App\Services\AgentMemoryLookupService;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\GitHub\GitHubApiClient;
+use App\Services\AgentTaskFollowupService;
+use App\Services\Workspace\WorkspaceAccessService;
+use App\Services\Workspace\WorkspaceService;
+use App\Services\Channel\ChannelRuntimeService;
+use App\Services\Channel\UserChannelTargetResolver;
 use Illuminate\Support\Facades\Auth;
 
 class AgentToolRegistrar
@@ -42,6 +60,11 @@ class AgentToolRegistrar
         private readonly ArtifactStateService $artifactStateService,
         private readonly AgentMemoryLookupService $agentMemoryLookupService,
         private readonly GitHubApiClient $gitHubApiClient,
+        private readonly AgentTaskFollowupService $agentTaskFollowupService,
+        private readonly WorkspaceAccessService $workspaceAccessService,
+        private readonly WorkspaceService $workspaceService,
+        private readonly UserChannelTargetResolver $userChannelTargetResolver,
+        private readonly ChannelRuntimeService $channelRuntimeService,
     ) {}
 
     public function registerDefaults(
@@ -50,6 +73,8 @@ class AgentToolRegistrar
         ?string $channel,
         ?string $sandboxWorkspacePath = null,
         bool $preserveSandboxDependencies = false,
+        ?int $organizationId = null,
+        ?int $teamId = null,
     ): void
     {
         Auth::setUser($user);
@@ -74,6 +99,16 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetTranscriptTool);
         $toolRegistry->register(new ExecuteSqlQueryTool($user->id));
         $toolRegistry->register(new SearchAgentMemoriesTool($user, $this->agentMemoryLookupService));
+        $toolRegistry->register(new SendUserMessageTool($user, $this->userChannelTargetResolver, $this->channelRuntimeService));
+        $toolRegistry->register(new ListWorkspacesTool($user, $this->workspaceAccessService, $organizationId, $teamId));
+        $toolRegistry->register(new ListWorkspaceFilesTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new ReadWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new SearchWorkspaceFilesTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new CreateWorkspaceDirectoryTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new WriteWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new DeleteWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new CopyWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
+        $toolRegistry->register(new MoveWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
         $toolRegistry->register(new GitHubGetBranchTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetRepositoryTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetTreeTool($this->gitHubApiClient));
@@ -91,5 +126,18 @@ class AgentToolRegistrar
     public function registerChatTools(ToolRegistry $toolRegistry, Chat $chat): void
     {
         $toolRegistry->register(new CreateArtifactTool($chat, $this->artifactStateService));
+    }
+
+    public function registerAgentTaskTools(ToolRegistry $toolRegistry, AgentTask $task, ?AgentTaskRun $run = null): void
+    {
+        if ($run === null) {
+            return;
+        }
+
+        $toolRegistry->register(new CreateFollowupAgentTaskTool(
+            $task,
+            $run,
+            $this->agentTaskFollowupService,
+        ));
     }
 }

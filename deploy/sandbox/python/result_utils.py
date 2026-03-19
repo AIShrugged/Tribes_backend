@@ -22,6 +22,32 @@ def compact_json(value: Any) -> str | None:
         return None
 
 
+def normalize_plan_items(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    normalized: list[str] = []
+    for item in items:
+        if isinstance(item, str) and item.strip() != "" and item.strip() not in normalized:
+            normalized.append(item.strip())
+    return normalized
+
+
+def normalize_handoff(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    for key in ["reason", "target", "context_summary", "status"]:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip() != "":
+            normalized[key] = value.strip()
+    followup_task_id = item.get("followup_task_id")
+    if isinstance(followup_task_id, int):
+        normalized["followup_task_id"] = followup_task_id
+    elif isinstance(followup_task_id, str) and followup_task_id.strip().isdigit():
+        normalized["followup_task_id"] = int(followup_task_id.strip())
+    return normalized or None
+
+
 def normalize_action_item(state: SandboxRuntimeState, item: Any) -> dict[str, Any] | None:
     if isinstance(item, str):
         cleaned = item.strip()
@@ -161,6 +187,8 @@ def build_fallback_result(
         "findings": merged_findings,
         "artifacts": merged_artifacts,
         "memory_candidates": memory_candidates or [],
+        "plan": [],
+        "handoff": None,
     }
 
 
@@ -559,6 +587,8 @@ def normalize_final_content(state: SandboxRuntimeState, content: str) -> dict[st
     findings = parsed.get("findings")
     artifacts = parsed.get("artifacts")
     memory_candidates = parsed.get("memory_candidates")
+    plan = parsed.get("plan")
+    handoff = parsed.get("handoff")
 
     if not isinstance(output, str):
         output = next((
@@ -615,6 +645,8 @@ def normalize_final_content(state: SandboxRuntimeState, content: str) -> dict[st
     if not isinstance(artifacts, list):
         artifacts = []
     merged_artifacts = [item for item in (normalize_artifact_item(artifact) for artifact in artifacts) if item is not None]
+    normalized_plan = normalize_plan_items(plan)
+    normalized_handoff = normalize_handoff(handoff)
 
     if blocker is not None and (not isinstance(blocker, str) or blocker.strip() == ""):
         blocker = None
@@ -687,6 +719,8 @@ def normalize_final_content(state: SandboxRuntimeState, content: str) -> dict[st
         "findings": merged_findings,
         "artifacts": merged_artifacts,
         "memory_candidates": memory_candidates,
+        "plan": normalized_plan,
+        "handoff": normalized_handoff,
     }
 
 
@@ -701,15 +735,17 @@ Your only job is to convert the provided agent output into a valid JSON object w
 - findings: array
 - artifacts: array
 - memory_candidates: array
+- plan: array
+- handoff: object or null
 
 Rules:
 - Return JSON only. No markdown. No explanations.
 - Preserve factual content from the original response.
 - Do not invent new facts.
-- Always return all seven top-level fields, even if some are empty.
+- Always return all nine top-level fields, even if some are empty.
 """
     repair_messages = [{"role": "user", "content": f"Normalize this agent output into the required JSON object:\n\n{raw_content}"}]
-    prompts = [repair_prompt, repair_prompt + '\nReturn exactly {"output":"...","summary":"...","blocker":null,"actions":[],"findings":[],"artifacts":[],"memory_candidates":[]}']
+    prompts = [repair_prompt, repair_prompt + '\nReturn exactly {"output":"...","summary":"...","blocker":null,"actions":[],"findings":[],"artifacts":[],"memory_candidates":[],"plan":[],"handoff":null}']
     last_error: Exception | None = None
     for prompt in prompts:
         repaired_message = call_llm(gateway, repair_messages, prompt, max_tokens=1600, include_tools=False, extra_tools=[])

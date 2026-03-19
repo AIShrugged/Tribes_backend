@@ -39,14 +39,39 @@ class AgentTask extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
     public function profile(): BelongsTo
     {
         return $this->belongsTo(AgentProfile::class, 'agent_profile_id');
     }
 
+    public function parentTask(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_agent_task_id');
+    }
+
+    public function originRun(): BelongsTo
+    {
+        return $this->belongsTo(AgentTaskRun::class, 'origin_agent_task_run_id');
+    }
+
     public function runs(): HasMany
     {
         return $this->hasMany(AgentTaskRun::class);
+    }
+
+    public function followupTasks(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_agent_task_id');
     }
 
     public function latestRun(): HasOne

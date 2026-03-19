@@ -32,6 +32,7 @@ use App\Http\Controllers\API\v1\DashboardController;
 use App\Http\Controllers\API\v1\DemoController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\UserController;
+use App\Http\Controllers\API\v1\WorkspaceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -145,6 +146,14 @@ Route::group(['prefix' => 'v1'], function () {
         Route::delete('teams/{team}/invites/{invite}', [TeamInviteController::class, 'destroy']);
 
         Route::apiResource('organizations', OrganizationController::class);
+        Route::apiResource('workspaces', WorkspaceController::class);
+        Route::get('workspaces/{workspace}/contents', [WorkspaceController::class, 'contents']);
+        Route::get('workspaces/{workspace}/file', [WorkspaceController::class, 'readFile']);
+        Route::put('workspaces/{workspace}/file', [WorkspaceController::class, 'writeFile']);
+        Route::delete('workspaces/{workspace}/file', [WorkspaceController::class, 'deleteFile']);
+        Route::post('workspaces/{workspace}/directories', [WorkspaceController::class, 'createDirectory']);
+        Route::post('workspaces/{workspace}/permissions', [WorkspaceController::class, 'storePermission']);
+        Route::delete('workspaces/{workspace}/permissions/{workspacePermission}', [WorkspaceController::class, 'destroyPermission']);
 
         Route::get('organizations/{organization}/methodologies', [MethodologyController::class, 'index']);
         Route::apiResource('methodologies', MethodologyController::class)

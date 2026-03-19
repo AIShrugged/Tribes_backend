@@ -9,12 +9,17 @@ use App\Jobs\SendEmailJob;
 use App\Models\Invite;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Workspace\WorkspaceBootstrapService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 
 class TeamInvitationService
 {
+    public function __construct(
+        private readonly WorkspaceBootstrapService $workspaceBootstrapService,
+    ) {}
+
     /**
      * Create a new team invitation.
      */
@@ -85,6 +90,10 @@ class TeamInvitationService
         if (!$user->belongsToTeam($invite->team_id)) {
             $invite->team->users()->attach($user->id);
         }
+
+        $this->workspaceBootstrapService->ensureOrganizationDefaults($invite->organization);
+        $this->workspaceBootstrapService->ensureTeamDefaults($invite->team);
+        $this->workspaceBootstrapService->ensureUserTeamWorkspace($user, $invite->team);
 
         $invite->markAsAccepted();
     }

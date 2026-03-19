@@ -10,10 +10,15 @@ use App\Http\Resources\API\v1\TeamResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
 use App\Models\Team;
+use App\Services\Workspace\WorkspaceBootstrapService;
 use Illuminate\Support\Facades\Gate;
 
 class TeamController extends Controller
 {
+    public function __construct(
+        private readonly WorkspaceBootstrapService $workspaceBootstrapService,
+    ) {}
+
     /**
      * List teams
      *
@@ -61,6 +66,7 @@ class TeamController extends Controller
         $organization = Organization::findOrFail($request->getOrganizationId());
 
         $team = $organization->teams()->create($request->getStoreData());
+        $this->workspaceBootstrapService->ensureTeamDefaults($team);
 
         return ApiResponse::success(data: TeamResource::make($team));
     }
