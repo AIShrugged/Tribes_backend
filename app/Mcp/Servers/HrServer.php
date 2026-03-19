@@ -14,6 +14,8 @@ use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetCurrentUserTool;
 use App\Services\Agent\Tools\GetUserInfoTool;
 use App\Services\Agent\Tools\GetUserInsightsTool;
+use App\Services\Agent\Tools\GetUserDirectMessagesTool;
+use App\Services\Agent\Tools\GetUserGeneralMessagesTool;
 use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
 use App\Services\Agent\Tools\SearchMeetingsTool;
 use App\Services\Agent\Tools\UpdateTaskStatusTool;
@@ -31,6 +33,8 @@ class HrServer extends Server
         GetCurrentUserTool::class,
         GetUserInfoTool::class,
         GetUserInsightsTool::class,
+        GetUserDirectMessagesTool::class,
+        GetUserGeneralMessagesTool::class,
         GetUserShortTermMemoryTool::class,
         GetExtractedFactsTool::class,
         GetInsightProfileHistoryTool::class,

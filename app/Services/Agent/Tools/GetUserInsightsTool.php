@@ -42,7 +42,7 @@ class GetUserInsightsTool extends AbstractAgentTool
         $parameters = $parameters ?? [];
 
         $userId    = $parameters['user_id'] ?? null;
-        $email     = $parameters['email'] ?? null;
+        $email     = $this->normalizeEmailInput($parameters['email'] ?? null);
         $profileId = $parameters['profile_id'] ?? null;
 
         if (! $userId && ! $email && ! $profileId) {
@@ -63,7 +63,7 @@ class GetUserInsightsTool extends AbstractAgentTool
             if ($userId) {
                 $user = User::find($userId);
             } else {
-                $user = User::where('email', $email)->first();
+                $user = User::whereRaw("replace(lower(trim(email)), ' ', '') = ?", [$email])->first();
             }
 
             if (! $user) {
@@ -108,5 +108,17 @@ class GetUserInsightsTool extends AbstractAgentTool
         }
 
         return $profile;
+    }
+
+    private function normalizeEmailInput(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $normalized = mb_strtolower(trim($value));
+        $normalized = preg_replace('/\s+/', '', $normalized) ?? $normalized;
+
+        return $normalized !== '' ? $normalized : null;
     }
 }

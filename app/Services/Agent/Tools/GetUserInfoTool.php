@@ -8,6 +8,8 @@ use App\Models\User;
 
 class GetUserInfoTool extends AbstractAgentTool
 {
+    private const NAME_NORMALIZATION_SQL = "regexp_replace(replace(lower(name), 'ё', 'е'), '\\s+', ' ', 'g')";
+
     public function getName(): string
     {
         return 'get_user_info';
@@ -29,11 +31,11 @@ class GetUserInfoTool extends AbstractAgentTool
                 ],
                 'email' => [
                     'type' => 'string',
-                    'description' => 'The email of the user (exact match)',
+                    'description' => 'The email of the user. Case and spaces are ignored.',
                 ],
                 'name' => [
                     'type' => 'string',
-                    'description' => 'Full or partial name of the user (case-insensitive, partial match). May return multiple users if name is not unique.',
+                    'description' => 'Full or partial name of the user. Case, repeated spaces, and е/ё differences are ignored. May return multiple users if name is not unique.',
                 ],
             ],
             'required' => [],
@@ -45,8 +47,8 @@ class GetUserInfoTool extends AbstractAgentTool
         $parameters = $parameters ?? [];
 
         $userId = $parameters['user_id'] ?? null;
-        $email  = $parameters['email'] ?? null;
-        $name   = $parameters['name'] ?? null;
+        $email  = $this->normalizeEmailInput($parameters['email'] ?? null);
+        $name   = $this->normalizeLooseText($parameters['name'] ?? null);
 
         if (!$userId && !$email && !$name) {
             return [
@@ -67,18 +69,34 @@ class GetUserInfoTool extends AbstractAgentTool
         }
 
         if ($email) {
-            $user = $query->whereRaw('LOWER(email) = ?', [strtolower(trim($email))])->first();
+            $user = $query
+                ->whereRaw("replace(lower(trim(email)), ' ', '') = ?", [$email])
+                ->first();
+
+            if (! $user) {
+                $localPart = explode('@', $email)[0] ?? $email;
+                $user = (clone $query)
+                    ->whereRaw("replace(lower(trim(email)), ' ', '') LIKE ?", ["{$localPart}%"])
+                    ->first();
+            }
 
             return $user
                 ? ['success' => true, 'user' => $this->formatUser($user)]
                 : ['success' => false, 'error' => 'User not found'];
         }
 
-        // Name search — try users first.
-        // Use PostgreSQL word-boundary regex (\y) to avoid patronymic false positives
-        // e.g. "Константин" must NOT match "Сафонов Глеб Константинович".
         $escaped = preg_quote($name, '/');
-        $users = $query->whereRaw('name ~* ?', ['\\y' . $escaped . '\\y'])->limit(10)->get();
+        $users = (clone $query)
+            ->whereRaw(self::NAME_NORMALIZATION_SQL." ~* ?", ['\\m' . $escaped . '\\M'])
+            ->limit(10)
+            ->get();
+
+        if ($users->isEmpty()) {
+            $users = (clone $query)
+                ->whereRaw(self::NAME_NORMALIZATION_SQL.' LIKE ?', ['%'.$name.'%'])
+                ->limit(10)
+                ->get();
+        }
 
         if ($users->isNotEmpty()) {
             if ($users->count() === 1) {
@@ -98,7 +116,10 @@ class GetUserInfoTool extends AbstractAgentTool
         }
 
         // Fallback: search participants by name → resolve profiles
-        $profileIds = Participant::where('name', 'ilike', '%' . $name . '%')
+        $profileIds = Participant::whereRaw(
+            "regexp_replace(replace(lower(name), 'ё', 'е'), '\\s+', ' ', 'g') LIKE ?",
+            ['%'.$name.'%']
+        )
             ->whereNotNull('profile_id')
             ->pluck('profile_id')
             ->unique()
@@ -177,5 +198,30 @@ class GetUserInfoTool extends AbstractAgentTool
                 'name' => $team->name,
             ])->toArray(),
         ];
+    }
+
+    private function normalizeEmailInput(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $normalized = mb_strtolower(trim($value));
+        $normalized = preg_replace('/\s+/', '', $normalized) ?? $normalized;
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function normalizeLooseText(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $normalized = trim($value);
+        $normalized = preg_replace('/\s+/u', ' ', $normalized) ?? $normalized;
+        $normalized = str_replace('ё', 'е', mb_strtolower($normalized));
+
+        return $normalized !== '' ? $normalized : null;
     }
 }

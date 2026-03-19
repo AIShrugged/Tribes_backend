@@ -23,6 +23,8 @@ use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetUserInfoTool;
 use App\Services\Agent\Tools\GetUserInsightsTool;
+use App\Services\Agent\Tools\GetUserDirectMessagesTool;
+use App\Services\Agent\Tools\GetUserGeneralMessagesTool;
 use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
 use App\Services\Agent\Tools\SearchAgentMemoriesTool;
 use App\Services\Agent\Tools\SearchMeetingsTool;
@@ -56,6 +58,8 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetCurrentUserTool($user));
         $toolRegistry->register(new GetUserInfoTool);
         $toolRegistry->register(new SearchMeetingsTool);
+        $toolRegistry->register(new GetUserDirectMessagesTool);
+        $toolRegistry->register(new GetUserGeneralMessagesTool);
         $toolRegistry->register(new GetMeetingSummaryTool);
         $toolRegistry->register(new GetMeetingTasksTool);
         $toolRegistry->register(new CreateTaskTool);
