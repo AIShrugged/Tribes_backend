@@ -529,6 +529,111 @@ class SandboxToolGatewayControllerTest extends TestCase
             ->assertJsonPath('data.result.error', 'Workspace not found or access denied');
     }
 
+    #[Test]
+    public function it_creates_a_private_workspace_within_the_task_scope(): void
+    {
+        [$user, $workspace, $organization, $team] = $this->createWorkspaceContextWithScope();
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Create scoped workspace task',
+            'prompt' => 'Create a workspace',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['create_workspace', 'list_workspaces'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $response = $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'create_workspace',
+            'arguments' => [
+                'name' => 'Agent Scratchpad',
+                'scope_type' => 'user_team_private',
+                'metadata' => json_encode(['created_by' => 'agent']),
+            ],
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true)
+            ->assertJsonPath('data.result.workspace.name', 'Agent Scratchpad')
+            ->assertJsonPath('data.result.workspace.organization_id', $organization->id)
+            ->assertJsonPath('data.result.workspace.team_id', $team->id)
+            ->assertJsonPath('data.result.workspace.owner_user_id', $user->id)
+            ->assertJsonPath('data.result.workspace.scope_type', 'user_team_private');
+
+        $workspaceId = $response->json('data.result.workspace.id');
+
+        $this->assertDatabaseHas('workspaces', [
+            'id' => $workspaceId,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'owner_user_id' => $user->id,
+            'scope_type' => 'user_team_private',
+            'name' => 'Agent Scratchpad',
+        ]);
+    }
+
+    #[Test]
+    public function it_rejects_workspace_creation_outside_the_task_scope(): void
+    {
+        [$user, $workspace, $organization, $team] = $this->createWorkspaceContextWithScope();
+
+        $otherTeam = Team::create([
+            'organization_id' => $organization->id,
+            'methodology_id' => $team->methodology_id,
+            'name' => 'Other Scoped Team',
+            'slug' => 'other-scoped-team',
+        ]);
+        $otherTeam->users()->attach($user->id);
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Reject create workspace task',
+            'prompt' => 'Create a workspace in a different team',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['create_workspace'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'create_workspace',
+            'arguments' => [
+                'name' => 'Cross Team Workspace',
+                'scope_type' => 'user_team_private',
+                'organization_id' => $organization->id,
+                'team_id' => $otherTeam->id,
+            ],
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', false)
+            ->assertJsonPath('data.result.error', 'Workspace validation failed.')
+            ->assertJsonPath('data.result.details.team_id.0', 'Workspace creation is restricted to the current team scope.');
+    }
+
     private function createWorkspaceContext(bool $grantWrite = true): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()

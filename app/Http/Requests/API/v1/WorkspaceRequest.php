@@ -17,7 +17,7 @@ class WorkspaceRequest extends ApiResourceRequest
             'owner_user_id' => ['nullable', 'integer', 'exists:users,id'],
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['nullable', 'string', 'max:255'],
-            'scope_type' => ['required', 'string', 'in:org_shared,team_shared,user_private,user_team_private'],
+            'scope_type' => ['required', 'string', 'in:org_shared,team_shared,user_private,user_team_private,personal_shared'],
             'metadata' => ['nullable', 'array'],
         ];
     }

@@ -94,6 +94,7 @@ class TeamInvitationService
         $this->workspaceBootstrapService->ensureOrganizationDefaults($invite->organization);
         $this->workspaceBootstrapService->ensureTeamDefaults($invite->team);
         $this->workspaceBootstrapService->ensureUserTeamWorkspace($user, $invite->team);
+        $this->workspaceBootstrapService->ensureUserPersonalSharedWorkspace($user, $invite->team);
 
         $invite->markAsAccepted();
     }

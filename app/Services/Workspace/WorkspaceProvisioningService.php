@@ -134,7 +134,7 @@ class WorkspaceProvisioningService
             throw new \RuntimeException('Workspace owner must be a member of the selected organization.');
         }
 
-        if ($owner === null && str_starts_with((string) $attributes['scope_type'], 'user_')) {
+        if ($owner === null && (str_starts_with((string) $attributes['scope_type'], 'user_') || (string) $attributes['scope_type'] === 'personal_shared')) {
             $owner = $actor;
         }
 
@@ -155,11 +155,23 @@ class WorkspaceProvisioningService
             throw new \RuntimeException('Only organization managers can create shared workspaces.');
         }
 
-        if (in_array($scopeType, ['user_private', 'user_team_private'], true) && $owner !== null && (int) $owner->id !== (int) $actor->id && ! $actor->isOrganizationManager($organization)) {
+        if (in_array($scopeType, ['user_private', 'user_team_private', 'personal_shared'], true) && $owner !== null && (int) $owner->id !== (int) $actor->id && ! $actor->isOrganizationManager($organization)) {
             throw new \RuntimeException('Only organization managers can create private workspaces for other users.');
         }
 
         if ($scopeType === 'user_team_private' && $team !== null && $owner !== null && ! $owner->isTeamMember($team)) {
+            throw ValidationException::withMessages([
+                'owner_user_id' => ['Workspace owner must be a member of the selected team.'],
+            ]);
+        }
+
+        if ($scopeType === 'personal_shared' && $owner === null) {
+            throw ValidationException::withMessages([
+                'owner_user_id' => ['personal_shared workspaces require an owner.'],
+            ]);
+        }
+
+        if ($scopeType === 'personal_shared' && $team !== null && $owner !== null && ! $owner->isTeamMember($team)) {
             throw ValidationException::withMessages([
                 'owner_user_id' => ['Workspace owner must be a member of the selected team.'],
             ]);
@@ -193,6 +205,13 @@ class WorkspaceProvisioningService
 
         if ($scopeType === 'team_shared') {
             $segments[] = 'shared';
+            $segments[] = $slug;
+
+            return implode('/', $segments);
+        }
+
+        if ($scopeType === 'personal_shared') {
+            $segments[] = 'personal-shared';
             $segments[] = $slug;
 
             return implode('/', $segments);
