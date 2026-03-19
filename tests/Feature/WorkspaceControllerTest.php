@@ -192,6 +192,30 @@ class WorkspaceControllerTest extends TestCase
     }
 
     #[Test]
+    public function employee_can_create_personal_shared_workspace_for_self(): void
+    {
+        Sanctum::actingAs($this->employee);
+
+        $response = $this->postJson('/api/v1/workspaces', [
+            'organization_id' => $this->organization->id,
+            'team_id' => $this->team->id,
+            'name' => 'Daily Changelog',
+            'scope_type' => 'personal_shared',
+        ])->assertStatus(200);
+
+        $workspaceId = $response->json('data.id');
+
+        $this->assertDatabaseHas('workspaces', [
+            'id' => $workspaceId,
+            'organization_id' => $this->organization->id,
+            'team_id' => $this->team->id,
+            'owner_user_id' => $this->employee->id,
+            'scope_type' => 'personal_shared',
+            'name' => 'Daily Changelog',
+        ]);
+    }
+
+    #[Test]
     public function accepting_invite_bootstraps_user_team_workspace(): void
     {
         $invited = User::factory()->create(['email' => 'invited@example.com']);
@@ -224,6 +248,22 @@ class WorkspaceControllerTest extends TestCase
         $this->assertNotNull($userWorkspace);
         $this->assertDatabaseHas('workspace_permissions', [
             'workspace_id' => $userWorkspace->id,
+            'principal_type' => 'user',
+            'principal_id' => (string) $invited->id,
+            'can_write' => true,
+            'can_execute' => true,
+        ]);
+
+        $personalSharedWorkspace = Workspace::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('team_id', $this->team->id)
+            ->where('owner_user_id', $invited->id)
+            ->where('scope_type', 'personal_shared')
+            ->first();
+
+        $this->assertNotNull($personalSharedWorkspace);
+        $this->assertDatabaseHas('workspace_permissions', [
+            'workspace_id' => $personalSharedWorkspace->id,
             'principal_type' => 'user',
             'principal_id' => (string) $invited->id,
             'can_write' => true,

@@ -16,7 +16,7 @@ class WorkspaceAccessServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_sees_owned_org_shared_team_shared_and_explicitly_granted_workspaces(): void
+    public function test_user_sees_owned_org_shared_team_shared_personal_shared_and_explicitly_granted_workspaces(): void
     {
         $user = User::factory()->create();
         $organization = Organization::create(['name' => 'Acme', 'slug' => 'acme']);
@@ -68,6 +68,17 @@ class WorkspaceAccessServiceTest extends TestCase
             'storage_disk' => 'local',
         ]);
 
+        $personalShared = Workspace::create([
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'owner_user_id' => User::factory()->create()->id,
+            'name' => 'Alice Shared',
+            'slug' => 'alice-shared',
+            'scope_type' => 'personal_shared',
+            'root_prefix' => 'workspaces/orgs/acme/teams/core/personal-shared/alice-shared',
+            'storage_disk' => 'local',
+        ]);
+
         WorkspacePermission::create([
             'workspace_id' => $granted->id,
             'principal_type' => 'user',
@@ -79,13 +90,15 @@ class WorkspaceAccessServiceTest extends TestCase
         $service = app(WorkspaceAccessService::class);
         $manifest = $service->manifestForUser($user);
 
-        $this->assertCount(4, $manifest);
+        $this->assertCount(5, $manifest);
         $this->assertSame(
-            [$granted->id, $owned->id, $orgShared->id, $teamShared->id],
+            collect([$granted->id, $owned->id, $orgShared->id, $personalShared->id, $teamShared->id])->sort()->values()->all(),
             $manifest->pluck('id')->sort()->values()->all()
         );
         $this->assertTrue((bool) $manifest->firstWhere('id', $owned->id)['permissions']['write']);
         $this->assertTrue((bool) $manifest->firstWhere('id', $orgShared->id)['permissions']['read']);
         $this->assertFalse((bool) $manifest->firstWhere('id', $orgShared->id)['permissions']['write']);
+        $this->assertTrue((bool) $manifest->firstWhere('id', $personalShared->id)['permissions']['read']);
+        $this->assertFalse((bool) $manifest->firstWhere('id', $personalShared->id)['permissions']['write']);
     }
 }

@@ -31,5 +31,9 @@ class WorkspaceProvisioningServiceTest extends TestCase
             'workspaces/orgs/10/teams/20/users/alice-space',
             $method->invoke($service, $organization, $team, 'user_team_private', 'alice-space')
         );
+        $this->assertSame(
+            'workspaces/orgs/10/teams/20/personal-shared/alice-shared',
+            $method->invoke($service, $organization, $team, 'personal_shared', 'alice-shared')
+        );
     }
 }

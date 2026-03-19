@@ -1,0 +1,112 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  php-and-python-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare environment file
+        run: |
+          cp .env.example .env
+          cat <<'EOF' >> .env
+          APP_ENV=testing
+          APP_DEBUG=true
+          APP_URL=http://localhost
+          APP_KEY=
+          DB_CONNECTION=pgsql
+          DB_HOST=postgres
+          DB_PORT=5432
+          DB_DATABASE=spodial_test
+          DB_USERNAME=spodial
+          DB_PASSWORD=spodial
+          CACHE_STORE=array
+          SESSION_DRIVER=array
+          QUEUE_CONNECTION=sync
+          TELESCOPE_ENABLED=false
+          WORKSPACE_FILESYSTEM_DISK=local
+          EOF
+
+      - name: Start database
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U spodial -d spodial_test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-backend-${{ hashFiles('Dockerfile', 'composer.lock', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-backend-
+
+      - name: Build cached backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: spodial-backend-ci:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Move Docker layer cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Create CI compose override
+        run: |
+          cat <<'EOF' > docker-compose.ci.yml
+          services:
+            backend:
+              image: spodial-backend-ci:latest
+          EOF
+
+      - name: Generate application key
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm backend php artisan key:generate --force
+
+      - name: Run Laravel test suite
+        run: >
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm
+          -e AGENT_TASK_SANDBOX_HOST_RUNS_ROOT=/tmp/sandbox-runs
+          backend php artisan test
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run sandbox Python unit tests
+        run: python -m unittest deploy/sandbox/python/test_result_utils.py deploy/sandbox/python/test_runner_finalization.py
+
+      - name: Show docker logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Tear down containers
+        if: always()
+        run: docker compose down -v

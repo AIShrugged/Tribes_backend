@@ -100,6 +100,40 @@ class WorkspaceBootstrapService
         });
     }
 
+    public function ensureUserPersonalSharedWorkspace(User $user, Team $team): Workspace
+    {
+        return DB::transaction(function () use ($user, $team): Workspace {
+            $workspace = Workspace::query()->firstOrCreate(
+                [
+                    'organization_id' => $team->organization_id,
+                    'team_id' => $team->id,
+                    'owner_user_id' => $user->id,
+                    'scope_type' => 'personal_shared',
+                ],
+                [
+                    'name' => $user->name !== null && trim($user->name) !== '' ? "{$user->name} Shared" : 'Personal Shared',
+                    'slug' => 'personal-shared-user-'.$user->id,
+                    'root_prefix' => 'workspaces/orgs/'.$team->organization_id.'/teams/'.$team->id.'/personal-shared/personal-shared-user-'.$user->id,
+                    'storage_disk' => config('workspaces.disk', 's3'),
+                    'status' => 'active',
+                ]
+            );
+
+            $this->workspaceProvisioningService->grantOrUpdatePermission($workspace, 'user', (string) $user->id, [
+                'can_list' => true,
+                'can_read' => true,
+                'can_write' => true,
+                'can_delete' => true,
+                'can_execute' => true,
+                'can_admin' => true,
+            ]);
+
+            $this->ensurePlaceholder($workspace);
+
+            return $workspace;
+        });
+    }
+
     private function ensurePlaceholder(Workspace $workspace): void
     {
         $placeholderPath = '.workspace/.keep';

@@ -103,6 +103,16 @@ class WorkspaceAccessService
             $abilities['read'] = true;
         }
 
+        if ($workspace->scope_type === 'personal_shared' && (int) $workspace->owner_user_id !== (int) $user->id) {
+            if ($workspace->team_id !== null && $user->isTeamMember($workspace->team_id)) {
+                $abilities['list'] = true;
+                $abilities['read'] = true;
+            } elseif ($workspace->team_id === null && $user->isOrganizationMember($workspace->organization_id)) {
+                $abilities['list'] = true;
+                $abilities['read'] = true;
+            }
+        }
+
         $teamIds = $user->teams()->pluck('teams.id')->map(fn ($id) => (string) $id)->all();
 
         $permissions = $workspace->permissions()
@@ -162,6 +172,19 @@ class WorkspaceAccessService
                     $query->orWhere(function ($sub) use ($teamIds): void {
                         $sub->where('scope_type', 'team_shared')
                             ->whereIn('team_id', $teamIds);
+                    });
+
+                    $query->orWhere(function ($sub) use ($teamIds): void {
+                        $sub->where('scope_type', 'personal_shared')
+                            ->whereIn('team_id', $teamIds);
+                    });
+                }
+
+                if ($organizationIds !== []) {
+                    $query->orWhere(function ($sub) use ($organizationIds): void {
+                        $sub->where('scope_type', 'personal_shared')
+                            ->whereNull('team_id')
+                            ->whereIn('organization_id', $organizationIds);
                     });
                 }
 
@@ -224,6 +247,6 @@ class WorkspaceAccessService
             return true;
         }
 
-        return $workspace->scope_type === 'org_shared' && $workspace->team_id === null;
+        return in_array($workspace->scope_type, ['org_shared', 'personal_shared'], true) && $workspace->team_id === null;
     }
 }

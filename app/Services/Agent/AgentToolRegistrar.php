@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Agent\Tools\CreateArtifactTool;
 use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
 use App\Services\Agent\Tools\CreateTaskTool;
+use App\Services\Agent\Tools\CreateWorkspaceTool;
 use App\Services\Agent\Tools\GitHubDownloadArchiveTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\GitHubGetBranchTool;
@@ -49,6 +50,7 @@ use App\Services\Artifact\ArtifactStateService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\AgentTaskFollowupService;
 use App\Services\Workspace\WorkspaceAccessService;
+use App\Services\Workspace\WorkspaceProvisioningService;
 use App\Services\Workspace\WorkspaceService;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\UserChannelTargetResolver;
@@ -62,6 +64,7 @@ class AgentToolRegistrar
         private readonly GitHubApiClient $gitHubApiClient,
         private readonly AgentTaskFollowupService $agentTaskFollowupService,
         private readonly WorkspaceAccessService $workspaceAccessService,
+        private readonly WorkspaceProvisioningService $workspaceProvisioningService,
         private readonly WorkspaceService $workspaceService,
         private readonly UserChannelTargetResolver $userChannelTargetResolver,
         private readonly ChannelRuntimeService $channelRuntimeService,
@@ -101,6 +104,7 @@ class AgentToolRegistrar
         $toolRegistry->register(new SearchAgentMemoriesTool($user, $this->agentMemoryLookupService));
         $toolRegistry->register(new SendUserMessageTool($user, $this->userChannelTargetResolver, $this->channelRuntimeService));
         $toolRegistry->register(new ListWorkspacesTool($user, $this->workspaceAccessService, $organizationId, $teamId));
+        $toolRegistry->register(new CreateWorkspaceTool($user, $this->workspaceProvisioningService, $this->workspaceAccessService, $organizationId, $teamId));
         $toolRegistry->register(new ListWorkspaceFilesTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
         $toolRegistry->register(new ReadWorkspaceFileTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
         $toolRegistry->register(new SearchWorkspaceFilesTool($user, $this->workspaceAccessService, $this->workspaceService, $organizationId, $teamId));
