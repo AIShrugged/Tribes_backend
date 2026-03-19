@@ -29,6 +29,11 @@ class Organization extends Model
         return $this->hasMany(Methodology::class);
     }
 
+    public function workspaces(): HasMany
+    {
+        return $this->hasMany(Workspace::class);
+    }
+
     public function deleteCompletely(): void
     {
         try {

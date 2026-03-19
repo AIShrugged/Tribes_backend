@@ -108,6 +108,11 @@ class User extends Authenticatable
         return $this->hasMany(AgentTask::class);
     }
 
+    public function ownedWorkspaces(): HasMany
+    {
+        return $this->hasMany(Workspace::class, 'owner_user_id');
+    }
+
     public function roleInOrganization(int|Organization $organization): ?string
     {
         return $this->organizations()

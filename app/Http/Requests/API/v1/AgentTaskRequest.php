@@ -55,6 +55,8 @@ class AgentTaskRequest extends ApiResourceRequest
         return [
             'name' => [$required, 'string', 'min:2', 'max:255'],
             'prompt' => [$required, 'string'],
+            'organization_id' => [$required, 'integer', 'exists:organizations,id'],
+            'team_id' => ['nullable', 'integer', 'exists:teams,id'],
             'agent_profile_id' => ['nullable', 'integer', 'exists:agent_profiles,id'],
             'schedule_type' => [$required, 'in:one_off,interval'],
             'execution_mode' => ['nullable', 'in:inline,isolated'],
@@ -87,6 +89,8 @@ class AgentTaskRequest extends ApiResourceRequest
         $fields = [
             'name',
             'prompt',
+            'organization_id',
+            'team_id',
             'agent_profile_id',
             'schedule_type',
             'execution_mode',

@@ -34,7 +34,7 @@ class SandboxToolGatewayService
         }
 
         $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
-        $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments ?? [], $workspace);
+        $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments ?? [], $workspace, $run);
 
         $toolCalls = Arr::wrap(data_get($run->metadata, 'tool_calls', []));
         $toolCalls[] = [

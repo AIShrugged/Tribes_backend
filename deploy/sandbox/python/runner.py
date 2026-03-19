@@ -140,6 +140,9 @@ def build_agent_system_prompt(payload: dict[str, Any]) -> str:
     task = payload.get("task", {}) or {}
     user = payload.get("user", {}) or {}
     memory = payload.get("agent_memory", []) or []
+    workspaces = payload.get("workspaces", []) or []
+    followup_policy = payload.get("followup_policy", {}) or {}
+    lineage = task.get("lineage", {}) or {}
     return f"""{profile.get("system_prompt") or ""}
 
 You are an autonomous sandboxed agent run.
@@ -153,6 +156,11 @@ Current task:
 Task payload:
 ```json
 {json.dumps(task.get("input_payload", {}), ensure_ascii=False, indent=2)}
+```
+
+Task lineage and handoff context:
+```json
+{json.dumps(lineage, ensure_ascii=False, indent=2)}
 ```
 
 Persistent agent memory available to you:
@@ -170,16 +178,34 @@ Local sandbox tools available to you:
 {json.dumps(local_tools(), ensure_ascii=False, indent=2)}
 ```
 
+Materialized workspaces available locally inside the sandbox:
+```json
+{json.dumps(workspaces, ensure_ascii=False, indent=2)}
+```
+
+Follow-up task policy:
+```json
+{json.dumps(followup_policy, ensure_ascii=False, indent=2)}
+```
+
 Rules:
 - Use tools when needed to inspect data and verify facts.
 - Prefer `workspace_detect_project` before choosing install/test commands.
 - Prefer `workspace_run_tests` over ad-hoc shell commands when your goal is to execute a project's test suite.
 - Acquire the source material you need before local execution in `/workspace`.
+- Materialized user workspaces are mounted under `/workspace/synced-workspaces/<workspace_id>`.
+- If you edit files locally inside a materialized workspace, those changes will be synchronized back after the run for writable workspaces.
+- Keep each run focused on one bounded deliverable with minimal context growth.
+- If the next step is logically separate, delayed, requires user notification, needs PR creation, or would make this run sprawl, create a small follow-up task instead of overloading the current run.
+- When creating a follow-up task, pass a concise `context_summary` so the next run can continue without rereading everything.
+- Prefer follow-up tasks that can be completed independently in one run.
 - Do not invent facts you did not verify directly from tools, files, or command output.
 - Report concrete work performed in `actions`.
 - Put useful non-persistent observations in `findings`.
 - Put paths to generated logs or outputs in `artifacts`.
 - Do not say or imply that memory was updated unless you return non-empty `memory_candidates`.
+- Use `plan` to list the small step sequence you actually followed or intentionally deferred.
+- If you created or intentionally delegated the next step, return a `handoff` object that explains the reason and target.
 - If blocked, say exactly what prevented completion in `blocker`.
 - Your final answer must be valid JSON only.
 - Return exactly one JSON object with:
@@ -190,7 +216,9 @@ Rules:
     "actions": [],
     "findings": [],
     "artifacts": [],
-    "memory_candidates": []
+    "memory_candidates": [],
+    "plan": [],
+    "handoff": null
   }}
 """
 
@@ -264,6 +292,64 @@ def build_tool_feedback(tool_name: str | None, tool_result: Any) -> str | None:
     if hints:
         feedback_parts.append("Next-step guidance: " + " ".join(hints))
     return " ".join(feedback_parts)
+
+
+def register_materialized_workspaces(payload: dict[str, Any]) -> None:
+    workspaces = payload.get("workspaces", []) or []
+    for workspace in workspaces:
+        if not isinstance(workspace, dict):
+            continue
+        sandbox_path = workspace.get("sandbox_path")
+        if isinstance(sandbox_path, str) and sandbox_path.strip() != "":
+            STATE.register_workspace_dir(sandbox_path.strip())
+
+
+def attempt_finalization(gateway: dict[str, Any], task: dict[str, Any], last_assistant_content: str | None = None) -> dict[str, Any]:
+    finalization_prompt = """You are the finalizer for a sandbox agent run.
+
+Return JSON only with exactly these fields:
+{
+  "output": "human-readable result",
+  "summary": "short summary",
+  "blocker": null,
+  "actions": [],
+  "findings": [],
+  "artifacts": [],
+  "memory_candidates": [],
+  "plan": [],
+  "handoff": null
+}
+
+Rules:
+- Do not call tools.
+- Use the provided execution state as the source of truth.
+- Preserve verified facts from actions, findings, artifacts, and the last assistant response.
+- If the task is complete, produce a valid final result even if the main loop ran out of iterations.
+- Only set blocker when the execution state shows a real unresolved blocker.
+"""
+    finalization_payload = {
+        "task_id": task.get("id"),
+        "run_id": task.get("run_id"),
+        "task_name": task.get("name"),
+        "actions": STATE.execution_actions.copy(),
+        "findings": STATE.auto_findings.copy(),
+        "artifacts": STATE.result_artifacts.copy(),
+        "last_assistant_response": last_assistant_content or "",
+    }
+    finalization_message = call_llm(
+        gateway,
+        [{"role": "user", "content": "Finalize this sandbox run into the required JSON result:\n\n" + json.dumps(finalization_payload, ensure_ascii=False, indent=2)}],
+        finalization_prompt,
+        max_tokens=1800,
+        include_tools=False,
+        extra_tools=[],
+    )
+    if isinstance(finalization_message.get("tool_calls"), list) and finalization_message.get("tool_calls"):
+        raise RuntimeError("Finalization pass attempted tool calls instead of returning JSON")
+    finalization_content = finalization_message.get("content")
+    if not isinstance(finalization_content, str):
+        raise RuntimeError("Finalization pass did not return textual JSON content")
+    return normalize_final_content(STATE, finalization_content)
 
 
 def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -365,6 +451,37 @@ def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[st
                 STATE.add_finding("No test command was actually executed during this run.")
             return normalized
 
+    try:
+        finalized = attempt_finalization(gateway, task, last_assistant_content)
+        if len(finalized["memory_candidates"]) == 0 and (finalized["output"].strip() != "" or finalized["summary"].strip() != ""):
+            STATE.log("No memory candidates returned after forced finalization; running extraction pass.")
+            extracted = extract_memory_candidates(
+                call_llm,
+                gateway,
+                finalized["output"],
+                finalized["summary"],
+                finalized["actions"],
+                finalized["findings"],
+                finalized["artifacts"],
+            )
+            if extracted:
+                finalized["memory_candidates"] = extracted
+                finalized["blocker"] = None
+        if requires_tests and not any(action.get("type") == "run_tests" and action.get("status") in ["completed", "failed"] for action in STATE.execution_actions):
+            STATE.add_finding("No test command was actually executed during this run.")
+        return finalized
+    except RuntimeError as exc:
+        last_normalization_error = str(exc)
+        STATE.log(f"Forced finalization after max iterations failed: {exc}")
+        STATE.record_action(
+            "finalize_response",
+            "Finalize agent response after max iterations",
+            "failed",
+            details=str(exc),
+            evidence={"last_assistant_response": (last_assistant_content or "")[:2000]},
+        )
+        STATE.add_finding(f"Forced finalization failed after max iterations: {exc}")
+
     blocker_parts = ["Agent loop reached max iterations without a valid final answer."]
     if last_normalization_error:
         blocker_parts.append(last_normalization_error)
@@ -385,6 +502,7 @@ def main() -> int:
     args = parse_args()
     payload = json.loads(pathlib.Path(args.input).read_text())
     STATE.set_artifacts_root(args.artifacts_dir)
+    register_materialized_workspaces(payload)
     STATE.log(f"Loaded task payload from {args.input}.")
     install_network_guard(payload.get("network_policy", {}))
     try:
@@ -398,6 +516,8 @@ def main() -> int:
             "findings": final_result["findings"],
             "artifacts": final_result["artifacts"],
             "memory_candidates": final_result["memory_candidates"],
+            "plan": final_result.get("plan", []),
+            "handoff": final_result.get("handoff"),
         }
         STATE.log(
             "Run completed successfully with "

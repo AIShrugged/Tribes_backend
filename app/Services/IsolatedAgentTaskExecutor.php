@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Services\Workspace\WorkspaceAccessService;
+use App\Services\Workspace\WorkspaceService;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use function parse_url;
@@ -15,6 +17,8 @@ class IsolatedAgentTaskExecutor
         private readonly AgentTaskToolExecutor $toolExecutor,
         private readonly AgentTaskContextBuilder $contextBuilder,
         private readonly AgentMemoryIngestionService $memoryIngestionService,
+        private readonly WorkspaceAccessService $workspaceAccessService,
+        private readonly WorkspaceService $workspaceService,
     ) {}
 
     public function execute(AgentTask $task, AgentTaskRun $run): string
@@ -39,10 +43,12 @@ class IsolatedAgentTaskExecutor
         $inputDir = $workspace.'/input';
         $outputDir = $workspace.'/output';
         $artifactsDir = $workspace.'/artifacts';
+        $syncedWorkspacesDir = $workspace.'/synced-workspaces';
 
         File::ensureDirectoryExists($inputDir);
         File::ensureDirectoryExists($outputDir);
         File::ensureDirectoryExists($artifactsDir);
+        File::ensureDirectoryExists($syncedWorkspacesDir);
         if ($persistentWorkspace !== null) {
             File::ensureDirectoryExists($persistentWorkspace['host_path']);
             @chmod($persistentWorkspace['host_path'], 0777);
@@ -51,18 +57,30 @@ class IsolatedAgentTaskExecutor
         @chmod($inputDir, 0777);
         @chmod($outputDir, 0777);
         @chmod($artifactsDir, 0777);
+        @chmod($syncedWorkspacesDir, 0777);
+
+        $workspaceManifest = $this->workspaceAccessService->manifestForUser(
+            $user,
+            null,
+            $task->organization_id,
+            $task->team_id,
+        )->all();
+        $materializedWorkspaces = $this->workspaceService->materializeWorkspaces($workspaceManifest, $syncedWorkspacesDir);
 
         $payload = [
             'task' => [
                 'id' => $task->id,
                 'run_id' => $run->id,
                 'name' => $task->name,
+                'organization_id' => $task->organization_id,
+                'team_id' => $task->team_id,
                 'prompt' => $context['user_prompt'],
                 'sandbox_profile' => $context['sandbox_profile'],
                 'allowed_tools' => $context['allowed_tools'],
                 'allowed_outbound_hosts' => $allowedOutboundHosts,
                 'max_iterations' => (int) ($task->metadata['max_iterations'] ?? 8),
                 'input_payload' => $context['input_payload'],
+                'lineage' => $context['task_lineage'],
             ],
             'agent_profile' => [
                 'key' => $context['profile']?->key,
@@ -70,11 +88,13 @@ class IsolatedAgentTaskExecutor
                 'system_prompt' => $context['system_prompt_extension'],
             ],
             'agent_memory' => $context['memories'],
+            'followup_policy' => $context['followup_policy'],
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
             ],
+            'workspaces' => $materializedWorkspaces,
             'gateway' => [
                 'base_url' => $gatewayBaseUrl,
                 'tool_call_path' => '/api/v1/internal/agent-task-runs/'.$run->id.'/tool-calls',
@@ -88,31 +108,19 @@ class IsolatedAgentTaskExecutor
             ],
             'sandbox' => [
                 'persistent_workspace' => $persistentWorkspace,
+                'synced_workspaces_dir' => '/workspace/synced-workspaces',
             ],
             'tools' => $this->toolExecutor->describeTools(
                 $task,
                 $user,
                 $persistentWorkspace['container_path'] ?? $workspace,
+                $run,
             ),
         ];
 
         File::put($inputDir.'/task.json', json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-        $process = new Process($this->buildDockerCommand($task, $mountWorkspace, $persistentWorkspace));
-        $process->setTimeout((float) $this->resolveSandboxTimeoutSeconds($task));
-        $process->run(function (string $type, string $buffer): void {
-            if ($buffer === '') {
-                return;
-            }
-
-            if ($type === Process::ERR) {
-                fwrite(STDERR, $buffer);
-
-                return;
-            }
-
-            fwrite(STDOUT, $buffer);
-        });
+        $processResult = $this->runSandboxProcess($task, $run, $mountWorkspace, $persistentWorkspace);
 
         $run->update([
             'metadata' => [
@@ -121,21 +129,22 @@ class IsolatedAgentTaskExecutor
                     'workspace' => $workspace,
                     'mount_workspace' => $mountWorkspace,
                     'persistent_workspace' => $persistentWorkspace,
-                    'stdout' => $process->getOutput(),
-                    'stderr' => $process->getErrorOutput(),
-                    'exit_code' => $process->getExitCode(),
+                    'synced_workspaces' => $materializedWorkspaces,
+                    'stdout' => $processResult['stdout'] ?? '',
+                    'stderr' => $processResult['stderr'] ?? '',
+                    'exit_code' => $processResult['exit_code'] ?? null,
                 ],
             ],
         ]);
 
-        if (! $process->isSuccessful()) {
-            $stderr = trim($process->getErrorOutput());
-            $stdout = trim($process->getOutput());
+        if (! ($processResult['successful'] ?? false)) {
+            $stderr = trim((string) ($processResult['stderr'] ?? ''));
+            $stdout = trim((string) ($processResult['stdout'] ?? ''));
             $details = $stderr !== '' ? $stderr : ($stdout !== '' ? $stdout : 'Sandbox container exited without stdout/stderr output.');
 
             throw new \RuntimeException(sprintf(
                 'Sandbox execution failed (exit code %s): %s',
-                (string) ($process->getExitCode() ?? 'unknown'),
+                (string) (($processResult['exit_code'] ?? null) ?? 'unknown'),
                 $details,
             ));
         }
@@ -154,6 +163,8 @@ class IsolatedAgentTaskExecutor
             throw new \RuntimeException((string) ($result['error'] ?? 'Sandbox task failed'));
         }
 
+        $this->workspaceService->syncBackMaterializedWorkspaces($materializedWorkspaces);
+
         $memoryCandidates = is_array($result['memory_candidates'] ?? null) ? $result['memory_candidates'] : [];
         $ingestedMemories = $this->memoryIngestionService->ingest($task, $run, $memoryCandidates);
 
@@ -166,6 +177,8 @@ class IsolatedAgentTaskExecutor
                     'actions' => is_array($result['actions'] ?? null) ? $result['actions'] : [],
                     'findings' => is_array($result['findings'] ?? null) ? $result['findings'] : [],
                     'artifacts' => is_array($result['artifacts'] ?? null) ? $result['artifacts'] : [],
+                    'plan' => is_array($result['plan'] ?? null) ? $result['plan'] : [],
+                    'handoff' => is_array($result['handoff'] ?? null) ? $result['handoff'] : null,
                     'memory_candidates_count' => count($memoryCandidates),
                     'ingested_memories' => $ingestedMemories,
                 ],
@@ -173,6 +186,32 @@ class IsolatedAgentTaskExecutor
         ]);
 
         return (string) ($result['output'] ?? '');
+    }
+
+    protected function runSandboxProcess(AgentTask $task, AgentTaskRun $run, string $mountWorkspace, ?array $persistentWorkspace = null): array
+    {
+        $process = new Process($this->buildDockerCommand($task, $mountWorkspace, $persistentWorkspace));
+        $process->setTimeout((float) $this->resolveSandboxTimeoutSeconds($task));
+        $process->run(function (string $type, string $buffer): void {
+            if ($buffer === '') {
+                return;
+            }
+
+            if ($type === Process::ERR) {
+                fwrite(STDERR, $buffer);
+
+                return;
+            }
+
+            fwrite(STDOUT, $buffer);
+        });
+
+        return [
+            'successful' => $process->isSuccessful(),
+            'stdout' => $process->getOutput(),
+            'stderr' => $process->getErrorOutput(),
+            'exit_code' => $process->getExitCode(),
+        ];
     }
 
     private function buildDockerCommand(AgentTask $task, string $workspace, ?array $persistentWorkspace = null): array

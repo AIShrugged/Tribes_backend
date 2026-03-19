@@ -9,6 +9,11 @@
 7. `docker compose exec backend php artisan migrate`
 8. `sudo chmod 777 -R storage/`
 
+MinIO is started by `docker compose up -d` as the local S3-compatible storage for agent workspaces.
+Console: `http://localhost:9001`
+API endpoint: `http://localhost:9000`
+Default credentials: `minioadmin / minioadmin`
+
 ## How to generate docs
 `php artisan scramble:export --path=public/openapi.json`
 

@@ -10,6 +10,9 @@ use App\Http\Resources\API\v1\AgentTaskResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\AgentProfile;
 use App\Models\AgentTask;
+use App\Models\Organization;
+use App\Models\Team;
+use App\Models\User;
 use App\Services\JsonSchemaValidationService;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Endpoint;
@@ -17,6 +20,7 @@ use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\PathParameter;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
+use Illuminate\Validation\ValidationException;
 
 #[Group('Agent Tasks', 'Scheduled and one-off agent task management.')]
 class AgentTaskController extends Controller
@@ -199,7 +203,46 @@ class AgentTaskController extends Controller
         $data['schedule_type'] = $scheduleType;
         $data['interval_seconds'] = $intervalSeconds;
         $data['next_run_at'] = $nextRunAt;
+        $this->assertTenantScopeIsValid(
+            User::query()->findOrFail($userId),
+            isset($data['organization_id']) ? (int) $data['organization_id'] : $existingTask?->organization_id,
+            isset($data['team_id']) ? (int) $data['team_id'] : $existingTask?->team_id,
+        );
 
         return $data;
+    }
+
+    private function assertTenantScopeIsValid(User $user, ?int $organizationId, ?int $teamId): void
+    {
+        if ($organizationId === null) {
+            throw ValidationException::withMessages([
+                'organization_id' => ['Organization is required for agent tasks.'],
+            ]);
+        }
+
+        $organization = Organization::query()->findOrFail($organizationId);
+        if (! $user->isOrganizationMember($organization)) {
+            throw ValidationException::withMessages([
+                'organization_id' => ['You do not belong to the selected organization.'],
+            ]);
+        }
+
+        if ($teamId === null) {
+            return;
+        }
+
+        $team = Team::query()->findOrFail($teamId);
+
+        if ((int) $team->organization_id !== (int) $organization->id) {
+            throw ValidationException::withMessages([
+                'team_id' => ['Team does not belong to the selected organization.'],
+            ]);
+        }
+
+        if (! $user->isTeamMember($team)) {
+            throw ValidationException::withMessages([
+                'team_id' => ['You do not belong to the selected team.'],
+            ]);
+        }
     }
 }

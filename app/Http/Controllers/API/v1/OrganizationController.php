@@ -8,6 +8,7 @@ use App\Http\Requests\API\v1\OrganizationRequest;
 use App\Http\Resources\API\v1\OrganizationResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
+use App\Services\Workspace\WorkspaceBootstrapService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,9 @@ class OrganizationController extends Controller
 {
     use AuthorizesRequests;
 
-    public function __construct()
+    public function __construct(
+        private readonly WorkspaceBootstrapService $workspaceBootstrapService,
+    )
     {
         $this->authorizeResource(Organization::class, 'organization');
     }
@@ -87,6 +90,7 @@ class OrganizationController extends Controller
             $organization = Organization::create($request->getStoreData());
 
             $organization->users()->attach(Auth::id(), ['role' => UserRole::MANAGER->value]);
+            $this->workspaceBootstrapService->ensureOrganizationDefaults($organization);
 
             DB::commit();
             return ApiResponse::success(data: OrganizationResource::make($organization));
