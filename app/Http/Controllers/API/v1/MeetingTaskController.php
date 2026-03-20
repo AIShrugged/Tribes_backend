@@ -7,7 +7,7 @@ use App\Http\Requests\API\v1\MeetingTaskRequest;
 use App\Http\Resources\API\v1\MeetingTaskResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
-use App\Models\Task;
+use App\Models\Issue;
 use App\Services\Meeting\MeetingTaskService;
 use Illuminate\Support\Facades\Auth;
 
@@ -33,8 +33,8 @@ class MeetingTaskController extends Controller
      *     {
      *       "id": 1,
      *       "calendar_event_id": 5,
-     *       "profile_id": 3,
-     *       "title": "Prepare Q1 budget report",
+     *       "assignee_id": 7,
+     *       "name": "Prepare Q1 budget report",
      *       "description": "Compile financial data from all departments",
      *       "assignee_name": "Alice Johnson",
      *       "due_date": "2026-02-28",
@@ -55,7 +55,7 @@ class MeetingTaskController extends Controller
         $calendarEvent = CalendarEvent::owned(Auth::id())
             ->findOrFail($request->getCalendarEventId());
 
-        $tasks = $calendarEvent->tasks();
+        $tasks = $calendarEvent->issues();
 
         $count = $tasks->count();
 
@@ -81,8 +81,8 @@ class MeetingTaskController extends Controller
      *   "data": {
      *     "id": 1,
      *     "calendar_event_id": 5,
-     *     "profile_id": 3,
-     *     "title": "Prepare Q1 budget report",
+     *     "assignee_id": 7,
+     *     "name": "Prepare Q1 budget report",
      *     "description": "Compile financial data from all departments",
      *     "assignee_name": "Alice Johnson",
      *     "due_date": "2026-02-28",
@@ -99,7 +99,7 @@ class MeetingTaskController extends Controller
      */
     public function show(MeetingTaskRequest $request): ApiResponse
     {
-        $task = Task::findOrFail($request->getTaskId());
+        $task = Issue::findOrFail($request->getTaskId());
 
         return ApiResponse::success(data: MeetingTaskResource::make($task));
     }

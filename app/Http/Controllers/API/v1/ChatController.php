@@ -8,6 +8,7 @@ use App\Http\Resources\API\v1\ChatResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Chat;
 use App\Services\Chat\ChatService;
+use App\Services\TenantScopeValidator;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Endpoint;
 use Dedoc\Scramble\Attributes\Group;
@@ -22,7 +23,8 @@ class ChatController extends Controller
     use AuthorizesRequests;
 
     public function __construct(
-        private readonly ChatService $chatService
+        private readonly ChatService $chatService,
+        private readonly TenantScopeValidator $tenantScopeValidator,
     ) {
         $this->authorizeResource(Chat::class, 'chat');
     }
@@ -102,9 +104,17 @@ class ChatController extends Controller
     )]
     public function store(ChatRequest $request): ApiResponse
     {
+        $this->tenantScopeValidator->assertScopeIsValid(
+            Auth::user(),
+            $request->getOrganizationId(),
+            $request->getTeamId(),
+        );
+
         $chat = $this->chatService->create(
             Auth::user(),
-            $request->getTitle()
+            $request->getTitle(),
+            $request->getOrganizationId(),
+            $request->getTeamId(),
         );
 
         return ApiResponse::success(data: ChatResource::make($chat));
@@ -182,7 +192,20 @@ class ChatController extends Controller
     )]
     public function update(ChatRequest $request, Chat $chat): ApiResponse
     {
-        $chat = $this->chatService->update($chat, $request->getTitle());
+        $this->tenantScopeValidator->assertScopeIsValid(
+            Auth::user(),
+            $request->has('organization_id') ? $request->getOrganizationId() : $chat->organization_id,
+            $request->has('team_id') ? $request->getTeamId() : $chat->team_id,
+        );
+
+        $chat = $this->chatService->update(
+            $chat,
+            $request->getTitle(),
+            $request->getOrganizationId(),
+            $request->has('organization_id'),
+            $request->getTeamId(),
+            $request->has('team_id'),
+        );
 
         return ApiResponse::success(data: ChatResource::make($chat));
     }

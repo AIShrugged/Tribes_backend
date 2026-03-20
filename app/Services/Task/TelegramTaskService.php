@@ -7,7 +7,7 @@ use App\Enums\ConversationChannelType;
 use App\Enums\MeetingTaskStatus;
 use App\Models\ChannelConversation;
 use App\Models\ChannelMessage;
-use App\Models\Task;
+use App\Models\Issue;
 use App\Services\OpenRouterClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -67,6 +67,12 @@ class TelegramTaskService
 
     private function processConversation(int $conversationId): bool
     {
+        $conversation = ChannelConversation::query()->findOrFail($conversationId);
+
+        if ($conversation->organization_id === null || $conversation->user_id === null) {
+            return false;
+        }
+
         $recentMessages = ChannelMessage::query()
             ->where('conversation_id', $conversationId)
             ->where('role', 'user')
@@ -80,9 +86,9 @@ class TelegramTaskService
 
         $allMessageIds = ChannelMessage::where('conversation_id', $conversationId)->pluck('id');
 
-        $openTasks = Task::where('taskable_type', ChannelMessage::class)
-            ->whereIn('taskable_id', $allMessageIds)
-            ->whereNotIn('status', [MeetingTaskStatus::DONE->value, MeetingTaskStatus::CANCELLED->value])
+        $openTasks = Issue::where('sourceable_type', ChannelMessage::class)
+            ->whereIn('sourceable_id', $allMessageIds)
+            ->where('status', '!=', MeetingTaskStatus::DONE->value)
             ->get();
 
         $result = $this->callLLM($recentMessages, $openTasks);
@@ -94,17 +100,20 @@ class TelegramTaskService
         $changed = false;
 
         foreach ($result['new_tasks'] ?? [] as $taskData) {
-            $title = trim($taskData['title'] ?? '');
-            if (! $title) {
+            $name = trim($taskData['title'] ?? '');
+            if (! $name) {
                 continue;
             }
 
             $messageId = $taskData['message_id'] ?? $recentMessages->last()->id;
 
-            Task::create([
-                'taskable_type' => ChannelMessage::class,
-                'taskable_id' => $messageId,
-                'title' => $title,
+            Issue::create([
+                'user_id' => $conversation->user_id,
+                'organization_id' => $conversation->organization_id,
+                'team_id' => $conversation->team_id,
+                'sourceable_type' => ChannelMessage::class,
+                'sourceable_id' => $messageId,
+                'name' => $name,
                 'description' => $taskData['description'] ?? null,
                 'assignee_name' => $taskData['assignee_name'] ?? null,
                 'due_date' => $taskData['due_date'] ?? null,
@@ -115,7 +124,7 @@ class TelegramTaskService
 
             Log::info('TelegramTaskService: task created', [
                 'conversation_id' => $conversationId,
-                'title' => $title,
+                'name' => $name,
                 'message_id' => $messageId,
             ]);
         }
@@ -154,7 +163,7 @@ class TelegramTaskService
         $tasksText = $existingTasks->isEmpty()
             ? 'Активных задач нет.'
             : $existingTasks->map(
-                fn ($t) => "[ID:{$t->id}] {$t->title} (статус: {$t->status})"
+                fn ($t) => "[ID:{$t->id}] {$t->name} (статус: {$t->status})"
             )->join("\n");
 
         $prompt = <<<PROMPT
@@ -184,7 +193,7 @@ class TelegramTaskService
     "status_updates": [
         {
             "task_id": <ID существующей задачи>,
-            "status": "done|cancelled|in_progress|open"
+            "status": "done|paused|in_progress|open"
         }
     ]
 }

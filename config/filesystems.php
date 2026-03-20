@@ -15,6 +15,8 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'issue_attachments_disk' => env('ISSUE_ATTACHMENTS_DISK', env('FILESYSTEM_DISK', 'local')),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

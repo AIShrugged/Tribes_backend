@@ -46,6 +46,7 @@ class CreateWorkspaceTool extends AbstractAgentTool
                 'owner_user_id' => ['type' => 'integer', 'description' => 'Owner user id for private scopes. Defaults to the current user.'],
                 'slug' => ['type' => 'string', 'description' => 'Optional custom slug.'],
                 'metadata' => ['type' => 'string', 'description' => 'Optional metadata JSON object encoded as a string.'],
+                'idempotency_key' => ['type' => 'string', 'description' => 'Optional idempotency key for safe retries.'],
             ],
         ];
     }

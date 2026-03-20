@@ -56,9 +56,14 @@ class CalendarEvent extends Model
         return $this->hasOne(MeetingSummary::class);
     }
 
+    public function issues(): MorphMany
+    {
+        return $this->morphMany(Issue::class, 'sourceable');
+    }
+
     public function tasks(): MorphMany
     {
-        return $this->morphMany(Task::class, 'taskable');
+        return $this->issues();
     }
 
     public function scopeOwned(Builder $query, int $userId): Builder

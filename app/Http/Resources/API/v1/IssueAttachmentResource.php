@@ -1,0 +1,25 @@
+<?php
+
+namespace App\Http\Resources\API\v1;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\URL;
+
+class IssueAttachmentResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'file_path' => $this->file_path,
+            'file_url' => URL::temporarySignedRoute(
+                'attachments.download',
+                now()->addMinutes(30),
+                ['attachment' => $this->id],
+            ),
+            'issue_id' => $this->issue_id,
+            'uploaded_at' => $this->uploaded_at,
+        ];
+    }
+}

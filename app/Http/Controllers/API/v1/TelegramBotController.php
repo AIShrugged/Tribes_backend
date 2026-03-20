@@ -5,10 +5,13 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
+use App\Services\Channel\ChannelBus;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\TelegramTypingIndicator;
+use App\Services\TelegramChatRegistrationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Telegram\Bot\Api;
 use Telegram\Bot\Exceptions\TelegramSDKException;
 
@@ -23,8 +26,10 @@ class TelegramBotController extends Controller
 
     public function __construct(
         AgentService $agentService,
+        private readonly ChannelBus $channelBus,
         private readonly ChannelRuntimeService $runtimeService,
         private readonly TelegramTypingIndicator $typingIndicator,
+        private readonly TelegramChatRegistrationService $telegramChatRegistrationService,
     ) {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
@@ -38,15 +43,63 @@ class TelegramBotController extends Controller
         try {
             $update = $this->telegram->getWebhookUpdate();
 
+            if ($update->isType('my_chat_member') && ($chatMemberUpdate = $update->get('my_chat_member'))) {
+                $chat = $chatMemberUpdate->chat;
+                $chatId = $chat?->id;
+                $chatType = $chat?->type;
+                $chatTitle = $chat?->title;
+                $oldStatus = $chatMemberUpdate->oldChatMember?->status;
+                $newStatus = $chatMemberUpdate->newChatMember?->status;
+
+                Log::info('Telegram my_chat_member update received', [
+                    'chat_id' => $chatId,
+                    'chat_type' => $chatType,
+                    'chat_title' => $chatTitle,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus,
+                ]);
+
+                if (in_array($chatType, ['group', 'supergroup'], true)) {
+                    if ($this->isBotMembershipActive($newStatus)) {
+                        $conversation = $this->channelBus->forTelegram($chatId);
+                        $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
+                    }
+
+                    if ($this->isBotMembershipInactive($newStatus)) {
+                        Log::info('Telegram bot removed from group chat', [
+                            'chat_id' => $chatId,
+                            'chat_type' => $chatType,
+                            'chat_title' => $chatTitle,
+                        ]);
+                    }
+                }
+
+                return response()->json(['ok' => true]);
+            }
+
             if ($update->isType('message') && ($message = $update->getMessage())) {
                 $chatId = $message->getChat()->getId();
                 $chatType = $message->getChat()->getType();
+                $chatTitle = $message->getChat()->getTitle();
                 $text = $message->getText();
                 $telegramUserId = $message->getFrom()?->getId();
                 $username = $message->getFrom()?->getUsername();
                 $messageThreadId = $message->get('message_thread_id');
 
-                // Skip system messages (new_chat_member, left_chat_member, etc.) without text
+                if ($this->isBotAddedEvent($message)) {
+                    $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
+                    $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
+
+                    $this->sendTelegramMessage(
+                        $chatId,
+                        'This chat is detected. Finish the binding in the backend, get a one-time code, then send /attach CODE here.',
+                        $messageThreadId,
+                    );
+
+                    return response()->json(['ok' => true]);
+                }
+
+                // Skip other system messages (left_chat_member, etc.) without text
                 if ($text === null || trim($text) === '') {
                     Log::info('Telegram system event received (no text)', [
                         'chat_id' => $chatId,
@@ -71,6 +124,52 @@ class TelegramBotController extends Controller
                 // Find or create telegram user and resolve application user
                 $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
                 $user = $telegramUser->user;
+
+                $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
+                $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
+
+                if ($this->isAttachCommand($text)) {
+                    if (! $user) {
+                        $this->sendTelegramMessage(
+                            $chatId,
+                            'Link your Telegram account to the application first, then repeat /attach CODE.',
+                            $messageThreadId,
+                        );
+
+                        return response()->json(['ok' => true]);
+                    }
+
+                    try {
+                        $code = $this->extractAttachCode($text);
+                        $registration = $this->telegramChatRegistrationService->attachConversationByCode(
+                            $conversation,
+                            $code,
+                            $user,
+                        );
+
+                        $this->sendTelegramMessage(
+                            $chatId,
+                            sprintf(
+                                'Chat attached to organization #%d%s.',
+                                $registration->organization_id,
+                                $registration->team_id ? ' and team #'.$registration->team_id : ''
+                            ),
+                            $messageThreadId,
+                        );
+                    } catch (ValidationException $exception) {
+                        $this->sendTelegramMessage(
+                            $chatId,
+                            collect($exception->errors())->flatten()->first() ?? 'Attach failed.',
+                            $messageThreadId,
+                        );
+                    }
+
+                    return response()->json(['ok' => true]);
+                }
+
+                if ($chatType === 'private' && $user) {
+                    $this->telegramChatRegistrationService->bindPrivateConversation($conversation, $user);
+                }
 
                 // Save incoming user message (save ALL messages, not just mentions)
                 $incomingMessage = $this->runtimeService->recordTelegramInbound(
@@ -167,6 +266,33 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
+                $conversation = $incomingMessage->conversation()->firstOrFail();
+
+                if ($conversation->organization_id === null) {
+                    if ($chatType === 'private') {
+                        $typingSessionId = $this->typingIndicator->sessionId($chatId, $messageThreadId);
+                        $this->typingIndicator->start($typingSessionId, $chatId, $messageThreadId);
+
+                        $this->runtimeService->scheduleTelegramBranch($chatId, $messageThreadId);
+
+                        return response()->json(['ok' => true]);
+                    }
+
+                    Log::info('Telegram conversation is not bound to an organization yet', [
+                        'conversation_id' => $conversation->id,
+                        'chat_id' => $chatId,
+                        'message_thread_id' => $messageThreadId,
+                    ]);
+
+                    $this->sendTelegramMessage(
+                        $chatId,
+                        'This chat is not linked to an organization yet. Bind it in the backend before using the bot.',
+                        $messageThreadId,
+                    );
+
+                    return response()->json(['ok' => true]);
+                }
+
                 $typingSessionId = $this->typingIndicator->sessionId($chatId, $messageThreadId);
                 $this->typingIndicator->start($typingSessionId, $chatId, $messageThreadId);
 
@@ -212,9 +338,45 @@ class TelegramBotController extends Controller
         return str_contains(mb_strtolower($text), '@'.mb_strtolower($botUsername));
     }
 
+    private function isBotAddedEvent($message): bool
+    {
+        $botUsername = config('telegram.bot_username');
+        $newChatMember = $message->getNewChatMember();
+
+        if (! $newChatMember || ! $botUsername) {
+            return false;
+        }
+
+        $username = $newChatMember->getUser()?->getUsername();
+
+        return mb_strtolower((string) $username) === mb_strtolower($botUsername);
+    }
+
+    private function isAttachCommand(string $text): bool
+    {
+        return preg_match('/^\/attach(?:@\w+)?\s+[A-Z]{3}-[A-Z]{3}$/i', trim($text)) === 1;
+    }
+
+    private function extractAttachCode(string $text): string
+    {
+        preg_match('/^\/attach(?:@\w+)?\s+([A-Z]{3}-[A-Z]{3})$/i', trim($text), $matches);
+
+        return mb_strtoupper($matches[1] ?? '');
+    }
+
     private function removeMention(string $text, string $botUsername): string
     {
         return preg_replace('/@'.preg_quote($botUsername, '/').'/i', '', $text);
+    }
+
+    private function isBotMembershipActive(?string $status): bool
+    {
+        return in_array($status, ['member', 'administrator'], true);
+    }
+
+    private function isBotMembershipInactive(?string $status): bool
+    {
+        return in_array($status, ['left', 'kicked'], true);
     }
 
     private function sendTelegramMessage(int $chatId, string $text, ?int $messageThreadId = null): void

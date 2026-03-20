@@ -4,7 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\CalendarEvent;
 use App\Models\Participant;
-use App\Models\Task;
+use App\Models\Issue;
 use Illuminate\Support\Carbon;
 
 /**
@@ -27,7 +27,7 @@ class GetMeetingTasksTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Get tasks and action items. Can filter by meeting (calendar_event_id), assignee (profile_id), or status. If no filters are provided, returns all tasks. Use ONLY when the user explicitly asks about tasks, action items, or assignments. Do NOT call this tool when the user asks what was discussed or what happened at a meeting — use get_meeting_summary instead.';
+        return 'Get tasks and action items. Can filter by meeting (calendar_event_id), assignee (assignee_id), or status. If no filters are provided, returns all tasks. Use ONLY when the user explicitly asks about tasks, action items, or assignments. Do NOT call this tool when the user asks what was discussed or what happened at a meeting — use get_meeting_summary instead.';
     }
 
     public function getParameters(): array
@@ -39,17 +39,17 @@ class GetMeetingTasksTool extends AbstractAgentTool
                     'type'        => 'integer',
                     'description' => 'Optional: filter tasks linked to a specific calendar event (meeting) by its ID.',
                 ],
-                'profile_id' => [
+                'assignee_id' => [
                     'type'        => 'integer',
-                    'description' => 'Optional: filter tasks assigned to a specific person by their profile_id.',
+                    'description' => 'Optional: filter tasks assigned to a specific person by their user ID.',
                 ],
                 'assignee_name' => [
                     'type'        => 'string',
-                    'description' => 'Optional: filter tasks by assignee name (case-insensitive, partial match). Use when you have a name but no profile_id.',
+                    'description' => 'Optional: filter tasks by assignee name (case-insensitive, partial match). Use when you have a name but no assignee_id.',
                 ],
                 'status' => [
                     'type'        => 'string',
-                    'description' => 'Optional: filter tasks by status. Common values: open, in_progress, done, cancelled.',
+                    'description' => 'Optional: filter tasks by status. Common values: open, in_progress, paused, done.',
                 ],
                 'due_before' => [
                     'type'        => 'string',
@@ -69,32 +69,32 @@ class GetMeetingTasksTool extends AbstractAgentTool
         $parameters = $parameters ?? [];
 
         $eventId      = $parameters['calendar_event_id'] ?? null;
-        $profileId    = $parameters['profile_id'] ?? null;
+        $assigneeId   = $parameters['assignee_id'] ?? null;
         $assigneeName = $parameters['assignee_name'] ?? null;
         $status       = $parameters['status'] ?? null;
         $dueBefore    = $parameters['due_before'] ?? null;
         $dueAfter     = $parameters['due_after'] ?? null;
 
-        $query = Task::query();
+        $query = Issue::query();
 
         if ($eventId) {
-            $query->where('taskable_type', CalendarEvent::class)
-                ->where('taskable_id', $eventId);
+            $query->where('sourceable_type', CalendarEvent::class)
+                ->where('sourceable_id', $eventId);
         }
 
         if ($assigneeName) {
             $query->where('assignee_name', 'ilike', '%' . $assigneeName . '%');
         }
 
-        if ($profileId) {
-            $participantQuery = Participant::where('profile_id', $profileId);
+        if ($assigneeId) {
+            $participantQuery = Participant::whereHas('profile', fn ($q) => $q->where('user_id', $assigneeId));
             if ($eventId) {
                 $participantQuery->where('calendar_event_id', $eventId);
             }
             $assigneeNames = $participantQuery->pluck('name')->unique()->values()->toArray();
 
-            $query->where(function ($q) use ($profileId, $assigneeNames) {
-                $q->where('profile_id', $profileId);
+            $query->where(function ($q) use ($assigneeId, $assigneeNames) {
+                $q->where('assignee_id', $assigneeId);
                 if (!empty($assigneeNames)) {
                     $q->orWhereIn('assignee_name', $assigneeNames);
                 }
@@ -131,14 +131,14 @@ class GetMeetingTasksTool extends AbstractAgentTool
             'tasks_count' => $tasks->count(),
             'tasks'       => $tasks->map(fn ($task) => [
                 'id'            => $task->id,
-                'title'         => $task->title,
+                'name'          => $task->name,
                 'description'   => $task->description,
                 'assignee_name' => $task->assignee_name,
-                'profile_id'    => $task->profile_id,
+                'assignee_id'   => $task->assignee_id,
                 'due_date'      => $task->due_date?->toDateString(),
                 'status'        => $task->status,
-                'taskable_type' => $task->taskable_type,
-                'taskable_id'   => $task->taskable_id,
+                'sourceable_type' => $task->sourceable_type,
+                'sourceable_id'   => $task->sourceable_id,
             ])->toArray(),
         ];
     }

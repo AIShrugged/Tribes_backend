@@ -17,15 +17,27 @@ class ChannelBus
 {
     public function forChat(Chat $chat): ChannelConversation
     {
-        return ChannelConversation::firstOrCreate(
+        $conversation = ChannelConversation::firstOrCreate(
             ['conversation_key' => ChannelConversation::keyForChat($chat->id)],
             [
                 'channel_type' => ConversationChannelType::WEB_CHAT->value,
                 'user_id' => $chat->user_id,
+                'organization_id' => $chat->organization_id,
+                'team_id' => $chat->team_id,
                 'chat_id' => $chat->id,
                 'title' => $chat->title,
             ]
         );
+
+        $conversation->forceFill([
+            'user_id' => $chat->user_id,
+            'organization_id' => $chat->organization_id,
+            'team_id' => $chat->team_id,
+            'chat_id' => $chat->id,
+            'title' => $chat->title,
+        ])->save();
+
+        return $conversation;
     }
 
     public function forTelegram(int $chatId, ?int $messageThreadId = null): ChannelConversation

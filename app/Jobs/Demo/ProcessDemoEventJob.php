@@ -56,9 +56,9 @@ class ProcessDemoEventJob implements ShouldQueue
             // --- 2. Meeting Summary ---
             $summaryService->generate($event);
 
-            // --- 3. Meeting Tasks (with profile_id matching) ---
+            // --- 3. Meeting issues (with assignee matching) ---
             $tasks = $taskService->extract($event);
-            $this->linkTaskProfilesToParticipants($event, $tasks->all());
+            $this->linkIssueAssigneesToParticipants($event, $tasks->all());
 
             // --- 4. Followups for each demo participant ---
             $team = $this->findTeamForEvent($generation);
@@ -77,10 +77,10 @@ class ProcessDemoEventJob implements ShouldQueue
     }
 
     /**
-     * After MeetingTaskService creates tasks with assignee_name,
-     * match the name to a participant profile and fill profile_id.
+     * After MeetingTaskService creates issues with assignee_name,
+     * match the name to a participant profile and fill assignee_id.
      */
-    private function linkTaskProfilesToParticipants(CalendarEvent $event, array $tasks): void
+    private function linkIssueAssigneesToParticipants(CalendarEvent $event, array $tasks): void
     {
         if (empty($tasks)) {
             return;
@@ -91,7 +91,7 @@ class ProcessDemoEventJob implements ShouldQueue
             ->get();
 
         foreach ($tasks as $task) {
-            if (!$task->assignee_name || $task->profile_id) {
+            if (!$task->assignee_name || $task->assignee_id) {
                 continue;
             }
 
@@ -102,8 +102,8 @@ class ProcessDemoEventJob implements ShouldQueue
                     || str_contains($assigneeLower, mb_strtolower(explode(' ', $participant->name)[0] ?? ''));
             });
 
-            if ($matched?->profile_id) {
-                MeetingTask::where('id', $task->id)->update(['profile_id' => $matched->profile_id]);
+            if ($matched?->profile?->user_id) {
+                MeetingTask::where('id', $task->id)->update(['assignee_id' => $matched->profile->user_id]);
             }
         }
     }

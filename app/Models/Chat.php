@@ -11,12 +11,24 @@ class Chat extends Model
 {
     protected $fillable = [
         'user_id',
+        'organization_id',
+        'team_id',
         'title',
     ];
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
     }
 
     public function messages(): HasMany

@@ -54,7 +54,7 @@ class DashboardController extends Controller
      *     },
      *     "tasks": {
      *       "total": 30,
-     *       "by_status": {"open": 10, "in_progress": 5, "done": 14, "cancelled": 1},
+     *       "by_status": {"open": 10, "in_progress": 5, "paused": 1, "done": 14},
      *       "overdue": 3
      *     },
      *     "followups": {

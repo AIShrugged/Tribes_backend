@@ -25,11 +25,15 @@ use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
+use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
 use App\Http\Controllers\API\v1\InsightController;
+use App\Http\Controllers\API\v1\IssueAttachmentController;
+use App\Http\Controllers\API\v1\IssueController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
 use App\Http\Controllers\API\v1\DashboardController;
 use App\Http\Controllers\API\v1\DemoController;
+use App\Http\Controllers\API\v1\PersonController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\UserController;
 use App\Http\Controllers\API\v1\WorkspaceController;
@@ -63,6 +67,9 @@ Route::group(['prefix' => 'v1'], function () {
 
     // Telegram bot webhook
     Route::post('telegram/webhook', [TelegramBotController::class, 'webhook']);
+    Route::get('attachments/{attachment}/download', [IssueAttachmentController::class, 'download'])
+        ->middleware('signed')
+        ->name('attachments.download');
     Route::post('internal/agent-task-runs/{run}/tool-calls', [SandboxToolGatewayController::class, 'store']);
     Route::post('internal/agent-task-runs/{run}/llm-completions', [SandboxToolGatewayController::class, 'complete']);
 
@@ -131,6 +138,16 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
             ->name('tasks.show');
 
+        Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
+        Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
+        Route::post('issues', [IssueController::class, 'store'])->name('issues.store');
+        Route::get('issues/{issue}', [IssueController::class, 'show'])->name('issues.show');
+        Route::patch('issues/{issue}', [IssueController::class, 'update'])->name('issues.update');
+        Route::delete('issues/{issue}', [IssueController::class, 'destroy'])->name('issues.destroy');
+        Route::post('issues/{issue}/attachments', [IssueAttachmentController::class, 'store'])->name('issues.attachments.store');
+        Route::get('issues/{issue}/attachments', [IssueAttachmentController::class, 'index'])->name('issues.attachments.index');
+        Route::delete('attachments/{attachment}', [IssueAttachmentController::class, 'destroy'])->name('attachments.destroy');
+
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
         Route::apiResource('teams', TeamController::class)
             ->except(['index']);
@@ -167,6 +184,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
         Route::get('chats/{chat}/runs/{runUuid}', [ChatMessageController::class, 'showRunStatus']);
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
+        Route::get('telegram/chats', [TelegramChatRegistrationController::class, 'index']);
+        Route::post('telegram/chats/{telegramChatRegistration}/attach-code', [TelegramChatRegistrationController::class, 'issueAttachCode']);
 
         // Agent profiles
         Route::get('agent-profiles', [AgentProfileController::class, 'index']);

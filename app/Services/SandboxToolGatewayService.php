@@ -7,6 +7,18 @@ use Illuminate\Support\Arr;
 
 class SandboxToolGatewayService
 {
+    private const AUTO_IDEMPOTENT_TOOLS = [
+        'create_agent_task',
+        'create_workspace',
+        'create_workspace_directory',
+        'write_workspace_file',
+        'delete_workspace_file',
+        'copy_workspace_file',
+        'move_workspace_file',
+        'delete_workspace',
+        'create_followup_agent_task',
+    ];
+
     public function __construct(
         private readonly AgentTaskRunTokenService $runTokenService,
         private readonly AgentTaskToolExecutor $toolExecutor,
@@ -33,15 +45,43 @@ class SandboxToolGatewayService
             throw new \RuntimeException('Sandbox run is already finished');
         }
 
-        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
-        $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments ?? [], $workspace, $run);
+        $toolCalls = Arr::wrap(data_get($run->metadata, 'tool_calls', []));
+        $arguments = $arguments ?? [];
+        $idempotencyKey = $this->resolveIdempotencyKey($toolName, $arguments);
 
+        if ($idempotencyKey !== null) {
+            foreach ($toolCalls as $toolCall) {
+                if (($toolCall['tool_name'] ?? null) !== $toolName) {
+                    continue;
+                }
+
+                if (($toolCall['idempotency_key'] ?? null) !== $idempotencyKey) {
+                    continue;
+                }
+
+                return [
+                    'success' => true,
+                    'result' => $toolCall['result'] ?? [
+                        'success' => false,
+                        'error' => 'Idempotent tool call replayed without stored result.',
+                    ],
+                    'replayed' => true,
+                ];
+            }
+        }
+
+        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
+        $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments, $workspace, $run);
+
+        $run->refresh();
         $toolCalls = Arr::wrap(data_get($run->metadata, 'tool_calls', []));
         $toolCalls[] = [
             'tool_name' => $toolName,
-            'arguments' => $arguments ?? [],
+            'arguments' => $arguments,
+            'idempotency_key' => $idempotencyKey,
             'called_at' => now()->toIso8601String(),
             'success' => (bool) ($result['success'] ?? true),
+            'result' => $result,
         ];
 
         $run->update([
@@ -55,5 +95,43 @@ class SandboxToolGatewayService
             'success' => true,
             'result' => $result,
         ];
+    }
+
+    private function resolveIdempotencyKey(string $toolName, array $arguments): ?string
+    {
+        $explicitKey = $arguments['idempotency_key'] ?? null;
+        if (is_string($explicitKey) && trim($explicitKey) !== '') {
+            return trim($explicitKey);
+        }
+
+        if (! in_array($toolName, self::AUTO_IDEMPOTENT_TOOLS, true)) {
+            return null;
+        }
+
+        return sha1($toolName.':'.json_encode($this->normalizeArgumentsForFingerprint($arguments)));
+    }
+
+    private function normalizeArgumentsForFingerprint(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->normalizeArgumentsForFingerprint($item), $value);
+        }
+
+        ksort($value);
+
+        $normalized = [];
+        foreach ($value as $key => $item) {
+            if ($key === 'idempotency_key') {
+                continue;
+            }
+
+            $normalized[$key] = $this->normalizeArgumentsForFingerprint($item);
+        }
+
+        return $normalized;
     }
 }

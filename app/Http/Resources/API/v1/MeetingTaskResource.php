@@ -11,11 +11,11 @@ class MeetingTaskResource extends JsonResource
     {
         return [
             'id'            => $this->id,
-            'taskable_type' => $this->taskable_type,
-            'taskable_id'   => $this->taskable_id,
-            'profile_id'    => $this->profile_id,
-            'title'         => $this->title,
+            'sourceable_type' => $this->sourceable_type,
+            'sourceable_id'   => $this->sourceable_id,
+            'name'          => $this->name,
             'description'   => $this->description,
+            'assignee_id'   => $this->assignee_id,
             'assignee_name' => $this->assignee_name,
             'due_date'      => $this->due_date?->toDateString(),
             'status'        => $this->status,
