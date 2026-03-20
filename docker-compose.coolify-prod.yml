@@ -27,6 +27,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    volumes:
+      - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     networks:
       - app
     command: ["backend"]
