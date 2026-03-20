@@ -855,6 +855,176 @@ class SandboxToolGatewayControllerTest extends TestCase
         $this->assertDatabaseHas('workspaces', ['id' => $workspace->id]);
     }
 
+    #[Test]
+    public function manager_can_update_agent_task_through_gateway_tool(): void
+    {
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create([
+                'name' => 'Default Methodology',
+                'text' => 'Default methodology text',
+                'scheme' => '{}',
+                'is_default' => true,
+            ]);
+
+        $organization = Organization::create(['name' => 'Agent Org', 'slug' => 'agent-org']);
+        $team = Team::create([
+            'organization_id' => $organization->id,
+            'methodology_id' => $methodology->id,
+            'name' => 'Agent Team',
+            'slug' => 'agent-team',
+        ]);
+
+        $manager = User::factory()->create();
+        $organization->users()->attach($manager->id, ['role' => 'manager']);
+        $team->users()->attach($manager->id);
+
+        $targetTask = AgentTask::create([
+            'user_id' => $manager->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Old name',
+            'prompt' => 'Old prompt',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['get_current_user'],
+            'next_run_at' => now(),
+            'enabled' => true,
+            'max_attempts' => 3,
+        ]);
+
+        $controllerTask = AgentTask::create([
+            'user_id' => $manager->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Manager updates task',
+            'prompt' => 'Update another task',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['update_agent_task'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $controllerTask->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'update_agent_task',
+            'arguments' => [
+                'agent_task_id' => $targetTask->id,
+                'name' => 'Updated name',
+                'enabled' => false,
+                'max_attempts' => 5,
+            ],
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true)
+            ->assertJsonPath('data.result.agent_task.id', $targetTask->id)
+            ->assertJsonPath('data.result.agent_task.name', 'Updated name')
+            ->assertJsonPath('data.result.agent_task.enabled', false)
+            ->assertJsonPath('data.result.agent_task.max_attempts', 5);
+
+        $this->assertDatabaseHas('agent_tasks', [
+            'id' => $targetTask->id,
+            'name' => 'Updated name',
+            'enabled' => false,
+            'max_attempts' => 5,
+        ]);
+    }
+
+    #[Test]
+    public function update_agent_task_is_idempotent_within_a_single_run(): void
+    {
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create([
+                'name' => 'Default Methodology',
+                'text' => 'Default methodology text',
+                'scheme' => '{}',
+                'is_default' => true,
+            ]);
+
+        $organization = Organization::create(['name' => 'Idempotent Org', 'slug' => 'idempotent-org']);
+        $team = Team::create([
+            'organization_id' => $organization->id,
+            'methodology_id' => $methodology->id,
+            'name' => 'Idempotent Team',
+            'slug' => 'idempotent-team',
+        ]);
+
+        $manager = User::factory()->create();
+        $organization->users()->attach($manager->id, ['role' => 'manager']);
+        $team->users()->attach($manager->id);
+
+        $targetTask = AgentTask::create([
+            'user_id' => $manager->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'First name',
+            'prompt' => 'Prompt',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['get_current_user'],
+            'next_run_at' => now(),
+            'enabled' => true,
+            'max_attempts' => 3,
+        ]);
+
+        $controllerTask = AgentTask::create([
+            'user_id' => $manager->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Idempotent updater',
+            'prompt' => 'Update same task twice',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['update_agent_task'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $controllerTask->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+        $arguments = [
+            'agent_task_id' => $targetTask->id,
+            'name' => 'Second name',
+            'enabled' => false,
+        ];
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'update_agent_task',
+            'arguments' => $arguments,
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true);
+
+        $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'update_agent_task',
+            'arguments' => $arguments,
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true)
+            ->assertJsonPath('data.replayed', true);
+
+        $this->assertDatabaseHas('agent_tasks', [
+            'id' => $targetTask->id,
+            'name' => 'Second name',
+            'enabled' => false,
+        ]);
+    }
+
     private function createWorkspaceContext(bool $grantWrite = true): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()

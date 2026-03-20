@@ -75,7 +75,7 @@ class AgentTaskResource extends JsonResource
             'effective_network_policy' => [
                 'restrict_hosts' => $this->restrictsOutboundHosts(),
             ],
-            'metadata_schema' => $this->metadataSchema(),
+            'metadata_schema' => self::metadataSchema(),
             'latest_run' => $latestRun ? [
                 'id' => $latestRun->id,
                 'status' => $latestRun->status?->value ?? $latestRun->status,
@@ -97,7 +97,7 @@ class AgentTaskResource extends JsonResource
         ];
     }
 
-    private function metadataSchema(): array
+    public static function metadataSchema(): array
     {
         return [
             'type' => 'object',

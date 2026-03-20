@@ -4,11 +4,14 @@ namespace Tests\Feature;
 
 use App\Models\AgentProfile;
 use App\Models\AgentTask;
+use App\Models\AgentTaskRun;
 use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Team;
 use App\Models\User;
+use App\Jobs\RunAgentTaskJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -178,9 +181,12 @@ class AgentTaskControllerTest extends TestCase
     {
         $owner = User::factory()->create();
         $otherUser = User::factory()->create();
+        [$organization] = $this->createTenantContextFor($owner);
+        $organization->users()->attach($otherUser->id, ['role' => 'employee']);
 
         $task = AgentTask::create([
             'user_id' => $owner->id,
+            'organization_id' => $organization->id,
             'name' => 'Owner task',
             'prompt' => 'Owner only.',
             'schedule_type' => 'one_off',
@@ -189,10 +195,148 @@ class AgentTaskControllerTest extends TestCase
 
         $this->actingAs($otherUser)
             ->getJson("/api/v1/agent-tasks/{$task->id}")
-            ->assertStatus(404);
+            ->assertStatus(403);
     }
 
-    private function createTenantContextFor(User $user): array
+    #[Test]
+    public function it_lists_task_runs_shows_run_details_and_dispatches_now(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($user);
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Run task',
+            'prompt' => 'Inspect workspace.',
+            'schedule_type' => 'one_off',
+            'enabled' => true,
+            'max_attempts' => 3,
+            'next_run_at' => now(),
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'completed',
+            'attempt' => 1,
+            'scheduled_for' => now()->subMinute(),
+            'started_at' => now()->subMinute(),
+            'finished_at' => now(),
+            'output' => 'done',
+            'metadata' => [
+                'sandbox_result' => ['plan' => ['step 1']],
+                'tool_calls' => [['tool_name' => 'list_workspaces']],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/agent-tasks/{$task->id}/runs")
+            ->assertStatus(200)
+            ->assertJsonPath('data.0.id', $run->id)
+            ->assertJsonPath('data.0.output', 'done');
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/agent-tasks/{$task->id}/runs/{$run->id}")
+            ->assertStatus(200)
+            ->assertJsonPath('data.id', $run->id)
+            ->assertJsonPath('data.metadata.sandbox_result.plan.0', 'step 1');
+
+        $dispatchResponse = $this->actingAs($user)
+            ->postJson("/api/v1/agent-tasks/{$task->id}/dispatch")
+            ->assertStatus(201)
+            ->assertJsonPath('data.agent_task_id', $task->id)
+            ->assertJsonPath('data.status', 'queued');
+
+        $dispatchedRunId = $dispatchResponse->json('data.id');
+
+        $this->assertDatabaseHas('agent_task_runs', [
+            'id' => $dispatchedRunId,
+            'agent_task_id' => $task->id,
+            'status' => 'queued',
+        ]);
+
+        Queue::assertPushed(RunAgentTaskJob::class);
+    }
+
+    #[Test]
+    public function it_exposes_task_meta_and_tool_catalog(): void
+    {
+        $user = User::factory()->create();
+        $this->createTenantContextFor($user);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/agent-tasks/meta')
+            ->assertStatus(200)
+            ->assertJsonPath('data.schedule_types.0', 'one_off')
+            ->assertJsonPath('data.schedule_types.1', 'interval')
+            ->assertJsonPath('data.execution_modes.0', 'inline')
+            ->assertJsonPath('data.execution_modes.1', 'isolated')
+            ->assertJsonPath('data.task_types.3', 'background');
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/agent-tools')
+            ->assertStatus(200)
+            ->assertJsonFragment(['name' => 'create_workspace'])
+            ->assertJsonFragment(['name' => 'list_workspaces']);
+    }
+
+    #[Test]
+    public function non_manager_cannot_manage_agent_tasks_or_view_runs(): void
+    {
+        $user = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($user, role: 'employee');
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Employee task',
+            'prompt' => 'Should not be manageable.',
+            'schedule_type' => 'one_off',
+            'enabled' => true,
+            'next_run_at' => now(),
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'queued',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/agent-tasks')
+            ->assertStatus(403);
+
+        $this->actingAs($user)
+            ->postJson('/api/v1/agent-tasks', [
+                'name' => 'Blocked task',
+                'prompt' => 'Blocked',
+                'organization_id' => $organization->id,
+                'team_id' => $team->id,
+                'schedule_type' => 'one_off',
+            ])->assertStatus(422)
+            ->assertJsonValidationErrors(['organization_id']);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/agent-tasks/{$task->id}/runs")
+            ->assertStatus(403);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/agent-tasks/{$task->id}/runs/{$run->id}")
+            ->assertStatus(403);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/agent-tasks/meta')
+            ->assertStatus(403);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/agent-tools')
+            ->assertStatus(403);
+    }
+
+    private function createTenantContextFor(User $user, string $role = 'manager'): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()
             ?? Methodology::create([
@@ -214,7 +358,7 @@ class AgentTaskControllerTest extends TestCase
             'slug' => 'platform',
         ]);
 
-        $organization->users()->attach($user->id, ['role' => 'employee']);
+        $organization->users()->attach($user->id, ['role' => $role]);
         $team->users()->attach($user->id);
 
         return [$organization, $team];

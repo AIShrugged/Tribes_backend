@@ -9,6 +9,7 @@ class SandboxToolGatewayService
 {
     private const AUTO_IDEMPOTENT_TOOLS = [
         'create_agent_task',
+        'update_agent_task',
         'create_workspace',
         'create_workspace_directory',
         'write_workspace_file',

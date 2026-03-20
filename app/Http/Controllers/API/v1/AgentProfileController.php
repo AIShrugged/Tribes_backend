@@ -7,6 +7,8 @@ use App\Http\Requests\API\v1\AgentProfileRequest;
 use App\Http\Resources\API\v1\AgentProfileResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\AgentProfile;
+use App\Models\User;
+use App\Exceptions\AppException;
 use App\Services\JsonSchemaValidationService;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Endpoint;
@@ -27,6 +29,8 @@ class AgentProfileController extends Controller
     )]
     public function index(AgentProfileRequest $request): ApiResponse
     {
+        $this->assertUserCanManageProfiles($request->user());
+
         $query = AgentProfile::query();
 
         if ($request->has('enabled')) {
@@ -63,6 +67,8 @@ class AgentProfileController extends Controller
     )]
     public function store(AgentProfileRequest $request, JsonSchemaValidationService $schemaValidation): ApiResponse
     {
+        $this->assertUserCanManageProfiles($request->user());
+
         $data = $request->getStoreData();
 
         $schemaValidation->assertValidSchema($data['config_schema'] ?? null, 'config_schema');
@@ -82,6 +88,8 @@ class AgentProfileController extends Controller
     )]
     public function show(AgentProfile $agentProfile): ApiResponse
     {
+        $this->assertUserCanManageProfiles(request()->user());
+
         return ApiResponse::success(data: AgentProfileResource::make($agentProfile));
     }
 
@@ -110,6 +118,8 @@ class AgentProfileController extends Controller
         AgentProfile $agentProfile,
         JsonSchemaValidationService $schemaValidation
     ): ApiResponse {
+        $this->assertUserCanManageProfiles($request->user());
+
         $data = $request->getUpdateData();
 
         if (array_key_exists('config_schema', $data)) {
@@ -134,6 +144,8 @@ class AgentProfileController extends Controller
     )]
     public function destroy(AgentProfile $agentProfile): ApiResponse
     {
+        $this->assertUserCanManageProfiles(request()->user());
+
         $agentProfile->delete();
 
         return ApiResponse::success();
@@ -152,10 +164,29 @@ class AgentProfileController extends Controller
         AgentProfile $agentProfile,
         JsonSchemaValidationService $schemaValidation
     ): ApiResponse {
+        $this->assertUserCanManageProfiles($request->user());
+
         $schemaValidation->validatePayload($request->getPayloadData(), $agentProfile->task_payload_schema);
 
         return ApiResponse::success(data: [
             'valid' => true,
         ]);
+    }
+
+    private function assertUserCanManageProfiles(User $user): void
+    {
+        $managesAnyOrganization = $user->organizations()
+            ->wherePivot('role', \App\Enums\UserRole::MANAGER->value)
+            ->exists();
+
+        if ($managesAnyOrganization) {
+            return;
+        }
+
+        throw new AppException(
+            'Only organization managers can manage agent profiles.',
+            'AGENT_PROFILE_MANAGER_REQUIRED',
+            403,
+        );
     }
 }

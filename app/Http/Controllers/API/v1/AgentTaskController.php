@@ -7,12 +7,16 @@ use App\Exceptions\AppException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AgentTaskRequest;
 use App\Http\Resources\API\v1\AgentTaskResource;
+use App\Http\Resources\API\v1\AgentTaskRunResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\AgentProfile;
 use App\Models\AgentTask;
+use App\Models\AgentTaskRun;
 use App\Models\Organization;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\AgentTaskMutationService;
+use App\Services\AgentTaskSchedulerService;
 use App\Services\JsonSchemaValidationService;
 use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Endpoint;
@@ -36,8 +40,11 @@ class AgentTaskController extends Controller
     )]
     public function index(AgentTaskRequest $request): ApiResponse
     {
-        $query = $request->user()
-            ->agentTasks()
+        $managedOrganizationIds = $this->managedOrganizationIds($request->user());
+        $this->assertUserManagesAnyOrganization($managedOrganizationIds);
+
+        $query = AgentTask::query()
+            ->whereIn('organization_id', $managedOrganizationIds)
             ->with(['profile', 'latestRun'])
             ->latest('id');
 
@@ -83,12 +90,11 @@ class AgentTaskController extends Controller
         'Created task envelope.',
         type: 'array{success: bool, data: \App\Http\Resources\API\v1\AgentTaskResource, message: string, status: int, meta: array<string, mixed>}'
     )]
-    public function store(AgentTaskRequest $request, JsonSchemaValidationService $schemaValidation): ApiResponse
+    public function store(AgentTaskRequest $request, AgentTaskMutationService $taskMutationService): ApiResponse
     {
-        $data = $this->preparePersistedData(
+        $data = $taskMutationService->preparePersistedData(
             $request->getStoreData(),
-            $schemaValidation,
-            userId: $request->user()->id,
+            $request->user(),
         );
 
         $task = AgentTask::create($data)->load(['profile', 'latestRun']);
@@ -105,7 +111,7 @@ class AgentTaskController extends Controller
     )]
     public function show(AgentTaskRequest $request, int $agentTask): ApiResponse
     {
-        $task = $this->findUserTask($request->user()->id, $agentTask);
+        $task = $this->findManagedTask($request->user(), $agentTask);
 
         return ApiResponse::success(data: AgentTaskResource::make($task->load(['profile', 'latestRun'])));
     }
@@ -117,15 +123,14 @@ class AgentTaskController extends Controller
         'Updated task envelope.',
         type: 'array{success: bool, data: \App\Http\Resources\API\v1\AgentTaskResource, message: string, status: int, meta: array<string, mixed>}'
     )]
-    public function update(AgentTaskRequest $request, int $agentTask, JsonSchemaValidationService $schemaValidation): ApiResponse
+    public function update(AgentTaskRequest $request, int $agentTask, AgentTaskMutationService $taskMutationService): ApiResponse
     {
-        $task = $this->findUserTask($request->user()->id, $agentTask);
+        $task = $this->findManagedTask($request->user(), $agentTask);
 
-        $data = $this->preparePersistedData(
+        $data = $taskMutationService->preparePersistedData(
             $request->getUpdateData(),
-            $schemaValidation,
-            userId: $request->user()->id,
-            existingTask: $task,
+            $request->user(),
+            $task,
         );
 
         $task->update($data);
@@ -142,107 +147,90 @@ class AgentTaskController extends Controller
     )]
     public function destroy(AgentTaskRequest $request, int $agentTask): ApiResponse
     {
-        $task = $this->findUserTask($request->user()->id, $agentTask);
+        $task = $this->findManagedTask($request->user(), $agentTask);
         $task->delete();
 
         return ApiResponse::success();
     }
 
-    private function findUserTask(int $userId, int $taskId): AgentTask
+    public function runs(AgentTaskRequest $request, int $agentTask): ApiResponse
     {
+        $task = $this->findManagedTask($request->user(), $agentTask);
+        $query = $task->runs()->latest('id');
+
+        $count = (clone $query)->count();
+        $runs = $query->offset($request->getOffset())
+            ->limit($request->getLimit())
+            ->get();
+
+        return ApiResponse::list(AgentTaskRunResource::collection($runs), $count);
+    }
+
+    public function showRun(AgentTaskRequest $request, int $agentTask, int $run): ApiResponse
+    {
+        $task = $this->findManagedTask($request->user(), $agentTask);
+        $taskRun = $task->runs()->findOrFail($run);
+
+        return ApiResponse::success(data: AgentTaskRunResource::make($taskRun));
+    }
+
+    public function dispatch(AgentTaskRequest $request, int $agentTask, AgentTaskSchedulerService $scheduler): ApiResponse
+    {
+        $task = $this->findManagedTask($request->user(), $agentTask);
+        $run = $scheduler->dispatchTaskNow($task);
+
+        if (! $run instanceof AgentTaskRun) {
+            throw new AppException(
+                'Task is already running or disabled.',
+                'AGENT_TASK_DISPATCH_UNAVAILABLE',
+                409,
+            );
+        }
+
+        return ApiResponse::success(data: AgentTaskRunResource::make($run), status: 201);
+    }
+
+    public function meta(): ApiResponse
+    {
+        $this->assertUserManagesAnyOrganization($this->managedOrganizationIds(request()->user()));
+
+        return ApiResponse::success(data: [
+            'schedule_types' => array_map(fn ($case) => $case->value, \App\Enums\AgentScheduleType::cases()),
+            'execution_modes' => array_map(fn ($case) => $case->value, \App\Enums\AgentTaskExecutionMode::cases()),
+            'task_types' => array_map(fn ($case) => $case->value, \App\Enums\AgentTaskType::cases()),
+            'output_modes' => array_map(fn ($case) => $case->value, \App\Enums\OutputMode::cases()),
+            'metadata_schema' => AgentTaskResource::metadataSchema(),
+        ]);
+    }
+
+    private function findManagedTask(User $user, int $taskId): AgentTask
+    {
+        $managedOrganizationIds = $this->managedOrganizationIds($user);
+        $this->assertUserManagesAnyOrganization($managedOrganizationIds);
+
         return AgentTask::query()
-            ->where('user_id', $userId)
+            ->whereIn('organization_id', $managedOrganizationIds)
             ->findOrFail($taskId);
     }
 
-    private function preparePersistedData(
-        array $data,
-        JsonSchemaValidationService $schemaValidation,
-        int $userId,
-        ?AgentTask $existingTask = null,
-    ): array {
-        $profileId = $data['agent_profile_id'] ?? $existingTask?->agent_profile_id;
-        $profile = $profileId ? AgentProfile::query()->findOrFail($profileId) : null;
-
-        $payload = $data['input_payload']
-            ?? $existingTask?->input_payload
-            ?? [];
-
-        $schemaValidation->validatePayload(
-            is_array($payload) ? $payload : [],
-            $profile?->task_payload_schema,
-        );
-
-        $scheduleType = $data['schedule_type'] ?? $existingTask?->schedule_type?->value ?? AgentScheduleType::ONE_OFF->value;
-        $intervalSeconds = array_key_exists('interval_seconds', $data)
-            ? $data['interval_seconds']
-            : $existingTask?->interval_seconds;
-
-        if ($scheduleType === AgentScheduleType::INTERVAL->value) {
-            if (! $intervalSeconds || (int) $intervalSeconds < 1) {
-                throw new AppException(
-                    'The interval_seconds field is required for interval tasks.',
-                    'AGENT_TASK_INTERVAL_REQUIRED',
-                    422,
-                );
-            }
-        } else {
-            $intervalSeconds = null;
-        }
-
-        $nextRunAt = array_key_exists('next_run_at', $data)
-            ? $data['next_run_at']
-            : $existingTask?->next_run_at;
-
-        if ($existingTask === null && $nextRunAt === null) {
-            $nextRunAt = now();
-        }
-
-        $data['user_id'] = $userId;
-        $data['agent_profile_id'] = $profile?->id;
-        $data['schedule_type'] = $scheduleType;
-        $data['interval_seconds'] = $intervalSeconds;
-        $data['next_run_at'] = $nextRunAt;
-        $this->assertTenantScopeIsValid(
-            User::query()->findOrFail($userId),
-            isset($data['organization_id']) ? (int) $data['organization_id'] : $existingTask?->organization_id,
-            isset($data['team_id']) ? (int) $data['team_id'] : $existingTask?->team_id,
-        );
-
-        return $data;
+    private function managedOrganizationIds(User $user): array
+    {
+        return $user->organizations()
+            ->wherePivot('role', \App\Enums\UserRole::MANAGER->value)
+            ->pluck('organizations.id')
+            ->all();
     }
 
-    private function assertTenantScopeIsValid(User $user, ?int $organizationId, ?int $teamId): void
+    private function assertUserManagesAnyOrganization(array $managedOrganizationIds): void
     {
-        if ($organizationId === null) {
-            throw ValidationException::withMessages([
-                'organization_id' => ['Organization is required for agent tasks.'],
-            ]);
-        }
-
-        $organization = Organization::query()->findOrFail($organizationId);
-        if (! $user->isOrganizationMember($organization)) {
-            throw ValidationException::withMessages([
-                'organization_id' => ['You do not belong to the selected organization.'],
-            ]);
-        }
-
-        if ($teamId === null) {
+        if ($managedOrganizationIds !== []) {
             return;
         }
 
-        $team = Team::query()->findOrFail($teamId);
-
-        if ((int) $team->organization_id !== (int) $organization->id) {
-            throw ValidationException::withMessages([
-                'team_id' => ['Team does not belong to the selected organization.'],
-            ]);
-        }
-
-        if (! $user->isTeamMember($team)) {
-            throw ValidationException::withMessages([
-                'team_id' => ['You do not belong to the selected team.'],
-            ]);
-        }
+        throw new AppException(
+            'Only organization managers can manage agent tasks and runs.',
+            'AGENT_TASK_MANAGER_REQUIRED',
+            403,
+        );
     }
 }

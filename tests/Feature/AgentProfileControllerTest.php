@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AgentProfile;
+use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -16,6 +17,8 @@ class AgentProfileControllerTest extends TestCase
     public function it_creates_and_lists_agent_profiles(): void
     {
         $user = User::factory()->create();
+        $organization = Organization::create(['name' => 'Acme', 'slug' => 'acme']);
+        $organization->users()->attach($user->id, ['role' => 'manager']);
 
         $this->actingAs($user)->postJson('/api/v1/agent-profiles', [
             'key' => 'github-reviewer',
@@ -56,6 +59,8 @@ class AgentProfileControllerTest extends TestCase
     public function it_validates_payload_against_profile_json_schema(): void
     {
         $user = User::factory()->create();
+        $organization = Organization::create(['name' => 'Acme', 'slug' => 'acme']);
+        $organization->users()->attach($user->id, ['role' => 'manager']);
         $profile = AgentProfile::create([
             'key' => 'github-reviewer',
             'name' => 'GitHub Reviewer',
@@ -86,5 +91,19 @@ class AgentProfileControllerTest extends TestCase
             ],
         ])->assertStatus(422)
             ->assertJsonPath('meta.error_code', 'INVALID_JSON_PAYLOAD');
+    }
+
+    #[Test]
+    public function non_manager_cannot_manage_agent_profiles(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->getJson('/api/v1/agent-profiles')
+            ->assertStatus(403);
+
+        $this->actingAs($user)->postJson('/api/v1/agent-profiles', [
+            'key' => 'github-reviewer',
+            'name' => 'GitHub Reviewer',
+        ])->assertStatus(403);
     }
 }
