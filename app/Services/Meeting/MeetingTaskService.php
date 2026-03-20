@@ -5,7 +5,7 @@ namespace App\Services\Meeting;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\MeetingTaskStatus;
 use App\Models\CalendarEvent;
-use App\Models\Task;
+use App\Models\Issue;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -26,8 +26,12 @@ class MeetingTaskService
         // Match participants to profiles first so the LLM can reference profile_id directly
         $this->participantMatcher->match($event);
 
-        $participants = $event->participants()->whereNotNull('profile_id')->get();
+        $participants = $event->participants()->with('profile')->whereNotNull('profile_id')->get();
         $transcript   = $this->transcriptBuilder->build($event);
+        $assigneeByProfileId = $participants
+            ->filter(fn ($participant) => $participant->profile?->user_id)
+            ->mapWithKeys(fn ($participant) => [$participant->profile_id => $participant->profile->user_id])
+            ->all();
 
         try {
             $json = $this->llm->chat(
@@ -43,16 +47,17 @@ class MeetingTaskService
                 return new Collection();
             }
 
-            $event->tasks()->delete();
+            $event->issues()->forceDelete();
 
             foreach ($items as $item) {
-                Task::create([
-                    'taskable_type' => CalendarEvent::class,
-                    'taskable_id'   => $event->id,
-                    'title'         => $item['title'],
+                Issue::create([
+                    'user_id' => $event->source?->user_id,
+                    'sourceable_type' => CalendarEvent::class,
+                    'sourceable_id'   => $event->id,
+                    'name'          => $item['title'],
                     'description'   => $item['description'] ?? null,
                     'assignee_name' => $item['assignee_name'] ?? null,
-                    'profile_id'    => $item['profile_id'] ?? null,
+                    'assignee_id'   => isset($item['profile_id']) ? ($assigneeByProfileId[$item['profile_id']] ?? null) : null,
                     'due_date'      => $item['due_date'] ?? null,
                     'status'        => MeetingTaskStatus::OPEN->value,
                 ]);
@@ -61,7 +66,7 @@ class MeetingTaskService
             Log::error('MeetingTaskService: extraction failed', ['error' => $e->getMessage()]);
         }
 
-        return $event->tasks()->get();
+        return $event->issues()->get();
     }
 
     private function buildPrompt(string $transcript, Collection $participants): string

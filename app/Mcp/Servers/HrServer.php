@@ -2,7 +2,8 @@
 
 namespace App\Mcp\Servers;
 
-use App\Services\Agent\Tools\CreateTaskTool;
+use App\Services\Agent\Tools\CreateAgentTaskTool;
+use App\Services\Agent\Tools\CreateIssueTool;
 use App\Services\Agent\Tools\GetExtractedFactsTool;
 use App\Services\Agent\Tools\GetFollowupTool;
 use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
@@ -44,7 +45,8 @@ class HrServer extends Server
         GetFollowupTool::class,
         GetMeetingSummaryTool::class,
         GetMeetingTasksTool::class,
-        CreateTaskTool::class,
+        CreateIssueTool::class,
+        CreateAgentTaskTool::class,
         UpdateTaskStatusTool::class,
         GetTranscriptTool::class,
     ];

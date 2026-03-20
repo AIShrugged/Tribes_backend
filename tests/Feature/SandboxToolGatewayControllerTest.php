@@ -635,6 +635,66 @@ class SandboxToolGatewayControllerTest extends TestCase
     }
 
     #[Test]
+    public function create_workspace_is_idempotent_within_a_single_run(): void
+    {
+        [$user, $workspace, $organization, $team] = $this->createWorkspaceContextWithScope();
+
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Idempotent create workspace task',
+            'prompt' => 'Create the same workspace twice',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'isolated',
+            'allowed_tools' => ['create_workspace'],
+            'next_run_at' => now(),
+            'enabled' => true,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
+
+        $arguments = [
+            'name' => 'Daily Notes',
+            'scope_type' => 'user_team_private',
+        ];
+
+        $firstResponse = $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'create_workspace',
+            'arguments' => $arguments,
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true);
+
+        $secondResponse = $this->postJson("/api/v1/internal/agent-task-runs/{$run->id}/tool-calls", [
+            'tool_name' => 'create_workspace',
+            'arguments' => $arguments,
+        ], [
+            'X-Sandbox-Run-Token' => $token,
+        ])->assertStatus(200)
+            ->assertJsonPath('data.result.success', true)
+            ->assertJsonPath('data.replayed', true);
+
+        $firstWorkspaceId = $firstResponse->json('data.result.workspace.id');
+        $secondWorkspaceId = $secondResponse->json('data.result.workspace.id');
+
+        $this->assertSame($firstWorkspaceId, $secondWorkspaceId);
+        $this->assertSame(1, Workspace::query()
+            ->where('organization_id', $organization->id)
+            ->where('team_id', $team->id)
+            ->where('owner_user_id', $user->id)
+            ->where('name', 'Daily Notes')
+            ->count());
+    }
+
+    #[Test]
     public function it_deletes_owned_workspace_through_gateway_tool(): void
     {
         [$user, $workspace, $organization, $team] = $this->createWorkspaceContextWithScope();

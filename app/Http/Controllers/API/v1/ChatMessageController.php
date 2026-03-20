@@ -27,7 +27,7 @@ class ChatMessageController extends Controller
     public function __construct(
         private readonly ChatService $chatService,
         private readonly ChatMessageService $messageService,
-        private readonly WandaBotService $wandaBotService
+        private readonly WandaBotService $wandaBotService,
     ) {}
 
     /**

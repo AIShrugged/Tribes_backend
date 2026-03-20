@@ -13,6 +13,8 @@ class ChatRequest extends ApiResourceRequest
     {
         return [
             'title' => ['nullable', 'string', 'max:255'],
+            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
+            'team_id' => ['nullable', 'integer', 'exists:teams,id'],
         ];
     }
 
@@ -20,6 +22,8 @@ class ChatRequest extends ApiResourceRequest
     {
         return [
             'title' => ['sometimes', 'string', 'max:255'],
+            'organization_id' => ['sometimes', 'nullable', 'integer', 'exists:organizations,id'],
+            'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
         ];
     }
 
@@ -28,12 +32,30 @@ class ChatRequest extends ApiResourceRequest
         return $this->input('title');
     }
 
+    public function getOrganizationId(): ?int
+    {
+        return $this->filled('organization_id') ? (int) $this->input('organization_id') : null;
+    }
+
+    public function getTeamId(): ?int
+    {
+        return $this->filled('team_id') ? (int) $this->input('team_id') : null;
+    }
+
     public function bodyParameters(): array
     {
         return [
             'title' => [
                 'description' => 'Optional title for the chat. Max 255 characters.',
                 'example'     => 'Q1 Strategy Discussion',
+            ],
+            'organization_id' => [
+                'description' => 'Optional organization binding for the chat.',
+                'example'     => 1,
+            ],
+            'team_id' => [
+                'description' => 'Optional team binding for the chat.',
+                'example'     => 2,
             ],
         ];
     }

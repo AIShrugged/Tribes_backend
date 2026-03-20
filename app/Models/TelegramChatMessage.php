@@ -22,8 +22,13 @@ class TelegramChatMessage extends Model
         return $this->belongsTo(TelegramUser::class, 'telegram_user_id', 'telegram_user_id');
     }
 
+    public function issues(): MorphMany
+    {
+        return $this->morphMany(Issue::class, 'sourceable');
+    }
+
     public function tasks(): MorphMany
     {
-        return $this->morphMany(Task::class, 'taskable');
+        return $this->issues();
     }
 }

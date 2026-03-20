@@ -3,8 +3,8 @@
 namespace App\Models;
 
 /**
- * @deprecated Use Task instead.
+ * @deprecated Use Issue instead.
  */
-class MeetingTask extends Task
+class MeetingTask extends Issue
 {
 }

@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Jobs\ProcessChatBranchJob;
 use App\Models\ChannelMessage;
 use App\Models\Chat;
+use App\Models\Methodology;
+use App\Models\Organization;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\Channel\ChannelBus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,6 +24,10 @@ class ChatMessageControllerTest extends TestCase
 
     protected Chat $chat;
 
+    protected Organization $organization;
+
+    protected Team $team;
+
     protected ChannelBus $channelBus;
 
     protected function setUp(): void
@@ -28,8 +35,11 @@ class ChatMessageControllerTest extends TestCase
         parent::setUp();
 
         $this->user = User::factory()->create();
+        [$this->organization, $this->team] = $this->createTenantContextFor($this->user);
         $this->chat = Chat::create([
             'user_id' => $this->user->id,
+            'organization_id' => $this->organization->id,
+            'team_id' => $this->team->id,
             'title' => 'Test Chat',
         ]);
         $this->channelBus = $this->app->make(ChannelBus::class);
@@ -294,6 +304,36 @@ class ChatMessageControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_allows_messages_for_unbound_personal_chat(): void
+    {
+        Queue::fake();
+
+        $unboundChat = Chat::create([
+            'user_id' => $this->user->id,
+            'title' => 'Unbound Chat',
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/v1/chats/{$unboundChat->id}/messages", [
+                'content' => 'Hello',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.role', 'assistant')
+            ->assertJsonPath('data.status', 'queued');
+
+        $conversationId = $this->channelBus->forChat($unboundChat)->id;
+
+        $this->assertDatabaseHas('channel_messages', [
+            'conversation_id' => $conversationId,
+            'role' => 'user',
+            'content' => 'Hello',
+        ]);
+
+        Queue::assertPushed(ProcessChatBranchJob::class);
+    }
+
+    #[Test]
     public function it_returns_404_for_nonexistent_chat(): void
     {
         $response = $this->actingAs($this->user)
@@ -349,5 +389,35 @@ class ChatMessageControllerTest extends TestCase
         $response = $this->getJson('/api/v1/chats');
 
         $response->assertStatus(401);
+    }
+
+    private function createTenantContextFor(User ...$users): array
+    {
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create([
+                'name' => 'Default Methodology',
+                'text' => 'Default methodology text',
+                'scheme' => '{}',
+                'is_default' => true,
+            ]);
+
+        $organization = Organization::create([
+            'name' => 'Acme Chat',
+            'slug' => 'acme-chat',
+        ]);
+
+        $team = Team::create([
+            'organization_id' => $organization->id,
+            'methodology_id' => $methodology->id,
+            'name' => 'Support',
+            'slug' => 'support',
+        ]);
+
+        foreach ($users as $user) {
+            $organization->users()->attach($user->id, ['role' => 'employee']);
+            $team->users()->attach($user->id);
+        }
+
+        return [$organization, $team];
     }
 }

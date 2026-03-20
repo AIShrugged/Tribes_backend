@@ -37,9 +37,14 @@ class ChatMessage extends Model
         return $this->belongsTo(Chat::class);
     }
 
+    public function issues(): MorphMany
+    {
+        return $this->morphMany(Issue::class, 'sourceable');
+    }
+
     public function tasks(): MorphMany
     {
-        return $this->morphMany(Task::class, 'taskable');
+        return $this->issues();
     }
 
     public function isFromUser(): bool

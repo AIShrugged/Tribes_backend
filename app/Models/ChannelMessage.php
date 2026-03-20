@@ -51,9 +51,14 @@ class ChannelMessage extends Model
         return $this->belongsTo(ChannelIdentity::class, 'author_identity_id');
     }
 
+    public function issues(): MorphMany
+    {
+        return $this->morphMany(Issue::class, 'sourceable');
+    }
+
     public function tasks(): MorphMany
     {
-        return $this->morphMany(Task::class, 'taskable');
+        return $this->issues();
     }
 
     public function getChatIdAttribute(): ?int

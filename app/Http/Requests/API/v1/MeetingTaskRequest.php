@@ -23,7 +23,7 @@ class MeetingTaskRequest extends FormRequest
 
         if ($this->route()->getName() === 'tasks.show') {
             $rules += [
-                'task_id' => ['required', 'integer', 'exists:tasks,id'],
+                'task_id' => ['required', 'integer', 'exists:issues,id'],
             ];
         }
 

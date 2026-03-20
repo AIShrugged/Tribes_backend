@@ -10,8 +10,8 @@ class TaskStatsDTO extends BaseDTO
         public readonly int $total,
         public readonly int $open,
         public readonly int $inProgress,
+        public readonly int $paused,
         public readonly int $done,
-        public readonly int $cancelled,
         public readonly int $overdue,
     ) {}
 
@@ -22,8 +22,8 @@ class TaskStatsDTO extends BaseDTO
             'by_status' => [
                 'open'        => $this->open,
                 'in_progress' => $this->inProgress,
+                'paused'      => $this->paused,
                 'done'        => $this->done,
-                'cancelled'   => $this->cancelled,
             ],
             'overdue'   => $this->overdue,
         ];

@@ -12,7 +12,9 @@ class TaskStatsService
 {
     public function getStats(Collection $eventIds): TaskStatsDTO
     {
-        $query = MeetingTask::whereIn('calendar_event_id', $eventIds);
+        $query = MeetingTask::query()
+            ->where('sourceable_type', \App\Models\CalendarEvent::class)
+            ->whereIn('sourceable_id', $eventIds);
 
         $byStatus = $this->countByStatus($query);
 
@@ -20,8 +22,8 @@ class TaskStatsService
             total:      (clone $query)->count(),
             open:       (int) ($byStatus['open'] ?? 0),
             inProgress: (int) ($byStatus['in_progress'] ?? 0),
+            paused:     (int) ($byStatus['paused'] ?? 0),
             done:       (int) ($byStatus['done'] ?? 0),
-            cancelled:  (int) ($byStatus['cancelled'] ?? 0),
             overdue:    $this->countOverdue($query),
         );
     }
@@ -38,7 +40,7 @@ class TaskStatsService
     private function countOverdue(Builder $query): int
     {
         return (clone $query)
-            ->whereNotIn('status', ['done', 'cancelled'])
+            ->where('status', '!=', 'done')
             ->whereNotNull('due_date')
             ->whereDate('due_date', '<', now())
             ->count();

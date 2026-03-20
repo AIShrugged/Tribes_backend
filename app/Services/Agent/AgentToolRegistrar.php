@@ -6,9 +6,10 @@ use App\Models\Chat;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\User;
+use App\Services\Agent\Tools\CreateAgentTaskTool;
 use App\Services\Agent\Tools\CreateArtifactTool;
 use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
-use App\Services\Agent\Tools\CreateTaskTool;
+use App\Services\Agent\Tools\CreateIssueTool;
 use App\Services\Agent\Tools\CreateWorkspaceTool;
 use App\Services\Agent\Tools\GitHubDownloadArchiveTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
@@ -50,6 +51,8 @@ use App\Services\AgentMemoryLookupService;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\AgentTaskFollowupService;
+use App\Services\JsonSchemaValidationService;
+use App\Services\TenantScopeValidator;
 use App\Services\Workspace\WorkspaceAccessService;
 use App\Services\Workspace\WorkspaceProvisioningService;
 use App\Services\Workspace\WorkspaceService;
@@ -64,6 +67,8 @@ class AgentToolRegistrar
         private readonly AgentMemoryLookupService $agentMemoryLookupService,
         private readonly GitHubApiClient $gitHubApiClient,
         private readonly AgentTaskFollowupService $agentTaskFollowupService,
+        private readonly JsonSchemaValidationService $schemaValidationService,
+        private readonly TenantScopeValidator $tenantScopeValidator,
         private readonly WorkspaceAccessService $workspaceAccessService,
         private readonly WorkspaceProvisioningService $workspaceProvisioningService,
         private readonly WorkspaceService $workspaceService,
@@ -91,7 +96,14 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetUserGeneralMessagesTool);
         $toolRegistry->register(new GetMeetingSummaryTool);
         $toolRegistry->register(new GetMeetingTasksTool);
-        $toolRegistry->register(new CreateTaskTool);
+        $toolRegistry->register(new CreateIssueTool($user, $this->tenantScopeValidator, $organizationId, $teamId));
+        $toolRegistry->register(new CreateAgentTaskTool(
+            $user,
+            $this->schemaValidationService,
+            $this->tenantScopeValidator,
+            $organizationId,
+            $teamId,
+        ));
         $toolRegistry->register(new UpdateTaskStatusTool);
         $toolRegistry->register(new GetFollowupTool);
         $toolRegistry->register(new GetExtractedFactsTool);

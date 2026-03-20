@@ -64,6 +64,7 @@ class CreateFollowupAgentTaskTool extends AbstractAgentTool
                 ],
                 'input_payload' => [
                     'type' => 'object',
+                    'additionalProperties' => true,
                     'description' => 'Optional structured payload for the follow-up task. Defaults to the parent task payload.',
                 ],
             ],

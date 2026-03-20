@@ -3,7 +3,7 @@
 namespace App\Services\Agent\Tools;
 
 use App\Enums\MeetingTaskStatus;
-use App\Models\Task;
+use App\Models\Issue;
 
 /**
  * Updates the status of an existing task.
@@ -12,7 +12,7 @@ use App\Models\Task;
  * - "Отметь задачу #5 как выполненную"
  * - "Mark the PR review task as done"
  * - "Переведи задачу в статус in_progress"
- * - "Cancel task #12"
+ * - "Pause task #12"
  */
 class UpdateTaskStatusTool extends AbstractAgentTool
 {
@@ -23,7 +23,7 @@ class UpdateTaskStatusTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Update the status of an existing task. Use when the user wants to mark a task as in_progress, done, or cancelled. Requires the task ID.';
+        return 'Update the status of an existing task. Use when the user wants to mark a task as open, in_progress, paused, or done. Requires the task ID.';
     }
 
     public function getParameters(): array
@@ -56,8 +56,8 @@ class UpdateTaskStatusTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'task_id and status are required'];
         }
 
-        $task = Task::find($taskId);
-        if (! $task) {
+        $issue = Issue::find($taskId);
+        if (! $issue) {
             return ['success' => false, 'error' => "Task #{$taskId} not found"];
         }
 
@@ -66,15 +66,15 @@ class UpdateTaskStatusTool extends AbstractAgentTool
             return ['success' => false, 'error' => "Invalid status: {$status}. Valid values: " . implode(', ', $validStatuses)];
         }
 
-        $oldStatus = $task->status;
-        $task->update(['status' => $status]);
+        $oldStatus = $issue->status;
+        $issue->update(['status' => $status]);
 
         return [
             'success'    => true,
-            'task_id'    => $task->id,
-            'title'      => $task->title,
+            'task_id'    => $issue->id,
+            'name'       => $issue->name,
             'old_status' => $oldStatus,
-            'new_status' => $task->status,
+            'new_status' => $issue->status,
         ];
     }
 }
