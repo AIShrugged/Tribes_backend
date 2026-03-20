@@ -30,7 +30,7 @@ class IsolatedAgentTaskExecutor
 
         $plainToken = $this->runTokenService->issue($run);
         $context = $this->contextBuilder->build($task);
-        $gatewayBaseUrl = rtrim((string) config('agent.agent_tasks.sandbox_internal_base_url', 'http://app'), '/');
+        $gatewayBaseUrl = rtrim($this->resolveSandboxGatewayUrl(), '/');
         $gatewayHost = parse_url($gatewayBaseUrl, PHP_URL_HOST);
         $allowedOutboundHosts = $context['allowed_outbound_hosts'];
         if ($task->restrictsOutboundHosts() && is_string($gatewayHost) && $gatewayHost !== '') {
@@ -295,6 +295,28 @@ class IsolatedAgentTaskExecutor
             'host_path' => rtrim($hostRoot, '/').'/'.$sanitizedKey,
             'container_path' => '/workspace/persistent-cache',
         ];
+    }
+
+    private function resolveSandboxGatewayUrl(): string
+    {
+        $configured = trim((string) config('agent.agent_tasks.sandbox_internal_base_url', ''));
+        if ($configured !== '' && $configured !== 'http://nginx') {
+            return $configured;
+        }
+
+        $network = $this->resolveSandboxNetwork();
+        $output = (string) shell_exec(
+            sprintf("docker network inspect %s --format '{{range .Containers}}{{.Name}}\n{{end}}' 2>/dev/null", escapeshellarg($network))
+        );
+
+        foreach (explode("\n", $output) as $name) {
+            $name = trim($name);
+            if (str_starts_with($name, 'nginx-') || $name === 'nginx') {
+                return 'http://'.$name;
+            }
+        }
+
+        return $configured ?: 'http://nginx';
     }
 
     private function resolveSandboxNetwork(): string
