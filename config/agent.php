@@ -143,8 +143,8 @@ return [
         'sandbox_network' => env('AGENT_TASK_SANDBOX_NETWORK', 'bridge'),
         'sandbox_host_runs_root' => env('AGENT_TASK_SANDBOX_HOST_RUNS_ROOT'),
         'persistent_workspace_root' => env('AGENT_TASK_PERSISTENT_WORKSPACE_ROOT'),
-        'sandbox_cpus' => env('AGENT_TASK_SANDBOX_CPUS', '1'),
-        'sandbox_memory' => env('AGENT_TASK_SANDBOX_MEMORY', '512m'),
+        'sandbox_cpus' => env('AGENT_TASK_SANDBOX_CPUS', '2'),
+        'sandbox_memory' => env('AGENT_TASK_SANDBOX_MEMORY', '2g'),
     ],
 
 ];

@@ -22,14 +22,12 @@ RUN apk add --no-cache \
     libzip-dev \
     zip \
     && docker-php-ext-install pdo pdo_pgsql bcmath zip \
-    && pip3 install --no-cache-dir --break-system-packages requests==2.32.3 \
-    && adduser -D -u 10001 sandbox
+    && docker-php-ext-install pdo_mysql \
+    && pip3 install --no-cache-dir --break-system-packages requests==2.32.3
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /workspace
 COPY . /opt/sandbox_runner/
-
-USER sandbox
 
 ENTRYPOINT ["python3", "/opt/sandbox_runner/runner.py"]
