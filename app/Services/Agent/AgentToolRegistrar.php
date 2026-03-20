@@ -44,6 +44,7 @@ use App\Services\Agent\Tools\DeleteWorkspaceTool;
 use App\Services\Agent\Tools\CopyWorkspaceFileTool;
 use App\Services\Agent\Tools\CreateWorkspaceDirectoryTool;
 use App\Services\Agent\Tools\MoveWorkspaceFileTool;
+use App\Services\Agent\Tools\UpdateAgentTaskTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Agent\Tools\UpdateMemoryTool;
 use App\Services\Agent\Tools\UpdateTaskStatusTool;
@@ -51,6 +52,7 @@ use App\Services\AgentMemoryLookupService;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\AgentTaskFollowupService;
+use App\Services\AgentTaskMutationService;
 use App\Services\JsonSchemaValidationService;
 use App\Services\TenantScopeValidator;
 use App\Services\Workspace\WorkspaceAccessService;
@@ -67,6 +69,7 @@ class AgentToolRegistrar
         private readonly AgentMemoryLookupService $agentMemoryLookupService,
         private readonly GitHubApiClient $gitHubApiClient,
         private readonly AgentTaskFollowupService $agentTaskFollowupService,
+        private readonly AgentTaskMutationService $agentTaskMutationService,
         private readonly JsonSchemaValidationService $schemaValidationService,
         private readonly TenantScopeValidator $tenantScopeValidator,
         private readonly WorkspaceAccessService $workspaceAccessService,
@@ -101,6 +104,12 @@ class AgentToolRegistrar
             $user,
             $this->schemaValidationService,
             $this->tenantScopeValidator,
+            $organizationId,
+            $teamId,
+        ));
+        $toolRegistry->register(new UpdateAgentTaskTool(
+            $user,
+            $this->agentTaskMutationService,
             $organizationId,
             $teamId,
         ));

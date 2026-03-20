@@ -4,6 +4,7 @@ use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\AgentMemoryController;
 use App\Http\Controllers\API\v1\AgentProfileController;
 use App\Http\Controllers\API\v1\AgentTaskController;
+use App\Http\Controllers\API\v1\AgentToolController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
@@ -199,10 +200,16 @@ Route::group(['prefix' => 'v1'], function () {
         // Agent tasks
         Route::get('agent-tasks', [AgentTaskController::class, 'index']);
         Route::post('agent-tasks', [AgentTaskController::class, 'store']);
+        Route::get('agent-tasks/meta', [AgentTaskController::class, 'meta']);
         Route::get('agent-tasks/{agentTask}', [AgentTaskController::class, 'show']);
         Route::patch('agent-tasks/{agentTask}', [AgentTaskController::class, 'update']);
         Route::delete('agent-tasks/{agentTask}', [AgentTaskController::class, 'destroy']);
+        Route::get('agent-tasks/{agentTask}/runs', [AgentTaskController::class, 'runs']);
+        Route::get('agent-tasks/{agentTask}/runs/{run}', [AgentTaskController::class, 'showRun']);
+        Route::post('agent-tasks/{agentTask}/dispatch', [AgentTaskController::class, 'dispatch']);
         Route::get('agent-tasks/{agentTask}/memories', [AgentMemoryController::class, 'taskIndex']);
+
+        Route::get('agent-tools', [AgentToolController::class, 'index']);
 
         // Agent memories
         Route::get('agent-memories', [AgentMemoryController::class, 'index']);

@@ -9,6 +9,40 @@ use Illuminate\Support\Facades\DB;
 
 class AgentTaskSchedulerService
 {
+    public function dispatchTaskNow(AgentTask $task)
+    {
+        return DB::transaction(function () use ($task) {
+            $task = AgentTask::query()->lockForUpdate()->find($task->id);
+
+            if (! $task || ! $task->enabled) {
+                return null;
+            }
+
+            if ($task->locked_at && $task->locked_at->gt(now()->subSeconds((int) config('agent.agent_tasks.lock_ttl_seconds', 600)))) {
+                return null;
+            }
+
+            $task->update([
+                'locked_at' => now(),
+                'last_error' => null,
+            ]);
+
+            $run = $task->runs()->create([
+                'status' => AgentTaskRunStatus::QUEUED->value,
+                'attempt' => 0,
+                'scheduled_for' => now(),
+            ]);
+
+            RunAgentTaskJob::dispatch(
+                $task->id,
+                $run->id,
+                max(1, (int) $task->max_attempts),
+            );
+
+            return $run;
+        });
+    }
+
     public function dispatchDueTasks(int $limit = 50): int
     {
         $taskIds = AgentTask::query()
