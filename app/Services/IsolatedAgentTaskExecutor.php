@@ -217,7 +217,7 @@ class IsolatedAgentTaskExecutor
     private function buildDockerCommand(AgentTask $task, string $workspace, ?array $persistentWorkspace = null): array
     {
         $image = (string) ($task->effectiveSandboxProfile() ?: config('agent.agent_tasks.default_sandbox_image', 'spodial-agent-python:latest'));
-        $network = trim((string) config('agent.agent_tasks.sandbox_network', 'bridge')) ?: 'bridge';
+        $network = $this->resolveSandboxNetwork();
 
         $command = [
             'docker',
@@ -295,5 +295,31 @@ class IsolatedAgentTaskExecutor
             'host_path' => rtrim($hostRoot, '/').'/'.$sanitizedKey,
             'container_path' => '/workspace/persistent-cache',
         ];
+    }
+
+    private function resolveSandboxNetwork(): string
+    {
+        $configured = trim((string) config('agent.agent_tasks.sandbox_network', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $hostname = (string) gethostname();
+        if ($hostname === '') {
+            return 'bridge';
+        }
+
+        $output = (string) shell_exec(
+            sprintf("docker inspect %s --format '{{range \$net, \$_ := .NetworkSettings.Networks}}{{\$net}}\n{{end}}' 2>/dev/null", escapeshellarg($hostname))
+        );
+
+        foreach (explode("\n", $output) as $net) {
+            $net = trim($net);
+            if ($net !== '' && ! in_array($net, ['bridge', 'host', 'none'], true)) {
+                return $net;
+            }
+        }
+
+        return 'bridge';
     }
 }
