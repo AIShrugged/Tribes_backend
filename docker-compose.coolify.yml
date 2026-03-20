@@ -56,7 +56,8 @@ services:
       AGENT_TASK_SANDBOX_IMAGE: "${AGENT_TASK_SANDBOX_IMAGE:-spodial-agent-python:latest}"
       AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
       AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
-      AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK:-app}"
+      AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
+      AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: "${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +65,7 @@ services:
         condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     command: ["queue-worker"]
     restart: unless-stopped
 
