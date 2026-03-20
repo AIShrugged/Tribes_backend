@@ -19,6 +19,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     command: ["backend"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9000"]
