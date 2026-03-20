@@ -313,13 +313,16 @@ class IsolatedAgentTaskExecutor
             sprintf("docker inspect %s --format '{{range \$net, \$_ := .NetworkSettings.Networks}}{{\$net}}\n{{end}}' 2>/dev/null", escapeshellarg($hostname))
         );
 
+        $skip = ['bridge', 'host', 'none', 'coolify'];
+        $candidates = [];
+
         foreach (explode("\n", $output) as $net) {
             $net = trim($net);
-            if ($net !== '' && ! in_array($net, ['bridge', 'host', 'none'], true)) {
-                return $net;
+            if ($net !== '' && ! in_array($net, $skip, true)) {
+                $candidates[] = $net;
             }
         }
 
-        return 'bridge';
+        return $candidates[0] ?? 'bridge';
     }
 }
