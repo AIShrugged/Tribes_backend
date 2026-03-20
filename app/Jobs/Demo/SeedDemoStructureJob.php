@@ -37,7 +37,7 @@ class SeedDemoStructureJob implements ShouldQueue
     public function handle(): void
     {
         $generation = DemoGeneration::findOrFail($this->generationId);
-        $generation->updateProgress('Создание структуры (организация, команды)...', 5);
+        $generation->updateProgress('Setting up structure (organization, teams)...', 5);
 
         $params = $generation->params ?? [];
         $teamsCount        = $params['teams_count'] ?? 1;

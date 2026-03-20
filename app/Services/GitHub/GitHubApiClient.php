@@ -84,12 +84,20 @@ class GitHubApiClient
 
     private function request(): PendingRequest
     {
-        return Http::acceptJson()
-            ->withToken($this->tokenService->issueInstallationToken())
+        $request = Http::acceptJson()
             ->withHeaders([
                 'X-GitHub-Api-Version' => '2022-11-28',
                 'Accept' => 'application/vnd.github+json',
             ]);
+
+        try {
+            $token = $this->tokenService->issueInstallationToken();
+            $request = $request->withToken($token);
+        } catch (\RuntimeException) {
+            // GitHub App not configured — proceed without auth (works for public repos)
+        }
+
+        return $request;
     }
 
     private function url(string $path): string
