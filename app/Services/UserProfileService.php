@@ -63,12 +63,8 @@ class UserProfileService
 
     private function revokeOtherTokens(User $user): void
     {
-        $currentTokenId = $user->currentAccessToken()?->id;
-
-        $user->tokens()
-            ->where('name', 'authToken')
-            ->when($currentTokenId, fn($q) => $q->where('id', '!=', $currentTokenId))
-            ->delete();
+        // Revoke ALL tokens except the current one (for security, current token is also revoked after password change)
+        $user->tokens()->delete();
     }
 
     private function dispatchPasswordChangedNotification(User $user): void

@@ -108,7 +108,8 @@ class AuthController extends Controller
             return ApiResponse::error('Invalid credentials', status: 401);
         }
 
-        $user->tokens()->where('name', 'authToken')->delete();
+        // Delete ALL tokens to ensure complete session reset on login
+        $user->tokens()->delete();
 
         $token = $user->createToken('authToken')->plainTextToken;
 
