@@ -178,6 +178,7 @@ Route::group(['prefix' => 'v1'], function () {
             ->except(['index']);
 
         Route::get('/sources', [SourceController::class, 'index']);
+        Route::delete('/sources/{source}', [SourceController::class, 'destroy']);
 
         // Wanda Chat
         Route::apiResource('chats', ChatController::class);

@@ -46,6 +46,20 @@ class RecallCalendarService
         return new SourceDTO($response['id'], $oauthDTO->email, $type->value);
     }
 
+    public static function detach(string $calendarId): void
+    {
+        $response = Http::withHeader('Authorization', config('services.recall.api_token'))
+            ->delete(self::API_URL . $calendarId);
+
+        if ($response->notFound()) {
+            return;
+        }
+
+        if (!$response->successful()) {
+            throw new AppException($response->json()["message"], 'RECALL_GENERIC_ERROR');
+        }
+    }
+
     public static function isConnected(string $calendarId): bool
     {
         $response = Http::withHeader('Authorization', config('services.recall.api_token'))
