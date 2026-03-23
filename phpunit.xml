@@ -39,5 +39,13 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <!-- Override $_SERVER superglobal (read first by Dotenv's ServerConstAdapter) -->
+        <server name="APP_ENV" value="testing"/>
+        <server name="DB_CONNECTION" value="pgsql"/>
+        <server name="DB_HOST" value="postgres"/>
+        <server name="DB_PORT" value="5432"/>
+        <server name="DB_DATABASE" value="tribes_testing"/>
+        <server name="DB_USERNAME" value="spodial"/>
+        <server name="DB_PASSWORD" value="q123456789"/>
     </php>
 </phpunit>
