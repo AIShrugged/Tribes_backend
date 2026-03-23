@@ -10,6 +10,9 @@ use App\Services\IsolatedAgentTaskExecutor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Telegram\Bot\Api;
 
 class RunAgentTaskJob implements ShouldQueue
 {
@@ -84,6 +87,8 @@ class RunAgentTaskJob implements ShouldQueue
                 'last_error' => null,
                 'locked_at' => null,
             ]);
+
+            $this->sendTelegramNotification($task, $run, 'completed');
         } catch (\Throwable $e) {
             $terminal = $attempt >= $this->tries();
 
@@ -102,9 +107,191 @@ class RunAgentTaskJob implements ShouldQueue
                     'last_error' => $e->getMessage(),
                     'locked_at' => null,
                 ]);
+
+                $this->sendTelegramNotification($task, $run, 'failed', $e->getMessage());
             }
 
             throw $e;
         }
+    }
+
+    private function sendTelegramNotification(AgentTask $task, AgentTaskRun $run, string $status, ?string $errorMessage = null): void
+    {
+        if (! $task->notification_telegram_chat_id) {
+            return;
+        }
+
+        try {
+            $duration = $run->started_at && $run->finished_at
+                ? $run->started_at->diffForHumans($run->finished_at, true)
+                : 'unknown';
+
+            $emoji = $status === 'completed' ? "\xE2\x9C\x85" : "\xE2\x9D\x8C";
+
+            $lines = [
+                "{$emoji} *Agent Task #{$task->id}: {$status}*",
+                "",
+                "*Task:* {$task->name}",
+                "*Duration:* {$duration}",
+                "*Run:* #{$run->id}, attempt {$run->attempt}",
+            ];
+
+            $sandboxResult = $run->metadata['sandbox_result'] ?? null;
+
+            if ($sandboxResult) {
+                $lines = array_merge($lines, $this->formatSandboxResult($sandboxResult, $run));
+            } elseif ($status === 'completed' && $run->output) {
+                $lines[] = "";
+                $lines[] = Str::limit($run->output, 800);
+            }
+
+            if ($errorMessage) {
+                $lines[] = "";
+                $lines[] = "*Error:* ".Str::limit($errorMessage, 400);
+            }
+
+            $text = implode("\n", $lines);
+
+            $telegram = new Api(config('telegram.bot_token'));
+            $params = [
+                'chat_id' => $task->notification_telegram_chat_id,
+                'text' => $text,
+                'parse_mode' => 'Markdown',
+            ];
+
+            try {
+                $telegram->sendMessage($params);
+            } catch (\Throwable $e) {
+                if (str_contains(mb_strtolower($e->getMessage()), "can't parse entities")
+                    || str_contains(mb_strtolower($e->getMessage()), 'cant parse entities')) {
+                    unset($params['parse_mode']);
+                    $telegram->sendMessage($params);
+                } else {
+                    throw $e;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to send AgentTask Telegram notification', [
+                'agent_task_id' => $task->id,
+                'chat_id' => $task->notification_telegram_chat_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function formatSandboxResult(array $sandboxResult, AgentTaskRun $run): array
+    {
+        $lines = [];
+        $actions = collect($sandboxResult['actions'] ?? []);
+
+        $completed = $actions->where('status', 'completed')->count();
+        $total = $actions->count();
+        $lines[] = "";
+        $lines[] = "*Steps:* {$completed}/{$total}";
+
+        $testActions = $actions->filter(fn ($a) => str_contains($a['evidence']['command'] ?? '', 'artisan test'));
+
+        $parsed = null;
+        foreach ($testActions as $ta) {
+            $parsed = $this->parseTestArtifact($ta, $run);
+            if ($parsed) {
+                break;
+            }
+        }
+
+        $testAction = $testActions->last();
+
+        if ($testAction) {
+
+            if ($parsed) {
+                $emoji = $parsed['failed'] === 0 ? "\xE2\x9C\x85" : "\xE2\x9A\xA0\xEF\xB8\x8F";
+                $lines[] = "*Tests:* {$emoji} {$parsed['passed']}/{$parsed['total']} passed, {$parsed['failed']} failed";
+
+                if (! empty($parsed['failed_tests'])) {
+                    $lines[] = "";
+                    $lines[] = "*Failed:*";
+                    foreach (array_slice($parsed['failed_tests'], 0, 15) as $test) {
+                        $lines[] = "\xE2\x80\xA2 `{$test}`";
+                    }
+                }
+            } else {
+                $exitCode = $testAction['evidence']['exit_code'] ?? null;
+                $emoji = $exitCode === 0 ? "\xE2\x9C\x85" : "\xE2\x9A\xA0\xEF\xB8\x8F";
+                $label = match ($exitCode) {
+                    0 => 'all passed',
+                    1 => 'errors',
+                    2 => 'failures',
+                    default => "exit code {$exitCode}",
+                };
+                $lines[] = "*Tests:* {$emoji} {$label}";
+            }
+        }
+
+        return $lines;
+    }
+
+    private function parseTestArtifact(array $testAction, AgentTaskRun $run): ?array
+    {
+        $artifactPath = $testAction['evidence']['stdout_artifact'] ?? null;
+        if (! $artifactPath) {
+            return null;
+        }
+
+        $filename = basename($artifactPath);
+        $localPath = storage_path("app/private/sandbox-runs/{$run->id}/artifacts/{$filename}");
+
+        if (! file_exists($localPath)) {
+            return null;
+        }
+
+        $content = (string) file_get_contents($localPath);
+
+        // Parse PHPUnit summary: "Tests: 5 failed, 207 passed (756 assertions)"
+        if (! preg_match('/Tests:\s+(?:(\d+)\s+failed,\s+)?(\d+)\s+passed/i', $content, $m)) {
+            return null;
+        }
+
+        $failed = (int) ($m[1] ?? 0);
+        $passed = (int) $m[2];
+
+        // Extract failed test names and error descriptions
+        $failedTests = [];
+        $contentLines = explode("\n", $content);
+        for ($i = 0; $i < count($contentLines); $i++) {
+            if (! preg_match('/^\s*FAILED\s+Tests\\\\(.+)/i', $contentLines[$i], $fm)) {
+                continue;
+            }
+
+            $raw = trim('Tests\\' . $fm[1]);
+
+            // "TestClass > method…  RuntimeException" → split on 2+ spaces
+            $parts = preg_split('/\s{2,}/', $raw, 2);
+            $testName = $parts[0] ?? $raw;
+            $exceptionType = $parts[1] ?? '';
+
+            // Next line may contain error message (from grep -A1)
+            $nextLine = isset($contentLines[$i + 1]) ? trim($contentLines[$i + 1]) : '';
+            $isDescriptionLine = $nextLine !== ''
+                && ! str_starts_with($nextLine, 'FAILED')
+                && ! str_starts_with($nextLine, 'Tests:')
+                && ! str_starts_with($nextLine, 'Duration:')
+                && $nextLine !== '--'
+                && ! str_starts_with($nextLine, '──');
+
+            if ($isDescriptionLine) {
+                $failedTests[] = "{$testName}: {$nextLine}";
+            } elseif ($exceptionType) {
+                $failedTests[] = "{$testName} ({$exceptionType})";
+            } else {
+                $failedTests[] = $testName;
+            }
+        }
+
+        return [
+            'total' => $passed + $failed,
+            'passed' => $passed,
+            'failed' => $failed,
+            'failed_tests' => $failedTests,
+        ];
     }
 }
