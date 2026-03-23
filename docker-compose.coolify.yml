@@ -16,9 +16,18 @@ services:
       DB_DATABASE: ${DB_DATABASE}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     command: ["backend"]
@@ -52,6 +61,7 @@ services:
       SESSION_DRIVER: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
 
       BUILD_SANDBOX_IMAGE_ON_START: "1"
       SANDBOX_INTERNAL_BASE_URL: http://nginx
@@ -94,6 +104,7 @@ services:
       SESSION_DRIVER: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,6 +144,14 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: >
+      sh -c 'if [ -n "$REDIS_PASSWORD" ]; then
+        redis-server --requirepass "$REDIS_PASSWORD";
+      else
+        redis-server;
+      fi'
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     restart: unless-stopped
 
   postgres:
