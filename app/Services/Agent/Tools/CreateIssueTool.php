@@ -64,7 +64,7 @@ class CreateIssueTool extends AbstractAgentTool
                 ],
                 'status' => [
                     'type' => 'string',
-                    'enum' => ['open', 'in_progress', 'paused', 'done'],
+                    'enum' => ['open', 'in_progress', 'paused', 'review', 'reopen', 'done'],
                     'description' => 'Initial issue status. Defaults to open.',
                 ],
                 'organization_id' => [
@@ -116,8 +116,9 @@ class CreateIssueTool extends AbstractAgentTool
         }
 
         $status = $parameters['status'] ?? MeetingTaskStatus::OPEN->value;
-        if (! in_array($status, ['open', 'in_progress', 'paused', 'done'], true)) {
-            return ['success' => false, 'error' => 'status must be one of: open, in_progress, paused, done'];
+        $validStatuses = array_map(fn ($s) => $s->value, MeetingTaskStatus::cases());
+        if (! in_array($status, $validStatuses, true)) {
+            return ['success' => false, 'error' => 'status must be one of: '.implode(', ', $validStatuses)];
         }
 
         $sourceableType = null;

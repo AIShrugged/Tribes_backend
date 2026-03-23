@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\API\v1;
 
+use App\Enums\MeetingTaskStatus;
 use App\Traits\PaginatedRequestTrait;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -10,7 +11,7 @@ class IssueRequest extends FormRequest
 {
     use PaginatedRequestTrait;
 
-    private const VALID_STATUSES = ['open', 'in_progress', 'paused', 'done'];
+    private const VALID_STATUSES = ['open', 'in_progress', 'paused', 'review', 'reopen', 'done'];
 
     public function rules(): array
     {

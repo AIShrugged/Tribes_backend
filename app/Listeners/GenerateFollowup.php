@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Events\TranscriptParsed;
+use App\Jobs\ExtractIssuesFromTranscriptJob;
 use App\Jobs\GenerateFollowupJob;
 use Illuminate\Support\Facades\Log;
 
@@ -36,6 +37,7 @@ class GenerateFollowup
         // Запустить Job для каждой команды параллельно
         foreach ($teams as $team) {
             GenerateFollowupJob::dispatch($calendarEvent, $team, $user);
+            ExtractIssuesFromTranscriptJob::dispatch($calendarEvent, $team, $user);
         }
     }
 }
