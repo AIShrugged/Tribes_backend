@@ -22,17 +22,48 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="pgsql"/>
-        <env name="DB_HOST" value="postgres"/>
-        <env name="DB_PORT" value="5432"/>
-        <env name="DB_ROOT_DATABASE" value="postgres"/>
-        <env name="DB_DATABASE" value="tribes_testing"/>
-        <env name="DB_USERNAME" value="spodial"/>
-        <env name="DB_PASSWORD" value="q123456789"/>
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
+        <env name="DB_HOST" value="postgres" force="true"/>
+        <env name="DB_PORT" value="5432" force="true"/>
+        <env name="DB_ROOT_DATABASE" value="postgres" force="true"/>
+        <env name="DB_DATABASE" value="tribes_testing" force="true"/>
+        <env name="DB_USERNAME" value="spodial" force="true"/>
+        <env name="DB_PASSWORD" value="q123456789" force="true"/>
+        <env name="FILESYSTEM_DISK" value="local" force="true"/>
+        <env name="AWS_ACCESS_KEY_ID" value="test" force="true"/>
+        <env name="AWS_SECRET_ACCESS_KEY" value="test" force="true"/>
+        <env name="AWS_DEFAULT_REGION" value="us-east-1" force="true"/>
+        <env name="AWS_BUCKET" value="test-bucket" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <!--
+            Override $_SERVER: Dotenv's ServerConstAdapter reads $_SERVER before
+            $_ENV/getenv(). Docker injects env vars into $_SERVER at process start,
+            and PHPUnit's <env> tags only update $_ENV + putenv(), not $_SERVER.
+            Without these <server> tags, tests silently use production values.
+        -->
+        <server name="APP_ENV" value="testing"/>
+        <server name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <server name="BCRYPT_ROUNDS" value="4"/>
+        <server name="CACHE_STORE" value="array"/>
+        <server name="DB_CONNECTION" value="pgsql"/>
+        <server name="DB_HOST" value="postgres"/>
+        <server name="DB_PORT" value="5432"/>
+        <server name="DB_DATABASE" value="tribes_testing"/>
+        <server name="DB_USERNAME" value="spodial"/>
+        <server name="DB_PASSWORD" value="q123456789"/>
+        <server name="FILESYSTEM_DISK" value="local"/>
+        <server name="AWS_ACCESS_KEY_ID" value="test"/>
+        <server name="AWS_SECRET_ACCESS_KEY" value="test"/>
+        <server name="AWS_DEFAULT_REGION" value="us-east-1"/>
+        <server name="AWS_BUCKET" value="test-bucket"/>
+        <server name="MAIL_MAILER" value="array"/>
+        <server name="PULSE_ENABLED" value="false"/>
+        <server name="QUEUE_CONNECTION" value="sync"/>
+        <server name="SESSION_DRIVER" value="array"/>
+        <server name="TELESCOPE_ENABLED" value="false"/>
     </php>
 </phpunit>
