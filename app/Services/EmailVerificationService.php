@@ -27,7 +27,7 @@ class EmailVerificationService
         $hashedToken = hash('sha256', $plainToken);
 
         // Calculate expiry time
-        $expiryMinutes = config('app.email_verification_expiry', 30);
+        $expiryMinutes = (int) config('app.email_verification_expiry', 30);
         $expiresAt = Carbon::now()->addMinutes($expiryMinutes);
 
         // Create verification record
