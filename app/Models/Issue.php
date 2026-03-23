@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Observers\IssueObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+#[ObservedBy(IssueObserver::class)]
 class Issue extends Model
 {
     use SoftDeletes;
@@ -108,5 +111,10 @@ class Issue extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(IssueAttachment::class, 'issue_id');
+    }
+
+    public function agentTask(): BelongsTo
+    {
+        return $this->belongsTo(AgentTask::class);
     }
 }

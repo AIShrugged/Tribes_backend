@@ -11,7 +11,11 @@ use App\Services\Agent\Tools\CreateArtifactTool;
 use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
 use App\Services\Agent\Tools\CreateIssueTool;
 use App\Services\Agent\Tools\CreateWorkspaceTool;
+use App\Services\Agent\Tools\GitHubCreateBranchTool;
+use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
+use App\Services\Agent\Tools\GitHubCreatePullRequestTool;
 use App\Services\Agent\Tools\GitHubDownloadArchiveTool;
+use App\Services\Agent\Tools\GitHubGetPullRequestCommentsTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\GitHubGetBranchTool;
 use App\Services\Agent\Tools\GitHubGetFileContentsTool;
@@ -140,6 +144,10 @@ class AgentToolRegistrar
         $toolRegistry->register(new GitHubGetRepositoryTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetTreeTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetFileContentsTool($this->gitHubApiClient));
+        $toolRegistry->register(new GitHubCreateBranchTool($this->gitHubApiClient));
+        $toolRegistry->register(new GitHubCreateOrUpdateFileTool($this->gitHubApiClient));
+        $toolRegistry->register(new GitHubCreatePullRequestTool($this->gitHubApiClient));
+        $toolRegistry->register(new GitHubGetPullRequestCommentsTool($this->gitHubApiClient));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(

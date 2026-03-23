@@ -23,7 +23,7 @@ class UpdateTaskStatusTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Update the status of an existing task. Use when the user wants to mark a task as open, in_progress, paused, or done. Requires the task ID.';
+        return 'Update the status of an existing task. Use when the user wants to mark a task as open, in_progress, paused, review, reopen, or done. Requires the task ID. Set "review" when work is complete and awaiting user review. Set "reopen" when a reviewed task needs rework.';
     }
 
     public function getParameters(): array

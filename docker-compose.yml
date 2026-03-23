@@ -41,6 +41,12 @@ services:
             POSTGRES_DB: ${DB_DATABASE}
             POSTGRES_USER: ${DB_USERNAME}
             POSTGRES_PASSWORD: ${DB_PASSWORD}
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+            start_period: 10s
         volumes:
             - pgdata:/var/lib/postgresql/data
         networks:
@@ -91,6 +97,86 @@ services:
         networks:
             - app
 
+    queue:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        working_dir: /var/www
+        environment:
+            APP_ENV: "${APP_ENV}"
+            APP_DEBUG: "${APP_DEBUG}"
+            APP_KEY: "${APP_KEY}"
+            APP_URL: "${APP_URL}"
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: 5432
+            DB_DATABASE: "${DB_DATABASE}"
+            DB_USERNAME: "${DB_USERNAME}"
+            DB_PASSWORD: "${DB_PASSWORD}"
+            QUEUE_CONNECTION: redis
+            CACHE_STORE: redis
+            SESSION_DRIVER: redis
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+            BUILD_SANDBOX_IMAGE_ON_START: "1"
+            SANDBOX_INTERNAL_BASE_URL: http://nginx
+            AGENT_TASK_SANDBOX_IMAGE: "${AGENT_TASK_SANDBOX_IMAGE:-spodial-agent-python:latest}"
+            AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
+            AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
+            AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
+            AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: "${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT}"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_started
+        volumes:
+            - .:/var/www
+            - /var/run/docker.sock:/var/run/docker.sock
+            - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
+        networks:
+            - app
+        command: ["queue-worker"]
+        restart: unless-stopped
+
+    scheduler:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        working_dir: /var/www
+        environment:
+            APP_ENV: "${APP_ENV}"
+            APP_DEBUG: "${APP_DEBUG}"
+            APP_KEY: "${APP_KEY}"
+            APP_URL: "${APP_URL}"
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: 5432
+            DB_DATABASE: "${DB_DATABASE}"
+            DB_USERNAME: "${DB_USERNAME}"
+            DB_PASSWORD: "${DB_PASSWORD}"
+            QUEUE_CONNECTION: redis
+            CACHE_STORE: redis
+            SESSION_DRIVER: redis
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_started
+        volumes:
+            - .:/var/www
+        networks:
+            - app
+        command: ["schedule"]
+        restart: unless-stopped
+
+    redis:
+        image: redis:7-alpine
+        restart: unless-stopped
+        networks:
+            - app
 networks:
     app:
 

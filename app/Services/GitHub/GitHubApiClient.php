@@ -53,6 +53,62 @@ class GitHubApiClient
         return $this->get("/repos/{$owner}/{$repo}/contents/".ltrim($path, '/'), $query);
     }
 
+    public function createBranch(string $owner, string $repo, string $branch, string $sha): array
+    {
+        return $this->post("/repos/{$owner}/{$repo}/git/refs", [
+            'ref' => "refs/heads/{$branch}",
+            'sha' => $sha,
+        ]);
+    }
+
+    public function createOrUpdateFile(
+        string $owner,
+        string $repo,
+        string $path,
+        string $content,
+        string $message,
+        string $branch,
+        ?string $sha = null,
+    ): array {
+        $body = [
+            'message' => $message,
+            'content' => base64_encode($content),
+            'branch'  => $branch,
+        ];
+
+        if ($sha !== null) {
+            $body['sha'] = $sha;
+        }
+
+        return $this->put("/repos/{$owner}/{$repo}/contents/".ltrim($path, '/'), $body);
+    }
+
+    public function createPullRequest(
+        string $owner,
+        string $repo,
+        string $title,
+        string $head,
+        string $base,
+        string $body = '',
+    ): array {
+        return $this->post("/repos/{$owner}/{$repo}/pulls", [
+            'title' => $title,
+            'head'  => $head,
+            'base'  => $base,
+            'body'  => $body,
+        ]);
+    }
+
+    public function getPullRequestComments(string $owner, string $repo, int $pullNumber, int $perPage = 100): array
+    {
+        return $this->get("/repos/{$owner}/{$repo}/pulls/{$pullNumber}/comments", ['per_page' => $perPage]);
+    }
+
+    public function getIssueComments(string $owner, string $repo, int $issueNumber, int $perPage = 100): array
+    {
+        return $this->get("/repos/{$owner}/{$repo}/issues/{$issueNumber}/comments", ['per_page' => $perPage]);
+    }
+
     public function downloadArchive(string $owner, string $repo, string $ref, string $destinationPath): void
     {
         $response = $this->request()
@@ -62,6 +118,42 @@ class GitHubApiClient
         if (! $response->successful()) {
             throw new \RuntimeException('GitHub archive download failed: '.$response->body());
         }
+    }
+
+    private function post(string $path, array $data = []): array
+    {
+        $response = $this->request()
+            ->post($this->url($path), $data);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('GitHub API request failed: '.$response->body());
+        }
+
+        $json = $response->json();
+
+        if (! is_array($json)) {
+            throw new \RuntimeException('GitHub API returned invalid JSON');
+        }
+
+        return $json;
+    }
+
+    private function put(string $path, array $data = []): array
+    {
+        $response = $this->request()
+            ->put($this->url($path), $data);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('GitHub API request failed: '.$response->body());
+        }
+
+        $json = $response->json();
+
+        if (! is_array($json)) {
+            throw new \RuntimeException('GitHub API returned invalid JSON');
+        }
+
+        return $json;
     }
 
     private function get(string $path, array $query = []): array

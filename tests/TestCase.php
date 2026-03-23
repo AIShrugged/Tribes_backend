@@ -125,6 +125,25 @@ abstract class TestCase extends BaseTestCase
             ]);
         }
 
+        if (str_contains($prompt, 'actionable issues') || str_contains($prompt, 'извлечения actionable issues')) {
+            return json_encode([
+                'issues' => [
+                    [
+                        'name' => 'Исправить баг в авторизации',
+                        'description' => 'При логине через Google OAuth не сохраняется сессия',
+                        'type' => 'bug',
+                        'assignee_name' => 'John Doe',
+                    ],
+                    [
+                        'name' => 'Добавить экспорт отчётов в PDF',
+                        'description' => 'Нужно добавить кнопку экспорта на странице отчётов',
+                        'type' => 'task',
+                        'assignee_name' => null,
+                    ],
+                ],
+            ]);
+        }
+
         return json_encode(new \stdClass());
     }
 
