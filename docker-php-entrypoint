@@ -17,6 +17,19 @@ ensure_workspace_storage() {
   php artisan workspaces:ensure-storage --no-interaction || true
 }
 
+prepare_github_app_private_key() {
+  private_key_pem="${GITHUB_APP_PRIVATE_KEY_PEM:-}"
+  private_key_path="${GITHUB_APP_PRIVATE_KEY_PATH:-/run/secrets/github_app_private_key.pem}"
+
+  if [ -z "${private_key_pem}" ]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${private_key_path}")"
+  printf '%s' "${private_key_pem}" > "${private_key_path}"
+  chmod 600 "${private_key_path}" || true
+}
+
 build_sandbox_image_if_enabled() {
   if [ "${BUILD_SANDBOX_IMAGE_ON_START:-0}" != "1" ]; then
     return 0
@@ -38,6 +51,7 @@ build_sandbox_image_if_enabled() {
 case "$command" in
   backend)
     ensure_permissions
+    prepare_github_app_private_key
     php artisan migrate --force --no-interaction
     ensure_workspace_storage
     php artisan scramble:export --path=public/openapi.json --no-interaction || true
@@ -46,11 +60,13 @@ case "$command" in
 
   migration)
     ensure_permissions
+    prepare_github_app_private_key
     exec php artisan migrate --force --no-interaction
   ;;
 
   queue-worker)
     ensure_permissions
+    prepare_github_app_private_key
     ensure_workspace_storage
     build_sandbox_image_if_enabled
 
@@ -73,6 +89,7 @@ case "$command" in
 
   schedule)
     ensure_permissions
+    prepare_github_app_private_key
     ensure_workspace_storage
 
     stop_scheduler() {

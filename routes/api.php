@@ -190,7 +190,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
         Route::get('chats/{chat}/runs/{runUuid}', [ChatMessageController::class, 'showRunStatus']);
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
-        Route::get('chats/{chat}/activity', [AgentActivityLogController::class, 'index']);
+        Route::get('agent-activity', [AgentActivityLogController::class, 'index']);
         Route::get('telegram/chats', [TelegramChatRegistrationController::class, 'index']);
         Route::post('telegram/chats/{telegramChatRegistration}/attach-code', [TelegramChatRegistrationController::class, 'issueAttachCode']);
 

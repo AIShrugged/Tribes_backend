@@ -5,10 +5,8 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\AgentActivityLog;
-use App\Models\Chat;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Gate;
 
 /**
  * @group Agent Activity Logs
@@ -16,14 +14,13 @@ use Illuminate\Support\Facades\Gate;
 class AgentActivityLogController extends Controller
 {
     /**
-     * List agent activity for a chat
+     * List agent activity globally for the authenticated user
      *
-     * Returns a list of tool actions the agent performed within a chat,
-     * ordered by most recent first.
+     * Returns a list of tool actions the agent performed across all chats
+     * owned by the authenticated user, ordered by most recent first.
      *
      * @authenticated
      *
-     * @urlParam chat integer required The Chat ID. Example: 1
      * @queryParam agent_run_uuid string Filter by specific agent run UUID. Example: 550e8400-e29b-41d4-a716-446655440000
      * @queryParam limit integer Number of records to return (default 50, max 200). Example: 50
      * @queryParam offset integer Number of records to skip (default 0). Example: 0
@@ -42,11 +39,9 @@ class AgentActivityLogController extends Controller
      *   ]
      * }
      */
-    public function index(Request $request, Chat $chat): ApiResponse
+    public function index(Request $request): ApiResponse
     {
-        Gate::authorize('view', $chat);
-
-        $query = AgentActivityLog::where('chat_id', $chat->id)
+        $query = AgentActivityLog::where('user_id', Auth::id())
             ->orderByDesc('created_at');
 
         if ($request->has('agent_run_uuid')) {
