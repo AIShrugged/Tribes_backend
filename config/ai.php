@@ -15,5 +15,11 @@ return [
                 'demo'            => 'google/gemini-3-pro-preview',
             ]
         ]
-    ]
+    ],
+
+    'monitoring' => [
+        'balance_threshold'        => 5,
+        'telegram_chat_id'         => -1003705371486,
+        'telegram_message_thread_id' => 334,
+    ],
 ];
