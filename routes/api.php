@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\v1\AuthController;
+use App\Http\Controllers\API\v1\AgentActivityLogController;
 use App\Http\Controllers\API\v1\AgentMemoryController;
 use App\Http\Controllers\API\v1\AgentProfileController;
 use App\Http\Controllers\API\v1\AgentTaskController;
@@ -136,6 +137,9 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/followups/{followup}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
+        Route::post('/followups/{followup}/regenerate', [FollowupController::class, 'regenerate'])
+            ->name('followups.regenerate');
+
         Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
             ->name('tasks.show');
 
@@ -186,6 +190,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
         Route::get('chats/{chat}/runs/{runUuid}', [ChatMessageController::class, 'showRunStatus']);
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
+        Route::get('chats/{chat}/activity', [AgentActivityLogController::class, 'index']);
         Route::get('telegram/chats', [TelegramChatRegistrationController::class, 'index']);
         Route::post('telegram/chats/{telegramChatRegistration}/attach-code', [TelegramChatRegistrationController::class, 'issueAttachCode']);
 

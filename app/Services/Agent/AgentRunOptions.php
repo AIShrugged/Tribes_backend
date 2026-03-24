@@ -14,5 +14,7 @@ class AgentRunOptions
         public readonly ?string $conversationKey = null,
         public readonly ?string $systemPromptExtension = null,
         public readonly ?\Closure $progressCallback = null,
+        public readonly ?int $chatId = null,
+        public readonly ?string $agentRunUuid = null,
     ) {}
 }

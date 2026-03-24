@@ -77,6 +77,7 @@ class ArtifactStateService
 
         return match ($event->type) {
             'artifact.create' => $this->applyCreate($state, $payload),
+            'artifact.update' => $this->applyUpdate($state, $payload),
             'artifact.delete' => $this->applyDelete($state, $payload),
             'layout.set'      => $this->applyLayoutSet($state, $payload),
             default           => $state,
@@ -99,6 +100,25 @@ class ArtifactStateService
         $layoutIds = array_column($state['layout']['items'] ?? [], 'id');
         if (! in_array($id, $layoutIds)) {
             $state['layout']['items'][] = ['id' => $id];
+        }
+
+        return $state;
+    }
+
+    private function applyUpdate(array $state, array $payload): array
+    {
+        $id = $payload['id'];
+
+        if (! isset($state['artifacts'][$id])) {
+            return $state;
+        }
+
+        if (isset($payload['title'])) {
+            $state['artifacts'][$id]['title'] = $payload['title'];
+        }
+
+        if (isset($payload['data'])) {
+            $state['artifacts'][$id]['data'] = $payload['data'];
         }
 
         return $state;

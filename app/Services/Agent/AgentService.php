@@ -4,6 +4,7 @@ namespace App\Services\Agent;
 
 use App\Enums\AgentTaskType;
 use App\Enums\OutputMode;
+use App\Models\AgentActivityLog;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
@@ -67,9 +68,9 @@ class AgentService
     /**
      * Register chat-specific tools (call this before processMessage when a Chat context is available).
      */
-    public function registerChatTools(Chat $chat): void
+    public function registerChatTools(Chat $chat, User $user): void
     {
-        $this->toolRegistrar->registerChatTools($this->toolRegistry, $chat);
+        $this->toolRegistrar->registerChatTools($this->toolRegistry, $chat, $user);
     }
 
     /**
@@ -290,6 +291,8 @@ class AgentService
                             'tool_call_id' => $toolCallId,
                             'content' => $this->truncateToolResult($toolResult, $toolName),
                         ];
+
+                        $this->logToolActivity($user, $options, $toolName, $toolArgs, $toolResult);
                         $this->reportProgress($options, 'after_tool');
 
                         // Validate tool result and add feedback if issues detected (Pattern 3)
@@ -373,6 +376,27 @@ class AgentService
     private function registerDefaultTools(User $user, ?string $channel): void
     {
         $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel);
+    }
+
+    private function logToolActivity(User $user, AgentRunOptions $options, string $toolName, array $toolArgs, mixed $toolResult): void
+    {
+        try {
+            $success = is_array($toolResult) && ($toolResult['success'] ?? true);
+
+            AgentActivityLog::create([
+                'user_id'        => $user->id,
+                'chat_id'        => $options->chatId,
+                'agent_run_uuid' => $options->agentRunUuid,
+                'tool_name'      => $toolName,
+                'description'    => AgentActivityLog::descriptionFor($toolName, $toolResult),
+                'success'        => $success,
+                'tool_args'      => $toolArgs,
+                'tool_result'    => is_array($toolResult) ? array_slice($toolResult, 0, 10) : ['raw' => mb_substr((string) $toolResult, 0, 500)],
+                'created_at'     => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to log agent activity', ['tool' => $toolName, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
