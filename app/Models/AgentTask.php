@@ -25,6 +25,7 @@ class AgentTask extends Model
             'input_payload' => 'array',
             'metadata' => 'array',
             'notification_telegram_chat_id' => 'integer',
+            'notification_telegram_thread_id' => 'integer',
             'schedule_type' => AgentScheduleType::class,
             'execution_mode' => AgentTaskExecutionMode::class,
             'next_run_at' => 'datetime',
