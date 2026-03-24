@@ -25,6 +25,8 @@ class CalendarEventResource extends JsonResource
             'external_id'  => $this->external_id,
             'source_id'    => $this->source_id,
             'required_bot' => $this->required_bot,
+            'has_summary'  => $this->meetingSummary !== null
+                && $this->meetingSummary->status !== 'in_progress',
         ];
     }
 }
