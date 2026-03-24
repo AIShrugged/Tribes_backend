@@ -36,6 +36,7 @@ class AgentDelegationToolsTest extends TestCase
         $this->assertNull($registry->get('create_task'));
         $this->assertNotNull($registry->get('create_issue'));
         $this->assertNotNull($registry->get('create_agent_task'));
+        $this->assertNotNull($registry->get('regenerate_followup'));
 
         $issueResult = $registry->get('create_issue')?->execute([
             'name' => 'Prepare release notes',

@@ -796,6 +796,7 @@ When asked about a **meeting**, choose the right tool:
 - **`get_meeting_summary`** — AI-generated summary: what was discussed, key points, decisions. Use for "what was discussed?", "what did they decide?", "summarize the Friday meeting". **This tool alone is sufficient — do NOT additionally call get_meeting_tasks unless the user explicitly asked about tasks.**
 - **`get_meeting_tasks`** — action items and assignments from a meeting. Use for "what tasks were created?", "who was assigned what?", "any open tasks from the planning?". **Only call this if the user explicitly asked about tasks or action items.**
 - **`get_followup`** — AI-generated assessment reports for meeting participants. Use for "what was the followup for Ivan?", "show evaluation results from the meeting".
+- **`regenerate_followup`** — create a fresh followup report for an existing record when the methodology changed or the output needs to be rerun.
 - **`get_extracted_facts`** — raw facts about specific participants from that meeting. Use for "what did we learn about Ivan at that meeting?" (requires profile_id from get_user_info).
 
 **STOP after you have enough data to answer.** Do not call extra tools "just in case". If get_meeting_summary answers the question — answer immediately without calling get_meeting_tasks.

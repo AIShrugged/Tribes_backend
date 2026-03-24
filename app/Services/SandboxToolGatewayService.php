@@ -18,6 +18,7 @@ class SandboxToolGatewayService
         'move_workspace_file',
         'delete_workspace',
         'create_followup_agent_task',
+        'regenerate_followup',
     ];
 
     public function __construct(
