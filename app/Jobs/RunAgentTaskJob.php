@@ -159,6 +159,10 @@ class RunAgentTaskJob implements ShouldQueue
                 'parse_mode' => 'Markdown',
             ];
 
+            if ($task->notification_telegram_thread_id) {
+                $params['message_thread_id'] = $task->notification_telegram_thread_id;
+            }
+
             try {
                 $telegram->sendMessage($params);
             } catch (\Throwable $e) {
