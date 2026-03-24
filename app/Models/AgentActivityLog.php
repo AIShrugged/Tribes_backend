@@ -58,7 +58,7 @@ class AgentActivityLog extends Model
             'get_meeting_tasks'        => 'Получил задачи встречи',
             'get_transcript'           => 'Получил транскрипт',
             'get_followup'             => 'Получил фоллоуап',
-            'regenerate_followup'      => 'Перегенерировал фоллоуап',
+            'regenerate_followup'      => 'Поставил фоллоуап на регенерацию',
             'get_user_info'            => 'Запросил информацию о пользователе',
             'get_user_insights'        => 'Получил инсайты',
             'get_team_members'         => 'Получил участников команды',

@@ -7,10 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\FollowupRequest;
 use App\Http\Resources\API\v1\FollowupResource;
 use App\Http\Responses\ApiResponse;
+use App\Jobs\RegenerateFollowupJob;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Team;
-use App\Services\Followup\FollowupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -158,40 +158,42 @@ class FollowupController extends Controller
     /**
      * Regenerate followup
      *
-     * Creates a new followup for the same calendar event using the team's current methodology.
-     * Use when a followup is deprecated (its methodology differs from the team's current one).
-     * The old followup is kept intact.
+     * Queues regeneration of the latest followup for the same calendar event using the team's current methodology.
+     * Use when a followup is deprecated (its methodology differs from the team's current one) or needs to be refreshed.
+     * The old followup is kept intact and a new followup will be created asynchronously.
      *
      * @authenticated
      *
      * @urlParam followup integer required The Followup ID to regenerate. Example: 1
      *
-     * @response 200 scenario="OK" {
+     * @response 202 scenario="Accepted" {
      *   "success": true,
      *   "data": {
-     *     "id": 2,
-     *     "calendar_event": {"id": 5, "title": "Q1 Planning"},
-     *     "team_id": 2,
-     *     "user": {"id": 1, "name": "Alice Johnson"},
-     *     "methodology_id": 3,
-     *     "is_deprecated": false,
-     *     "text": "",
-     *     "status": "in_progress",
-     *     "created_at": "2026-03-24T14:00:00.000000Z",
-     *     "updated_at": "2026-03-24T14:00:00.000000Z"
-     *   }
+     *     "calendar_event_id": 5,
+     *     "followup_id": 1,
+     *     "status": "in_progress"
+     *   },
+     *   "message": "Followup regeneration queued",
+     *   "status": 202,
+     *   "meta": {}
      * }
      * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
      * @response 404 scenario="Not Found" {"message": "No query results for model [Followup] 1"}
      */
-    public function regenerate(Followup $followup, FollowupService $followupService): ApiResponse
+    public function regenerate(Followup $followup): ApiResponse
     {
         Gate::authorize('view', $followup);
 
-        $newFollowup = $followupService->regenerate($followup, Auth::user());
+        RegenerateFollowupJob::dispatch($followup->calendar_event_id, Auth::id());
 
         return ApiResponse::success(
-            data: FollowupResource::make($newFollowup)
+            message: 'Followup regeneration queued',
+            data: [
+                'calendar_event_id' => $followup->calendar_event_id,
+                'followup_id' => $followup->id,
+                'status' => 'in_progress',
+            ],
+            status: 202,
         );
     }
 

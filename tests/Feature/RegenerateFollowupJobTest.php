@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\RegenerateFollowupJob;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Methodology;
@@ -11,41 +12,32 @@ use App\Models\Source;
 use App\Models\Team;
 use App\Models\TranscriptEntry;
 use App\Models\User;
-use App\Jobs\RegenerateFollowupJob;
-use App\Services\Agent\AgentToolRegistrar;
-use App\Services\Agent\Tools\ToolRegistry;
+use App\Services\Followup\FollowupService;
+use App\Services\OpenRouterClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-class FollowupRegenerationToolTest extends TestCase
+class RegenerateFollowupJobTest extends TestCase
 {
     use RefreshDatabase;
 
     #[Test]
-    public function agent_can_regenerate_followup_through_registry_tool(): void
+    public function job_regenerates_followup_asynchronously_when_handled(): void
     {
-        Queue::fake();
-
         $user = User::factory()->create();
         [$organization, $team, $calendarEvent] = $this->createFollowupContextFor($user);
 
         $newMethodology = Methodology::create([
             'name' => 'Updated Methodology',
             'text' => 'Updated methodology text',
-            'scheme' => json_encode([
-                'type' => 'object',
-                'properties' => [
-                    'summary' => ['type' => 'string'],
-                ],
-            ]),
+            'scheme' => '{}',
             'organization_id' => $organization->id,
         ]);
-
         $team->update(['methodology_id' => $newMethodology->id]);
 
-        $oldFollowup = Followup::create([
+        Followup::create([
             'calendar_event_id' => $calendarEvent->id,
             'team_id' => $team->id,
             'user_id' => $user->id,
@@ -54,49 +46,24 @@ class FollowupRegenerationToolTest extends TestCase
             'text' => json_encode(['summary' => 'Old followup']),
         ]);
 
-        $registry = new ToolRegistry;
-        $this->app->make(AgentToolRegistrar::class)->registerDefaults(
-            $registry,
-            $user,
-            'web',
-            organizationId: $organization->id,
-            teamId: $team->id,
-        );
+        $mockClient = Mockery::mock(OpenRouterClient::class);
+        $mockClient->shouldReceive('chat')
+            ->once()
+            ->andReturn(json_encode(['summary' => 'Regenerated followup']));
 
-        $result = $registry->get('regenerate_followup')?->execute([
-            'calendar_event_id' => $calendarEvent->id,
-        ]);
+        $this->app->instance(OpenRouterClient::class, $mockClient);
 
-        $this->assertTrue((bool) data_get($result, 'success'));
-        $this->assertSame($oldFollowup->id, (int) data_get($result, 'old_followup_id'));
-        $this->assertSame('queued', data_get($result, 'status'));
-        Queue::assertPushed(RegenerateFollowupJob::class, function (RegenerateFollowupJob $job) use ($calendarEvent, $user) {
-            return $job->calendarEventId === $calendarEvent->id
-                && $job->userId === $user->id;
-        });
+        $job = new RegenerateFollowupJob($calendarEvent->id, $user->id);
+        $job->handle($this->app->make(FollowupService::class));
 
-        $this->assertSame(1, Followup::query()->where('calendar_event_id', $calendarEvent->id)->count());
-    }
+        $followups = Followup::query()
+            ->where('calendar_event_id', $calendarEvent->id)
+            ->orderBy('id')
+            ->get();
 
-    #[Test]
-    public function regenerate_followup_requires_calendar_event_id(): void
-    {
-        $user = User::factory()->create();
-        [$organization, $team, $calendarEvent] = $this->createFollowupContextFor($user);
-
-        $registry = new ToolRegistry;
-        $this->app->make(AgentToolRegistrar::class)->registerDefaults(
-            $registry,
-            $user,
-            'web',
-            organizationId: $organization->id,
-            teamId: $team->id,
-        );
-
-        $result = $registry->get('regenerate_followup')?->execute([]);
-
-        $this->assertFalse((bool) data_get($result, 'success'));
-        $this->assertSame('calendar_event_id is required', data_get($result, 'error'));
+        $this->assertCount(2, $followups);
+        $this->assertSame('done', $followups->last()->status);
+        $this->assertSame($newMethodology->id, $followups->last()->methodology_id);
     }
 
     private function createFollowupContextFor(User $user): array

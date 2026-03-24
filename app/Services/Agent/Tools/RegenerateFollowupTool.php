@@ -4,7 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\Followup;
 use App\Models\User;
-use App\Services\Followup\FollowupService;
+use App\Jobs\RegenerateFollowupJob;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
@@ -20,7 +20,6 @@ class RegenerateFollowupTool extends AbstractAgentTool
 {
     public function __construct(
         private readonly ?User $user = null,
-        private readonly ?FollowupService $followupService = null,
     ) {
         parent::__construct();
     }
@@ -71,6 +70,7 @@ class RegenerateFollowupTool extends AbstractAgentTool
 
         $followup = Followup::with(['calendarEvent', 'team', 'user', 'methodology'])
             ->where('calendar_event_id', $calendarEventId)
+            ->owned($user->id)
             ->latest('id')
             ->first();
 
@@ -88,32 +88,14 @@ class RegenerateFollowupTool extends AbstractAgentTool
             ];
         }
 
-        try {
-            $service = $this->followupService ?? app(FollowupService::class);
-            $newFollowup = $service->regenerate($followup, $user);
-        } catch (\Throwable $exception) {
-            return [
-                'success' => false,
-                'error' => $exception->getMessage(),
-            ];
-        }
-
-        $newFollowup->load(['calendarEvent', 'team', 'user', 'methodology']);
+        RegenerateFollowupJob::dispatch($followup->calendar_event_id, $user->id);
 
         return [
             'success' => true,
             'old_followup_id' => $followup->id,
-            'followup' => [
-                'id' => $newFollowup->id,
-                'calendar_event_id' => $newFollowup->calendar_event_id,
-                'team_id' => $newFollowup->team_id,
-                'user_id' => $newFollowup->user_id,
-                'methodology_id' => $newFollowup->methodology_id,
-                'status' => $newFollowup->status,
-                'text' => $newFollowup->text,
-                'created_at' => $newFollowup->created_at?->toIso8601String(),
-                'updated_at' => $newFollowup->updated_at?->toIso8601String(),
-            ],
+            'calendar_event_id' => $followup->calendar_event_id,
+            'status' => 'queued',
+            'message' => 'Followup regeneration queued',
         ];
     }
 
