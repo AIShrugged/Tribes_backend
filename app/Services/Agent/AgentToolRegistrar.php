@@ -12,6 +12,7 @@ use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
 use App\Services\Agent\Tools\FetchDocumentTool;
 use App\Services\Agent\Tools\GetOrganizationTeamsTool;
 use App\Services\Agent\Tools\GetUserOrganizationsTool;
+use App\Services\Agent\Tools\RegenerateFollowupTool;
 use App\Services\Agent\Tools\SaveMethodologyTool;
 use App\Services\Agent\Tools\UpdateArtifactTool;
 use App\Services\Agent\Tools\CreateIssueTool;
@@ -124,6 +125,7 @@ class AgentToolRegistrar
         ));
         $toolRegistry->register(new UpdateTaskStatusTool);
         $toolRegistry->register(new GetFollowupTool);
+        $toolRegistry->register(new RegenerateFollowupTool($user));
         $toolRegistry->register(new GetExtractedFactsTool);
         $toolRegistry->register(new GetUserInsightsTool);
         $toolRegistry->register(new GetInsightProfileHistoryTool);
