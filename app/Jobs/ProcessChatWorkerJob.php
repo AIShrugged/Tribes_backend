@@ -80,7 +80,7 @@ class ProcessChatWorkerJob implements ShouldQueue
                 throw new \RuntimeException('User message not found');
             }
 
-            $agentService->registerChatTools($chat);
+            $agentService->registerChatTools($chat, $user);
 
             $responseText = $agentService->run(
                 $user,
@@ -90,6 +90,8 @@ class ProcessChatWorkerJob implements ShouldQueue
                     outputMode: OutputMode::MD,
                     taskType: AgentTaskType::INTERACTIVE,
                     conversationKey: 'chat:'.$chat->id,
+                    chatId: $chat->id,
+                    agentRunUuid: $runUuid,
                 )
             );
 

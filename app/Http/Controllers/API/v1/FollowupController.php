@@ -156,6 +156,46 @@ class FollowupController extends Controller
     }
 
     /**
+     * Regenerate followup
+     *
+     * Creates a new followup for the same calendar event using the team's current methodology.
+     * Use when a followup is deprecated (its methodology differs from the team's current one).
+     * The old followup is kept intact.
+     *
+     * @authenticated
+     *
+     * @urlParam followup integer required The Followup ID to regenerate. Example: 1
+     *
+     * @response 200 scenario="OK" {
+     *   "success": true,
+     *   "data": {
+     *     "id": 2,
+     *     "calendar_event": {"id": 5, "title": "Q1 Planning"},
+     *     "team_id": 2,
+     *     "user": {"id": 1, "name": "Alice Johnson"},
+     *     "methodology_id": 3,
+     *     "is_deprecated": false,
+     *     "text": "",
+     *     "status": "in_progress",
+     *     "created_at": "2026-03-24T14:00:00.000000Z",
+     *     "updated_at": "2026-03-24T14:00:00.000000Z"
+     *   }
+     * }
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [Followup] 1"}
+     */
+    public function regenerate(Followup $followup, FollowupService $followupService): ApiResponse
+    {
+        Gate::authorize('view', $followup);
+
+        $newFollowup = $followupService->regenerate($followup, Auth::user());
+
+        return ApiResponse::success(
+            data: FollowupResource::make($newFollowup)
+        );
+    }
+
+    /**
      * For TESTING purposes. Remove for production
      *
      * @param Request $request

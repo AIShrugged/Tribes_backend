@@ -21,7 +21,8 @@ class ArtifactSchema
             ArtifactType::PeopleList     => self::peopleList(),
             ArtifactType::InsightCard    => self::insightCard(),
             ArtifactType::Chart          => self::chart(),
-            ArtifactType::TranscriptView => self::transcriptView(),
+            ArtifactType::TranscriptView        => self::transcriptView(),
+            ArtifactType::MethodologyCriteria   => self::methodologyCriteria(),
         };
     }
 
@@ -40,6 +41,12 @@ class ArtifactSchema
         - insight_card: {"person": {"name": string, "profile_id": int}, "insights": [{"category": string, "content": object}]}
         - chart: {"chart_type": "bar"|"line"|"pie", "title": string|null, "labels": [string], "datasets": [{"label": string, "data": [number]}]}
         - transcript_view: {"meeting_title": string, "entries": [{"speaker": string, "text": string, "timestamp": string|null}]}
+        - methodology_criteria: {"blocks": [Block]} where Block is one of:
+          - {"type": "header", "text": string} — section header
+          - {"type": "scoring_table", "columns": [string], "rows": [[string|number]]} — criteria table with scores
+          - {"type": "progress_summary", "items": [{"label": string, "value": number, "max": number|null}]} — progress bars / key metrics
+          - {"type": "scale", "title": string, "items": [{"score": number, "label": string}]} — scoring scale legend
+          - {"type": "text_list", "title": string, "items": [string]} — bullet list with title
         TEXT;
     }
 
@@ -176,6 +183,37 @@ class ArtifactSchema
                             'speaker'   => ['type' => 'string'],
                             'text'      => ['type' => 'string'],
                             'timestamp' => ['type' => ['string', 'null']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    private static function methodologyCriteria(): array
+    {
+        return [
+            'type'       => 'object',
+            'required'   => ['blocks'],
+            'properties' => [
+                'blocks' => [
+                    'type'  => 'array',
+                    'items' => [
+                        'type'       => 'object',
+                        'required'   => ['type'],
+                        'properties' => [
+                            'type' => [
+                                'type' => 'string',
+                                'enum' => ['header', 'scoring_table', 'progress_summary', 'scale', 'text_list'],
+                            ],
+                            // header
+                            'text' => ['type' => 'string'],
+                            // scoring_table
+                            'columns' => ['type' => 'array', 'items' => ['type' => 'string']],
+                            'rows'    => ['type' => 'array', 'items' => ['type' => 'array']],
+                            // progress_summary & scale
+                            'title' => ['type' => 'string'],
+                            'items' => ['type' => 'array'],
                         ],
                     ],
                 ],
