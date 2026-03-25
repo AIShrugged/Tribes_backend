@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Services\Recall\RecallBotService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Support\Facades\DB;
 
 class CalendarEvent extends Model
 {
@@ -26,9 +24,9 @@ class CalendarEvent extends Model
         return $this->belongsTo(Source::class);
     }
 
-    public function bot(): HasOne
+    public function bot(): BelongsTo
     {
-        return $this->hasOne(Bot::class);
+        return $this->belongsTo(Bot::class);
     }
 
     public function profiles(): BelongsToMany
@@ -71,34 +69,6 @@ class CalendarEvent extends Model
         return $query->whereHas('source', function (Builder $query) use ($userId) {
             $query->where('user_id', $userId);
         });
-    }
-
-    public function scheduleBot(): void
-    {
-        if (!$this->required_bot && !$this->bot) {
-            return;
-        }
-
-        DB::transaction(function () {
-            if ($this->shouldRemoveBot()) {
-                app(RecallBotService::class)->removeBot($this);
-                $this->bot()->delete();
-
-                return;
-            }
-
-            $botDTO = app(RecallBotService::class)->schedule($this);
-
-            $this->bot()->updateOrCreate(
-                ['external_id' => $botDTO->externalId],
-                ['deduplication_key' => $botDTO->deduplicationKey]
-            );
-        });
-    }
-
-    public function shouldRemoveBot(): bool
-    {
-        return !$this->required_bot && $this->bot;
     }
 
     public function requiredBot(bool $require): void

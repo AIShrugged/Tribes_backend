@@ -3,25 +3,17 @@
 namespace App\Listeners;
 
 use App\Events\CalendarEventChanged;
-use App\Services\Recall\RecallBotService;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Queue\InteractsWithQueue;
+use App\Services\Recall\BotSchedulingService;
 
 class RescheduleBot
 {
-    /**
-     * Create the event listener.
-     */
-    public function __construct()
-    {
-        //
+    public function __construct(
+        private readonly BotSchedulingService $botSchedulingService,
+    ) {
     }
 
-    /**
-     * Handle the event.
-     */
     public function handle(CalendarEventChanged $event): void
     {
-        $event->calendarEvent->scheduleBot();
+        $this->botSchedulingService->handleRequirement($event->calendarEvent);
     }
 }

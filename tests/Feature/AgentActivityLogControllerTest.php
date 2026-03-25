@@ -9,6 +9,7 @@ use App\Models\Organization;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -37,6 +38,8 @@ class AgentActivityLogControllerTest extends TestCase
             'name' => 'Platform',
             'slug' => 'platform',
         ]);
+        $runA = (string) Str::uuid();
+        $runB = (string) Str::uuid();
 
         $chatA = Chat::create([
             'user_id' => $user->id,
@@ -54,7 +57,7 @@ class AgentActivityLogControllerTest extends TestCase
         AgentActivityLog::create([
             'user_id' => $user->id,
             'chat_id' => $chatA->id,
-            'agent_run_uuid' => 'run-a',
+            'agent_run_uuid' => $runA,
             'tool_name' => 'create_artifact',
             'description' => 'Created artifact A',
             'success' => true,
@@ -66,7 +69,7 @@ class AgentActivityLogControllerTest extends TestCase
         AgentActivityLog::create([
             'user_id' => $user->id,
             'chat_id' => $chatB->id,
-            'agent_run_uuid' => 'run-b',
+            'agent_run_uuid' => $runB,
             'tool_name' => 'update_agent_task',
             'description' => 'Updated task B',
             'success' => true,
@@ -103,6 +106,9 @@ class AgentActivityLogControllerTest extends TestCase
             'name' => 'Platform',
             'slug' => 'platform',
         ]);
+        $runA = (string) Str::uuid();
+        $runB = (string) Str::uuid();
+
         $chat = Chat::create([
             'user_id' => $user->id,
             'organization_id' => $organization->id,
@@ -113,7 +119,7 @@ class AgentActivityLogControllerTest extends TestCase
         AgentActivityLog::create([
             'user_id' => $user->id,
             'chat_id' => $chat->id,
-            'agent_run_uuid' => 'run-a',
+            'agent_run_uuid' => $runA,
             'tool_name' => 'create_artifact',
             'description' => 'Created artifact',
             'success' => true,
@@ -125,7 +131,7 @@ class AgentActivityLogControllerTest extends TestCase
         AgentActivityLog::create([
             'user_id' => $user->id,
             'chat_id' => $chat->id,
-            'agent_run_uuid' => 'run-b',
+            'agent_run_uuid' => $runB,
             'tool_name' => 'update_agent_task',
             'description' => 'Updated task',
             'success' => true,
@@ -134,10 +140,10 @@ class AgentActivityLogControllerTest extends TestCase
             'created_at' => now()->addMinute(),
         ]);
 
-        $response = $this->actingAs($user)->getJson('/api/v1/agent-activity?agent_run_uuid=run-a');
+        $response = $this->actingAs($user)->getJson('/api/v1/agent-activity?agent_run_uuid=' . $runA);
 
         $response->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.agent_run_uuid', 'run-a');
+            ->assertJsonPath('data.0.agent_run_uuid', $runA);
     }
 }

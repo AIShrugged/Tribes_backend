@@ -30,7 +30,7 @@ class FollowupRegenerationControllerTest extends TestCase
         $this->actingAs($user)
             ->postJson("/api/v1/followups/{$followup->id}/regenerate")
             ->assertStatus(202)
-            ->assertJsonPath('data.status', 'queued')
+            ->assertJsonPath('data.status', 'in_progress')
             ->assertJsonPath('data.followup_id', $followup->id)
             ->assertJsonPath('data.calendar_event_id', $calendarEvent->id);
 

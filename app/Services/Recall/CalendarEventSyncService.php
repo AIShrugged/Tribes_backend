@@ -12,6 +12,11 @@ use Carbon\Carbon;
 
 class CalendarEventSyncService
 {
+    public function __construct(
+        private readonly BotSchedulingService $botSchedulingService,
+    ) {
+    }
+
     public function sync(Source $source, EventDTO $eventDTO, array $attendees): ?CalendarEvent
     {
         $startTime = Carbon::parse($eventDTO->startsAt)->setTimezone(config('app.timezone'));
@@ -34,14 +39,9 @@ class CalendarEventSyncService
         );
 
         $this->syncAttendees($calendarEvent, $attendees);
-        $botDTO = app(RecallBotService::class)->schedule($calendarEvent);
-
-        $calendarEvent->bot()->updateOrCreate(
-            ['external_id' => $botDTO->externalId],
-            ['deduplication_key' => $botDTO->deduplicationKey]
-        );
 
         $calendarEvent->requiredBot(true);
+        $this->botSchedulingService->schedule($calendarEvent);
 
         CalendarEventChanged::dispatch($calendarEvent);
 
