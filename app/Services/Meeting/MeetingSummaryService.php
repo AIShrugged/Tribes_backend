@@ -4,6 +4,7 @@ namespace App\Services\Meeting;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\FollowupStatus;
+use App\Events\MeetingSummaryGenerated;
 use App\Models\CalendarEvent;
 use App\Models\MeetingSummary;
 use App\Services\Followup\TranscriptBuilderService;
@@ -48,6 +49,8 @@ class MeetingSummaryService
                 'key_points' => $data['key_points'] ?? [],
                 'decisions'  => $data['decisions'] ?? [],
             ]);
+
+            MeetingSummaryGenerated::dispatch($summary->fresh());
         } catch (\Throwable $e) {
             Log::error('MeetingSummaryService: generation failed', ['error' => $e->getMessage()]);
             $summary->update(['status' => FollowupStatus::FAILED->value]);

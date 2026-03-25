@@ -62,6 +62,11 @@ class Team extends Model
         return $this->hasMany(Followup::class);
     }
 
+    public function notificationSettings(): HasMany
+    {
+        return $this->hasMany(TeamNotificationSetting::class);
+    }
+
     public function invites(): HasMany
     {
         return $this->hasMany(Invite::class);
