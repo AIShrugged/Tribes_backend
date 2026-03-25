@@ -94,8 +94,8 @@ class RegenerateFollowupTool extends AbstractAgentTool
             'success' => true,
             'old_followup_id' => $followup->id,
             'calendar_event_id' => $followup->calendar_event_id,
-            'status' => 'queued',
-            'message' => 'Followup regeneration queued',
+            'status' => 'in_progress',
+            'message' => 'Followup regeneration started',
         ];
     }
 

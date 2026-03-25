@@ -81,10 +81,13 @@ class RecallWebhookTest extends TestCase
 
         // Создаем бота
         $this->bot = Bot::create([
-            'calendar_event_id' => $this->calendarEvent->id,
             'external_id' => 'test-bot-123',
             'deduplication_key' => 'test-dedup-key',
+            'meeting_url' => 'https://meet.google.com/test',
+            'is_active' => true,
         ]);
+
+        $this->calendarEvent->update(['bot_id' => $this->bot->id]);
     }
 
     #[Test]

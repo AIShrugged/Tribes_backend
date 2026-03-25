@@ -69,7 +69,7 @@ class FollowupRegenerationToolTest extends TestCase
 
         $this->assertTrue((bool) data_get($result, 'success'));
         $this->assertSame($oldFollowup->id, (int) data_get($result, 'old_followup_id'));
-        $this->assertSame('queued', data_get($result, 'status'));
+        $this->assertSame('in_progress', data_get($result, 'status'));
         Queue::assertPushed(RegenerateFollowupJob::class, function (RegenerateFollowupJob $job) use ($calendarEvent, $user) {
             return $job->calendarEventId === $calendarEvent->id
                 && $job->userId === $user->id;
