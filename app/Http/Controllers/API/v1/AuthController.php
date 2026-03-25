@@ -49,7 +49,14 @@ class AuthController extends Controller
         }
 
         $user = User::create($request->validated());
-        $token = $user->createToken('authToken')->plainTextToken;
+        $newToken = $user->createToken('authToken');
+
+        $newToken->accessToken->update([
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        $token = $newToken->plainTextToken;
 
         $profileLinkingService->linkByEmail($user);
 
@@ -87,7 +94,7 @@ class AuthController extends Controller
         return ApiResponse::success(data: $data, status: 201);
     }
 
-    #[Endpoint(title: 'Login', description: 'Authenticate with email and password and return a new auth token. Existing authToken tokens are revoked first.')]
+    #[Endpoint(title: 'Login', description: 'Authenticate with email and password and return a new auth token.')]
     #[BodyParameter('email', 'User email.', required: true, type: 'string', example: 'alice@example.com')]
     #[BodyParameter('password', 'User password.', required: true, type: 'string', example: 'secret123')]
     #[Response(
@@ -108,11 +115,14 @@ class AuthController extends Controller
             return ApiResponse::error('Invalid credentials', status: 401);
         }
 
-        $user->tokens()->where('name', 'authToken')->delete();
+        $newToken = $user->createToken('authToken');
 
-        $token = $user->createToken('authToken')->plainTextToken;
+        $newToken->accessToken->update([
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
 
-        return ApiResponse::success(data: ['token' => $token], status: 201);
+        return ApiResponse::success(data: ['token' => $newToken->plainTextToken], status: 201);
     }
 
     #[Endpoint(title: 'Create personal API token', description: 'Issue a new named personal token for the authenticated user. Maximum 3 tokens per user.')]
@@ -136,20 +146,32 @@ class AuthController extends Controller
         }
 
         $name = $request->getName();
-        $token = $user->createToken($name)->plainTextToken;
+        $newToken = $user->createToken($name);
 
-        return ApiResponse::success(data: ['token' => $token, 'name' => $name], status: 201);
+        $newToken->accessToken->update([
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return ApiResponse::success(data: ['token' => $newToken->plainTextToken, 'name' => $name], status: 201);
     }
 
-    #[Endpoint(title: 'List personal API tokens', description: 'List active personal API tokens for the authenticated user.')]
+    #[Endpoint(title: 'List personal API tokens', description: 'List active personal API tokens for the authenticated user with device info.')]
     #[Response(
         200,
         'Token list envelope.',
-        type: 'array{success: bool, data: array<int, array{id: int, name: string, created_at: string|null, last_used_at: string|null}>, message: string, status: int, meta: array<string, mixed>}'
+        type: 'array{success: bool, data: array<int, array{id: int, name: string, ip_address: string|null, user_agent: string|null, created_at: string|null, last_used_at: string|null, is_current: bool}>, message: string, status: int, meta: array<string, mixed>}'
     )]
     public function tokens(Request $request): ApiResponse
     {
-        $tokens = $request->user()->tokens()->get(['id', 'name', 'created_at', 'last_used_at']);
+        $currentTokenId = $request->user()->currentAccessToken()?->id;
+
+        $tokens = $request->user()->tokens()
+            ->get(['id', 'name', 'ip_address', 'user_agent', 'created_at', 'last_used_at'])
+            ->map(fn ($token) => [
+                ...$token->toArray(),
+                'is_current' => $token->id === $currentTokenId,
+            ]);
 
         return ApiResponse::list($tokens, $tokens->count());
     }
