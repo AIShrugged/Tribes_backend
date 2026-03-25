@@ -25,6 +25,7 @@ use App\Http\Controllers\API\v1\SandboxToolGatewayController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamInviteController;
+use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
@@ -162,6 +163,11 @@ Route::group(['prefix' => 'v1'], function () {
         Route::apiResource('teams.users', TeamUserController::class)
             ->only(['index', 'show']);
         Route::post('teams/{team}/users/{user}/kick', [TeamUserController::class, 'kick']);
+
+        Route::get('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'index']);
+        Route::post('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'store']);
+        Route::patch('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'update']);
+        Route::delete('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'destroy']);
 
         Route::get('teams/{team}/invites', [TeamInviteController::class, 'index']);
         Route::post('teams/{team}/invites', [TeamInviteController::class, 'store']);
