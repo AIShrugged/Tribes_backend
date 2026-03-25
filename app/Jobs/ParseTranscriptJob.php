@@ -37,6 +37,9 @@ class ParseTranscriptJob implements ShouldQueue
             throw new AppException('Unable to download transcript', 'TRANSCRIPT_DOWNLOAD_FAILED');
         }
 
+        $this->calendarEvent->transcriptEntries()->delete();
+        $this->calendarEvent->participants()->delete();
+
         $speakers = $parser->getSpeakers($response->json());
 
         $participants = [];

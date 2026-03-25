@@ -46,7 +46,7 @@ class SourceController extends Controller
      */
     public function index(SourceRequest $request): ApiResponse
     {
-        $sources = Source::owned(Auth::id());
+        $sources = Source::withTrashed()->owned(Auth::id());
 
         $count = $sources->count();
 
@@ -60,7 +60,7 @@ class SourceController extends Controller
     /**
      * Detach source
      *
-     * Detaches a calendar source: removes it from Recall.ai, deletes OAuth tokens, and removes the source record.
+     * Detaches a calendar source: removes it from Recall.ai, deletes OAuth tokens, and soft-deletes the source record.
      *
      * @authenticated
      * @urlParam source integer required The source ID. Example: 1
