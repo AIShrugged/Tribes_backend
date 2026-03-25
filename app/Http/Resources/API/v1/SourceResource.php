@@ -22,6 +22,7 @@ class SourceResource extends JsonResource
             'type'         => $this->type,
             'auth_type'    => $this->auth_type,
             'is_connected' => $this->is_connected,
+            'detached_at'  => $this->deleted_at?->toIso8601String(),
         ];
     }
 }

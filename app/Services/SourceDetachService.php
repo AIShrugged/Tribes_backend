@@ -23,7 +23,8 @@ class SourceDetachService
             $this->deleteUpcomingEvents($source);
 
             SourceOauth::where('source_id', $source->id)->delete();
-            $source->delete();
+            $source->disconnect();
+            $source->delete(); // soft delete
         });
     }
 
