@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\v1\AuthController;
+use App\Http\Controllers\API\v1\AgendaController;
 use App\Http\Controllers\API\v1\AgentActivityLogController;
 use App\Http\Controllers\API\v1\AgentMemoryController;
 use App\Http\Controllers\API\v1\AgentProfileController;
@@ -130,6 +131,13 @@ Route::group(['prefix' => 'v1'], function () {
                 ->name('calendar-events.tasks.index');
             Route::post('/{calendar_event_id}/tasks/generate', [MeetingTaskController::class, 'generate'])
                 ->name('calendar-events.tasks.generate');
+
+            Route::get('/{calendarEventId}/agendas', [AgendaController::class, 'index'])
+                ->name('calendar-events.agendas.index');
+            Route::get('/{calendarEventId}/agendas/{agenda}', [AgendaController::class, 'show'])
+                ->name('calendar-events.agendas.show');
+            Route::post('/{calendarEventId}/agendas/generate', [AgendaController::class, 'generate'])
+                ->name('calendar-events.agendas.generate');
         });
 
         Route::get('teams/{team}/followups', [FollowupController::class, 'index'])
@@ -144,12 +152,16 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
             ->name('tasks.show');
 
+        Route::get('me/agendas', [AgendaController::class, 'myAgendas'])
+            ->name('agendas.my');
+
         Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
         Route::post('issues', [IssueController::class, 'store'])->name('issues.store');
         Route::get('issues/{issue}', [IssueController::class, 'show'])->name('issues.show');
         Route::patch('issues/{issue}', [IssueController::class, 'update'])->name('issues.update');
         Route::delete('issues/{issue}', [IssueController::class, 'destroy'])->name('issues.destroy');
+        Route::post('issues/{issue}/dispatch', [IssueController::class, 'dispatch'])->name('issues.dispatch');
         Route::post('issues/{issue}/attachments', [IssueAttachmentController::class, 'store'])->name('issues.attachments.store');
         Route::get('issues/{issue}/attachments', [IssueAttachmentController::class, 'index'])->name('issues.attachments.index');
         Route::delete('attachments/{attachment}', [IssueAttachmentController::class, 'destroy'])->name('attachments.destroy');

@@ -5,9 +5,11 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\IssueRequest;
 use App\Http\Resources\API\v1\IssueResource;
+use App\Http\Resources\API\v1\AgentTaskRunResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Issue;
 use App\Models\User;
+use App\Services\IssueAgentService;
 use App\Services\TenantScopeValidator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
@@ -108,6 +110,19 @@ class IssueController extends Controller
         $task->delete();
 
         return ApiResponse::success();
+    }
+
+    public function dispatch(IssueRequest $request, int $issue, IssueAgentService $service): ApiResponse
+    {
+        $issue = $this->findVisibleIssue($request->user(), $issue);
+
+        $run = $service->dispatch(
+            $issue,
+            $request->user(),
+            $request->input('agent_profile_id'),
+        );
+
+        return ApiResponse::success(data: AgentTaskRunResource::make($run), status: 201);
     }
 
     private function findVisibleIssue(User $user, int $issueId): Issue

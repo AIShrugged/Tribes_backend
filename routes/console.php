@@ -54,3 +54,14 @@ Schedule::command('agent-tasks:dispatch --limit='.config('agent.agent_tasks.disp
     ->everyMinute()
     ->name('agent-tasks:dispatch')
     ->withoutOverlapping();
+
+// Meeting agenda generation and delivery
+Schedule::command('agenda:generate')
+    ->everyFiveMinutes()
+    ->name('agenda:generate')
+    ->withoutOverlapping();
+
+Schedule::command('agenda:send')
+    ->everyFiveMinutes()
+    ->name('agenda:send')
+    ->withoutOverlapping();
