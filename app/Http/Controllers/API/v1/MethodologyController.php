@@ -5,9 +5,11 @@ namespace App\Http\Controllers\API\v1;
 use App\Exceptions\AppException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\MethodologyRequest;
+use App\Http\Resources\API\v1\ChatResource;
 use App\Http\Resources\API\v1\MethodologyResource;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\GenerateMethodologySchemeJob;
+use App\Models\Chat;
 use App\Models\Methodology;
 use App\Models\Organization;
 use Illuminate\Support\Facades\Auth;
@@ -176,6 +178,32 @@ class MethodologyController extends Controller
         $methodology->delete();
 
         return ApiResponse::success();
+    }
+
+    /**
+     * Get the chat linked to this methodology
+     *
+     * @group Methodologies
+     *
+     * Returns the most recent chat that was used to configure this methodology, or null if none exists.
+     *
+     * @urlParam methodology integer required The methodology ID. Example: 1
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"id":5,"title":"Methodology setup","methodology_id":1}}
+     * @response 200 scenario="No linked chat" {"success":true,"data":null}
+     * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
+     */
+    public function chat(MethodologyRequest $request, Methodology $methodology): ApiResponse
+    {
+        Gate::authorize('view', $methodology);
+
+        $chat = Chat::where('methodology_id', $methodology->id)
+            ->latest()
+            ->first();
+
+        return ApiResponse::success(
+            data: $chat ? ChatResource::make($chat) : null
+        );
     }
 
     //TODO: fix bug with bot deletion mid call, fix bug with bot change for the same event, when time change to future from before

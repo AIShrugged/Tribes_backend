@@ -13,6 +13,7 @@ class Chat extends Model
         'user_id',
         'organization_id',
         'team_id',
+        'methodology_id',
         'title',
     ];
 
@@ -29,6 +30,11 @@ class Chat extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    public function methodology(): BelongsTo
+    {
+        return $this->belongsTo(Methodology::class);
     }
 
     public function messages(): HasMany

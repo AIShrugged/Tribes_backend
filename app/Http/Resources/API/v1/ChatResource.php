@@ -10,12 +10,13 @@ class ChatResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'         => $this->id,
-            'title'      => $this->title,
+            'id'              => $this->id,
+            'title'           => $this->title,
             'organization_id' => $this->organization_id,
-            'team_id' => $this->team_id,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
+            'team_id'         => $this->team_id,
+            'methodology_id'  => $this->methodology_id,
+            'created_at'      => $this->created_at,
+            'updated_at'      => $this->updated_at,
         ];
     }
 }
