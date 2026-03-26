@@ -43,6 +43,9 @@ class IssueRequest extends FormRequest
                 'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
                 'assignee_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
             ],
+            'issues.dispatch' => [
+                'agent_profile_id' => ['nullable', 'integer', 'exists:agent_profiles,id'],
+            ],
             'issues.attachments.store' => [
                 'file' => ['required', 'file', 'max:10240'],
             ],
