@@ -262,6 +262,8 @@ class IssueExtractionPipelineTest extends TestCase
     #[Test]
     public function issue_supports_review_and_reopen_statuses(): void
     {
+        Queue::fake();
+
         $issue = Issue::create([
             'user_id' => $this->user->id,
             'organization_id' => $this->organization->id,

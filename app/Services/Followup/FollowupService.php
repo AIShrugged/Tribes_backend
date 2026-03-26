@@ -40,43 +40,73 @@ class FollowupService
                 'text'              => '',
             ]);
 
-            try {
-
-                $transcript = $this->transcriptBuilder->build($event);
-
-                $messages = [
-                    new MessageDTO('user', view('prompts.methodology_prompt', ['scheme' => $methodology->scheme])->render()),
-                    new MessageDTO('user', "Текст с методикой:\n" . $methodology->text),
-                    new MessageDTO('user', "Транскрипт встречи:\n" . $transcript),
-                ];
-
-                Log::info('messages', $messages);
-
-                $json = $this->llm->chat(
-                    messages: $messages,
-                    model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
-                    maxTokens: 8192,
-                    forceJsonResponse: true
-                );
-
-                $followup->update([
-                    'status' => FollowupStatus::DONE->value,
-                    'text'   => $json,
-                ]);
-            } catch (\Throwable $e) {
-                $followup->update([
-                    'status' => FollowupStatus::FAILED->value,
-                ]);
-
-                Log::error('Followup generation failed', [
-                    'followup_id' => $followup->id,
-                    'team_id' => $team->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
+            $this->generateContent($followup, $methodology);
 
             return $followup;
         });
     }
 
+    /**
+     * Regenerate an existing followup using the team's current methodology.
+     * Creates a new followup record, leaving the old one intact.
+     */
+    public function regenerate(Followup $followup, User $user): Followup
+    {
+        $team = $followup->team;
+        $event = $followup->calendarEvent;
+        $methodology = $team->methodology ?? Methodology::getDefault();
+
+        return DB::transaction(function () use ($event, $team, $user, $methodology) {
+            $newFollowup = Followup::create([
+                'calendar_event_id' => $event->id,
+                'team_id'           => $team->id,
+                'user_id'           => $user->id,
+                'methodology_id'    => $methodology->id,
+                'status'            => FollowupStatus::IN_PROGRESS->value,
+                'text'              => '',
+            ]);
+
+            $this->generateContent($newFollowup, $methodology);
+
+            return $newFollowup;
+        });
+    }
+
+    private function generateContent(Followup $followup, Methodology $methodology): void
+    {
+        try {
+            $event = $followup->calendarEvent;
+            $transcript = $this->transcriptBuilder->build($event);
+
+            $messages = [
+                new MessageDTO('user', view('prompts.methodology_prompt', ['scheme' => $methodology->scheme])->render()),
+                new MessageDTO('user', "Текст с методикой:\n" . $methodology->text),
+                new MessageDTO('user', "Транскрипт встречи:\n" . $transcript),
+            ];
+
+            Log::info('messages', $messages);
+
+            $json = $this->llm->chat(
+                messages: $messages,
+                model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
+                maxTokens: 8192,
+                forceJsonResponse: true
+            );
+
+            $followup->update([
+                'status' => FollowupStatus::DONE->value,
+                'text'   => $json,
+            ]);
+        } catch (\Throwable $e) {
+            $followup->update([
+                'status' => FollowupStatus::FAILED->value,
+            ]);
+
+            Log::error('Followup generation failed', [
+                'followup_id' => $followup->id,
+                'team_id' => $followup->team_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 }

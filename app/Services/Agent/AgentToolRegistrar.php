@@ -10,6 +10,12 @@ use App\Services\Agent\Tools\CreateAgentTaskTool;
 use App\Services\Agent\Tools\CreateArtifactTool;
 use App\Services\Agent\Tools\CreateMethodologyTool;
 use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
+use App\Services\Agent\Tools\FetchDocumentTool;
+use App\Services\Agent\Tools\GetOrganizationTeamsTool;
+use App\Services\Agent\Tools\GetUserOrganizationsTool;
+use App\Services\Agent\Tools\RegenerateFollowupTool;
+use App\Services\Agent\Tools\SaveMethodologyTool;
+use App\Services\Agent\Tools\UpdateArtifactTool;
 use App\Services\Agent\Tools\CreateIssueTool;
 use App\Services\Agent\Tools\CreateWorkspaceTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
@@ -120,6 +126,7 @@ class AgentToolRegistrar
         ));
         $toolRegistry->register(new UpdateTaskStatusTool);
         $toolRegistry->register(new GetFollowupTool);
+        $toolRegistry->register(new RegenerateFollowupTool($user));
         $toolRegistry->register(new GetExtractedFactsTool);
         $toolRegistry->register(new GetUserInsightsTool);
         $toolRegistry->register(new GetInsightProfileHistoryTool);
@@ -149,6 +156,9 @@ class AgentToolRegistrar
         $toolRegistry->register(new GitHubCreateOrUpdateFileTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubCreatePullRequestTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetPullRequestCommentsTool($this->gitHubApiClient));
+        $toolRegistry->register(new FetchDocumentTool());
+        $toolRegistry->register(new GetUserOrganizationsTool($user));
+        $toolRegistry->register(new GetOrganizationTeamsTool($user));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(
@@ -159,10 +169,12 @@ class AgentToolRegistrar
         }
     }
 
-    public function registerChatTools(ToolRegistry $toolRegistry, Chat $chat): void
+    public function registerChatTools(ToolRegistry $toolRegistry, Chat $chat, User $user): void
     {
         $toolRegistry->register(new CreateArtifactTool($chat, $this->artifactStateService));
         $toolRegistry->register(new CreateMethodologyTool($chat));
+        $toolRegistry->register(new UpdateArtifactTool($chat, $this->artifactStateService));
+        $toolRegistry->register(new SaveMethodologyTool($user, $chat, $this->artifactStateService));
     }
 
     public function registerAgentTaskTools(ToolRegistry $toolRegistry, AgentTask $task, ?AgentTaskRun $run = null): void

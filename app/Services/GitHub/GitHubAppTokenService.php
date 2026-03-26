@@ -16,19 +16,24 @@ class GitHubAppTokenService
             $installationId = trim((string) config('github.installation_id'));
             $apiBaseUrl = rtrim((string) config('github.api_base_url'), '/');
             $privateKeyPath = trim((string) config('github.private_key_path'));
+            $privateKeyPem = trim((string) config('github.private_key_pem'));
 
-            if ($appId === '' || $installationId === '' || $privateKeyPath === '') {
+            if ($appId === '' || $installationId === '' || ($privateKeyPath === '' && $privateKeyPem === '')) {
                 throw new \RuntimeException('GitHub App credentials are not fully configured');
             }
 
-            $resolvedKeyPath = base_path($privateKeyPath);
-            if (! is_file($resolvedKeyPath)) {
-                throw new \RuntimeException("GitHub App private key file not found at {$resolvedKeyPath}");
-            }
+            if ($privateKeyPem !== '') {
+                $privateKey = $privateKeyPem;
+            } else {
+                $resolvedKeyPath = base_path($privateKeyPath);
+                if (! is_file($resolvedKeyPath)) {
+                    throw new \RuntimeException("GitHub App private key file not found at {$resolvedKeyPath}");
+                }
 
-            $privateKey = file_get_contents($resolvedKeyPath);
-            if (! is_string($privateKey) || $privateKey === '') {
-                throw new \RuntimeException('GitHub App private key file is empty');
+                $privateKey = file_get_contents($resolvedKeyPath);
+                if (! is_string($privateKey) || $privateKey === '') {
+                    throw new \RuntimeException('GitHub App private key file is empty');
+                }
             }
 
             $jwt = $this->makeAppJwt($appId, $privateKey);

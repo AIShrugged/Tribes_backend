@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 class OpenRouterClient
 {
     private const URL = 'https://openrouter.ai/api/v1/chat/completions';
-    private const RESPONSE_TIMEOUT_SECONDS = 120;
+    private const RESPONSE_TIMEOUT_SECONDS = 600;
 
     /**
      * @param MessageDTO[] $messages

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\v1\AuthController;
+use App\Http\Controllers\API\v1\AgentActivityLogController;
 use App\Http\Controllers\API\v1\AgentMemoryController;
 use App\Http\Controllers\API\v1\AgentProfileController;
 use App\Http\Controllers\API\v1\AgentTaskController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\API\v1\SandboxToolGatewayController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamInviteController;
+use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
@@ -136,6 +138,9 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/followups/{followup}', [FollowupController::class, 'show'])
             ->name('followups.show');
 
+        Route::post('/followups/{followup}/regenerate', [FollowupController::class, 'regenerate'])
+            ->name('followups.regenerate');
+
         Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
             ->name('tasks.show');
 
@@ -158,6 +163,11 @@ Route::group(['prefix' => 'v1'], function () {
         Route::apiResource('teams.users', TeamUserController::class)
             ->only(['index', 'show']);
         Route::post('teams/{team}/users/{user}/kick', [TeamUserController::class, 'kick']);
+
+        Route::get('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'index']);
+        Route::post('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'store']);
+        Route::patch('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'update']);
+        Route::delete('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'destroy']);
 
         Route::get('teams/{team}/invites', [TeamInviteController::class, 'index']);
         Route::post('teams/{team}/invites', [TeamInviteController::class, 'store']);
@@ -187,6 +197,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);
         Route::get('chats/{chat}/runs/{runUuid}', [ChatMessageController::class, 'showRunStatus']);
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
+        Route::get('agent-activity', [AgentActivityLogController::class, 'index']);
         Route::get('telegram/chats', [TelegramChatRegistrationController::class, 'index']);
         Route::post('telegram/chats/{telegramChatRegistration}/attach-code', [TelegramChatRegistrationController::class, 'issueAttachCode']);
 

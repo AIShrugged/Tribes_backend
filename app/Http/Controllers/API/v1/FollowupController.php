@@ -7,10 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\FollowupRequest;
 use App\Http\Resources\API\v1\FollowupResource;
 use App\Http\Responses\ApiResponse;
+use App\Jobs\RegenerateFollowupJob;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Team;
-use App\Services\Followup\FollowupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -153,6 +153,48 @@ class FollowupController extends Controller
         Gate::authorize('view', $followup);
 
         return ApiResponse::success(data: FollowupResource::make($followup));
+    }
+
+    /**
+     * Regenerate followup
+     *
+     * Queues regeneration of the latest followup for the same calendar event using the team's current methodology.
+     * Use when a followup is deprecated (its methodology differs from the team's current one) or needs to be refreshed.
+     * The old followup is kept intact and a new followup will be created asynchronously.
+     *
+     * @authenticated
+     *
+     * @urlParam followup integer required The Followup ID to regenerate. Example: 1
+     *
+     * @response 202 scenario="Accepted" {
+     *   "success": true,
+     *   "data": {
+     *     "calendar_event_id": 5,
+     *     "followup_id": 1,
+     *     "status": "in_progress"
+     *   },
+     *   "message": "Followup regeneration queued",
+     *   "status": 202,
+     *   "meta": {}
+     * }
+     * @response 403 scenario="Forbidden" {"message": "This action is unauthorized."}
+     * @response 404 scenario="Not Found" {"message": "No query results for model [Followup] 1"}
+     */
+    public function regenerate(Followup $followup): ApiResponse
+    {
+        Gate::authorize('view', $followup);
+
+        RegenerateFollowupJob::dispatch($followup->calendar_event_id, Auth::id());
+
+        return ApiResponse::success(
+            message: 'Followup regeneration queued',
+            data: [
+                'calendar_event_id' => $followup->calendar_event_id,
+                'followup_id' => $followup->id,
+                'status' => 'in_progress',
+            ],
+            status: 202,
+        );
     }
 
     /**

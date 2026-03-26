@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Bot;
+use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Issue;
 use App\Models\MeetingSummary;
@@ -23,7 +24,8 @@ class SourceDetachService
             $this->deleteUpcomingEvents($source);
 
             SourceOauth::where('source_id', $source->id)->delete();
-            $source->delete();
+            $source->disconnect();
+            $source->delete(); // soft delete
         });
     }
 
@@ -46,7 +48,11 @@ class SourceDetachService
 
     private function deleteEventRelations(Collection $eventIds): void
     {
-        Bot::whereIn('calendar_event_id', $eventIds)->delete();
+        $botIds = CalendarEvent::whereIn('id', $eventIds)->whereNotNull('bot_id')->pluck('bot_id');
+        if ($botIds->isNotEmpty()) {
+            Bot::whereIn('id', $botIds)->update(['is_active' => false]);
+        }
+
         TranscriptEntry::whereIn('calendar_event_id', $eventIds)->delete();
         Followup::whereIn('calendar_event_id', $eventIds)->delete();
         MeetingSummary::whereIn('calendar_event_id', $eventIds)->delete();

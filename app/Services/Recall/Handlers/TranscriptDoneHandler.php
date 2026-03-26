@@ -2,6 +2,7 @@
 
 namespace App\Services\Recall\Handlers;
 
+use App\Enums\BotEventType;
 use App\Exceptions\AppException;
 use App\Jobs\ParseTranscriptJob;
 use App\Models\Bot;
@@ -32,6 +33,13 @@ class TranscriptDoneHandler implements RecallEventHandlerInterface
             throw new AppException($response->json()['message'], 'RECALL_GENERIC_ERROR');
         }
 
-        ParseTranscriptJob::dispatch($bot->calendarEvent, $response->json()['recordings'][0]['media_shortcuts']['transcript']['data']['download_url']);
+        $bot->logEvent(BotEventType::TRANSCRIPT_DONE);
+
+        $downloadUrl = $response->json()['recordings'][0]['media_shortcuts']['transcript']['data']['download_url'];
+
+        // Dispatch transcript parsing for ALL calendar events linked to this bot
+        foreach ($bot->calendarEvents as $calendarEvent) {
+            ParseTranscriptJob::dispatch($calendarEvent, $downloadUrl);
+        }
     }
 }

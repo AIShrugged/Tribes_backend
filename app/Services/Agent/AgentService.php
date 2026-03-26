@@ -4,6 +4,7 @@ namespace App\Services\Agent;
 
 use App\Enums\AgentTaskType;
 use App\Enums\OutputMode;
+use App\Models\AgentActivityLog;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
@@ -67,9 +68,9 @@ class AgentService
     /**
      * Register chat-specific tools (call this before processMessage when a Chat context is available).
      */
-    public function registerChatTools(Chat $chat): void
+    public function registerChatTools(Chat $chat, User $user): void
     {
-        $this->toolRegistrar->registerChatTools($this->toolRegistry, $chat);
+        $this->toolRegistrar->registerChatTools($this->toolRegistry, $chat, $user);
     }
 
     /**
@@ -290,6 +291,8 @@ class AgentService
                             'tool_call_id' => $toolCallId,
                             'content' => $this->truncateToolResult($toolResult, $toolName),
                         ];
+
+                        $this->logToolActivity($user, $options, $toolName, $toolArgs, $toolResult);
                         $this->reportProgress($options, 'after_tool');
 
                         // Validate tool result and add feedback if issues detected (Pattern 3)
@@ -373,6 +376,27 @@ class AgentService
     private function registerDefaultTools(User $user, ?string $channel): void
     {
         $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel);
+    }
+
+    private function logToolActivity(User $user, AgentRunOptions $options, string $toolName, array $toolArgs, mixed $toolResult): void
+    {
+        try {
+            $success = is_array($toolResult) && ($toolResult['success'] ?? true);
+
+            AgentActivityLog::create([
+                'user_id'        => $user->id,
+                'chat_id'        => $options->chatId,
+                'agent_run_uuid' => $options->agentRunUuid,
+                'tool_name'      => $toolName,
+                'description'    => AgentActivityLog::descriptionFor($toolName, $toolResult),
+                'success'        => $success,
+                'tool_args'      => $toolArgs,
+                'tool_result'    => is_array($toolResult) ? array_slice($toolResult, 0, 10) : ['raw' => mb_substr((string) $toolResult, 0, 500)],
+                'created_at'     => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to log agent activity', ['tool' => $toolName, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -772,6 +796,7 @@ When asked about a **meeting**, choose the right tool:
 - **`get_meeting_summary`** — AI-generated summary: what was discussed, key points, decisions. Use for "what was discussed?", "what did they decide?", "summarize the Friday meeting". **This tool alone is sufficient — do NOT additionally call get_meeting_tasks unless the user explicitly asked about tasks.**
 - **`get_meeting_tasks`** — action items and assignments from a meeting. Use for "what tasks were created?", "who was assigned what?", "any open tasks from the planning?". **Only call this if the user explicitly asked about tasks or action items.**
 - **`get_followup`** — AI-generated assessment reports for meeting participants. Use for "what was the followup for Ivan?", "show evaluation results from the meeting".
+- **`regenerate_followup`** — create a fresh followup report for an existing record when the methodology changed or the output needs to be rerun.
 - **`get_extracted_facts`** — raw facts about specific participants from that meeting. Use for "what did we learn about Ivan at that meeting?" (requires profile_id from get_user_info).
 
 **STOP after you have enough data to answer.** Do not call extra tools "just in case". If get_meeting_summary answers the question — answer immediately without calling get_meeting_tasks.
