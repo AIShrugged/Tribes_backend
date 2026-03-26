@@ -77,6 +77,8 @@ class RunAgentTaskJob implements ShouldQueue
                 'error_message' => null,
             ]);
 
+            $this->saveTestResults($run);
+
             $nextRunAt = $task->nextRunFrom($run->scheduled_for ?? now());
 
             $task->update([
@@ -113,6 +115,51 @@ class RunAgentTaskJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    private function saveTestResults(AgentTaskRun $run): void
+    {
+        $sandboxResult = $run->metadata['sandbox_result'] ?? null;
+        if (! $sandboxResult) {
+            return;
+        }
+
+        $actions = collect($sandboxResult['actions'] ?? []);
+        $testActions = $actions->filter(fn ($a) => str_contains($a['evidence']['command'] ?? '', 'artisan test')
+            || str_contains($a['evidence']['command'] ?? '', 'npx jest'));
+
+        $parsed = null;
+        foreach ($testActions as $ta) {
+            $parsed = $this->parseTestArtifact($ta, $run);
+            if ($parsed) {
+                break;
+            }
+        }
+
+        if (! $parsed) {
+            $testAction = $testActions->last();
+            if (! $testAction) {
+                return;
+            }
+            $exitCode = $testAction['evidence']['exit_code'] ?? null;
+            $parsed = [
+                'total' => null,
+                'passed' => null,
+                'failed' => null,
+                'failed_tests' => [],
+                'exit_code' => $exitCode,
+                'status' => $exitCode === 0 ? 'passed' : 'failed',
+            ];
+        } else {
+            $parsed['status'] = $parsed['failed'] === 0 ? 'passed' : 'failed';
+        }
+
+        $run->update([
+            'metadata' => [
+                ...($run->metadata ?? []),
+                'test_results' => $parsed,
+            ],
+        ]);
     }
 
     private function sendTelegramNotification(AgentTask $task, AgentTaskRun $run, string $status, ?string $errorMessage = null): void
@@ -193,13 +240,16 @@ class RunAgentTaskJob implements ShouldQueue
         $lines[] = "";
         $lines[] = "*Steps:* {$completed}/{$total}";
 
-        $testActions = $actions->filter(fn ($a) => str_contains($a['evidence']['command'] ?? '', 'artisan test'));
+        $testActions = $actions->filter(fn ($a) => str_contains($a['evidence']['command'] ?? '', 'artisan test')
+            || str_contains($a['evidence']['command'] ?? '', 'npx jest'));
 
-        $parsed = null;
-        foreach ($testActions as $ta) {
-            $parsed = $this->parseTestArtifact($ta, $run);
-            if ($parsed) {
-                break;
+        $parsed = $run->metadata['test_results'] ?? null;
+        if (! $parsed) {
+            foreach ($testActions as $ta) {
+                $parsed = $this->parseTestArtifact($ta, $run);
+                if ($parsed) {
+                    break;
+                }
             }
         }
 
@@ -207,7 +257,7 @@ class RunAgentTaskJob implements ShouldQueue
 
         if ($testAction) {
 
-            if ($parsed) {
+            if ($parsed && $parsed['total'] !== null) {
                 $emoji = $parsed['failed'] === 0 ? "\xE2\x9C\x85" : "\xE2\x9A\xA0\xEF\xB8\x8F";
                 $lines[] = "*Tests:* {$emoji} {$parsed['passed']}/{$parsed['total']} passed, {$parsed['failed']} failed";
 
@@ -250,44 +300,49 @@ class RunAgentTaskJob implements ShouldQueue
 
         $content = (string) file_get_contents($localPath);
 
-        // Parse PHPUnit summary: "Tests: 5 failed, 207 passed (756 assertions)"
-        if (! preg_match('/Tests:\s+(?:(\d+)\s+failed,\s+)?(\d+)\s+passed/i', $content, $m)) {
+        // Parse PHPUnit: "Tests: 5 failed, 207 passed (756 assertions)"
+        // Parse Jest:    "Tests: 3 failed, 1275 passed, 1278 total"
+        if (preg_match('/Tests:\s+(?:(\d+)\s+failed,\s+)?(\d+)\s+passed/i', $content, $m)) {
+            $failed = (int) ($m[1] ?? 0);
+            $passed = (int) $m[2];
+        } else {
             return null;
         }
-
-        $failed = (int) ($m[1] ?? 0);
-        $passed = (int) $m[2];
 
         // Extract failed test names and error descriptions
         $failedTests = [];
         $contentLines = explode("\n", $content);
         for ($i = 0; $i < count($contentLines); $i++) {
-            if (! preg_match('/^\s*FAILED\s+Tests\\\\(.+)/i', $contentLines[$i], $fm)) {
+            $line = $contentLines[$i];
+
+            // PHPUnit: "  FAILED  Tests\Feature\ExampleTest > method  RuntimeException"
+            if (preg_match('/^\s*FAILED\s+Tests\\\\(.+)/i', $line, $fm)) {
+                $raw = trim('Tests\\' . $fm[1]);
+                $parts = preg_split('/\s{2,}/', $raw, 2);
+                $testName = $parts[0] ?? $raw;
+                $exceptionType = $parts[1] ?? '';
+
+                $nextLine = isset($contentLines[$i + 1]) ? trim($contentLines[$i + 1]) : '';
+                $isDescriptionLine = $nextLine !== ''
+                    && ! str_starts_with($nextLine, 'FAILED')
+                    && ! str_starts_with($nextLine, 'Tests:')
+                    && ! str_starts_with($nextLine, 'Duration:')
+                    && $nextLine !== '--'
+                    && ! str_starts_with($nextLine, '──');
+
+                if ($isDescriptionLine) {
+                    $failedTests[] = "{$testName}: {$nextLine}";
+                } elseif ($exceptionType) {
+                    $failedTests[] = "{$testName} ({$exceptionType})";
+                } else {
+                    $failedTests[] = $testName;
+                }
                 continue;
             }
 
-            $raw = trim('Tests\\' . $fm[1]);
-
-            // "TestClass > method…  RuntimeException" → split on 2+ spaces
-            $parts = preg_split('/\s{2,}/', $raw, 2);
-            $testName = $parts[0] ?? $raw;
-            $exceptionType = $parts[1] ?? '';
-
-            // Next line may contain error message (from grep -A1)
-            $nextLine = isset($contentLines[$i + 1]) ? trim($contentLines[$i + 1]) : '';
-            $isDescriptionLine = $nextLine !== ''
-                && ! str_starts_with($nextLine, 'FAILED')
-                && ! str_starts_with($nextLine, 'Tests:')
-                && ! str_starts_with($nextLine, 'Duration:')
-                && $nextLine !== '--'
-                && ! str_starts_with($nextLine, '──');
-
-            if ($isDescriptionLine) {
-                $failedTests[] = "{$testName}: {$nextLine}";
-            } elseif ($exceptionType) {
-                $failedTests[] = "{$testName} ({$exceptionType})";
-            } else {
-                $failedTests[] = $testName;
+            // Jest: "FAIL features/teams/ui/__tests__/team-list.test.tsx"
+            if (preg_match('/^FAIL\s+(.+)/i', $line, $jm)) {
+                $failedTests[] = trim($jm[1]);
             }
         }
 
