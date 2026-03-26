@@ -50,6 +50,11 @@ Schedule::command('openrouter:check-balance')
     ->name('openrouter:check-balance:evening')
     ->withoutOverlapping();
 
+Schedule::command('meetings:send-pre-briefs')
+    ->everyTenMinutes()
+    ->name('meetings:send-pre-briefs')
+    ->withoutOverlapping();
+
 Schedule::command('agent-tasks:dispatch --limit='.config('agent.agent_tasks.dispatch_limit', 50))
     ->everyMinute()
     ->name('agent-tasks:dispatch')
