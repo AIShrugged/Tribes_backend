@@ -174,6 +174,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::delete('workspaces/{workspace}/permissions/{workspacePermission}', [WorkspaceController::class, 'destroyPermission']);
 
         Route::get('organizations/{organization}/methodologies', [MethodologyController::class, 'index']);
+        Route::get('methodologies/{methodology}/chat', [MethodologyController::class, 'chat']);
         Route::apiResource('methodologies', MethodologyController::class)
             ->except(['index']);
 

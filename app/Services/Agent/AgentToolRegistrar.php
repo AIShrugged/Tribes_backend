@@ -8,6 +8,7 @@ use App\Models\AgentTaskRun;
 use App\Models\User;
 use App\Services\Agent\Tools\CreateAgentTaskTool;
 use App\Services\Agent\Tools\CreateArtifactTool;
+use App\Services\Agent\Tools\CreateMethodologyTool;
 use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
 use App\Services\Agent\Tools\CreateIssueTool;
 use App\Services\Agent\Tools\CreateWorkspaceTool;
@@ -161,6 +162,7 @@ class AgentToolRegistrar
     public function registerChatTools(ToolRegistry $toolRegistry, Chat $chat): void
     {
         $toolRegistry->register(new CreateArtifactTool($chat, $this->artifactStateService));
+        $toolRegistry->register(new CreateMethodologyTool($chat));
     }
 
     public function registerAgentTaskTools(ToolRegistry $toolRegistry, AgentTask $task, ?AgentTaskRun $run = null): void
