@@ -50,14 +50,12 @@ class AgendaService
         ?MeetingSummary $previousSummary,
         Collection $issues,
     ): MeetingAgenda {
-        $eventStartsAt = $this->normalizeDateTime($event->starts_at);
-
         $agenda = MeetingAgenda::create([
             'calendar_event_id' => $event->id,
             'user_id' => null,
             'type' => 'general',
             'status' => AgendaStatus::IN_PROGRESS,
-            'send_scheduled_at' => $eventStartsAt->copy()->subMinutes(30),
+            'send_scheduled_at' => $event->starts_at->subMinutes(30),
         ]);
 
         try {
@@ -93,14 +91,12 @@ class AgendaService
         ?CalendarEvent $previousEvent,
         Collection $allIssues,
     ): MeetingAgenda {
-        $eventStartsAt = $this->normalizeDateTime($event->starts_at);
-
         $agenda = MeetingAgenda::create([
             'calendar_event_id' => $event->id,
             'user_id' => $user->id,
             'type' => 'personal',
             'status' => AgendaStatus::IN_PROGRESS,
-            'send_scheduled_at' => $eventStartsAt->copy()->subMinutes(30),
+            'send_scheduled_at' => $event->starts_at->subMinutes(30),
         ]);
 
         try {

@@ -118,10 +118,64 @@ abstract class TestCase extends BaseTestCase
             return json_encode([]);
         }
 
-        if (str_contains($prompt, 'Текст с методикой:') || str_contains($prompt, 'prompts.methodology_prompt')) {
+        if (str_contains($prompt, 'ID будущего артефакта') || str_contains($prompt, 'methodology_criteria')) {
+            preg_match('/ID будущего артефакта:\s*([a-zA-Z0-9_\-]+)/', $prompt, $matches);
+            $artifactId = $matches[1] ?? 'followup_mock';
+
             return json_encode([
-                'summary' => 'Mocked followup',
-                'action_items' => [],
+                'artifacts' => [
+                    $artifactId => [
+                        'id' => $artifactId,
+                        'type' => 'methodology_criteria',
+                        'title' => 'Mocked followup',
+                        'data' => [
+                            'blocks' => [
+                                [
+                                    'type' => 'header',
+                                    'text' => 'Mocked followup',
+                                ],
+                                [
+                                    'type' => 'progress_summary',
+                                    'items' => [
+                                        [
+                                            'label' => 'Общий балл',
+                                            'value' => 42,
+                                            'max' => 72,
+                                        ],
+                                    ],
+                                ],
+                                [
+                                    'type' => 'scoring_table',
+                                    'columns' => ['Метрика', 'Балл', 'Макс.', 'Комментарий'],
+                                    'rows' => [
+                                        ['Small talk', 3, 4, 'Good'],
+                                    ],
+                                ],
+                                [
+                                    'type' => 'text_list',
+                                    'title' => 'Сильные стороны',
+                                    'items' => ['Mocked strength'],
+                                ],
+                                [
+                                    'type' => 'text_list',
+                                    'title' => 'Зоны для развития',
+                                    'items' => ['Mocked area'],
+                                ],
+                                [
+                                    'type' => 'text_list',
+                                    'title' => 'План действий',
+                                    'items' => ['Mocked action'],
+                                ],
+                            ],
+                        ],
+                        'status' => 'ready',
+                    ],
+                ],
+                'layout' => [
+                    'items' => [
+                        ['id' => $artifactId],
+                    ],
+                ],
             ]);
         }
 

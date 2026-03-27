@@ -30,6 +30,13 @@ abstract class AbstractFollowupExporter
             return [];
         }
 
+        if (isset($data['artifacts'], $data['layout']) && is_array($data['artifacts'])) {
+            $artifact = $this->firstArtifact($data['artifacts']);
+            if (is_array($artifact)) {
+                $data = $this->artifactToLegacyData($artifact['data'] ?? []);
+            }
+        }
+
         return [
             'id'         => $followup->id,
             'created_at' => $followup->created_at->format('d.m.Y H:i'),
@@ -147,5 +154,89 @@ abstract class AbstractFollowupExporter
             }
             return $item;
         }, $items);
+    }
+
+    /**
+     * @param array<string, mixed> $artifacts
+     * @return array<string, mixed>|null
+     */
+    private function firstArtifact(array $artifacts): ?array
+    {
+        $first = reset($artifacts);
+
+        return is_array($first) ? $first : null;
+    }
+
+    /**
+     * Convert the new block-based artifact payload back to the legacy structure
+     * expected by the existing HTML/PDF/XLSX exporters.
+     *
+     * @param array<string, mixed> $artifactData
+     * @return array<string, mixed>
+     */
+    private function artifactToLegacyData(array $artifactData): array
+    {
+        $legacy = [];
+        $blocks = $artifactData['blocks'] ?? [];
+
+        if (!is_array($blocks)) {
+            return $legacy;
+        }
+
+        foreach ($blocks as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+
+            $type = $block['type'] ?? null;
+
+            if ($type === 'progress_summary') {
+                $item = $block['items'][0] ?? null;
+                if (is_array($item)) {
+                    $legacy['total'] = [
+                        'display_name' => $item['label'] ?? 'Общий балл',
+                        'current_value' => $item['value'] ?? 0,
+                        'max_value' => $item['max'] ?? null,
+                    ];
+                }
+            }
+
+            if ($type === 'scoring_table') {
+                $legacy['metrics'] = array_map(function ($row) {
+                    $row = is_array($row) ? array_values($row) : [];
+
+                    return [
+                        'display_name' => (string) ($row[0] ?? 'N/A'),
+                        'current_value' => $row[1] ?? 0,
+                        'max_value' => $row[2] ?? null,
+                        'comment' => (string) ($row[3] ?? ''),
+                    ];
+                }, $block['rows'] ?? []);
+            }
+
+            if ($type === 'text_list') {
+                $title = (string) ($block['title'] ?? '');
+                $items = $this->normalizeTextArray(array_values($block['items'] ?? []));
+
+                if (in_array($title, ['Сильные стороны', 'Strong skills'], true)) {
+                    $legacy['strengths'] = $items;
+                } elseif (in_array($title, ['Зоны для развития', 'Medium skills', 'Areas for development'], true)) {
+                    $legacy['areas_for_development'] = $items;
+                } elseif (in_array($title, ['План действий', 'Recommendations', 'Action plan'], true)) {
+                    $legacy['action_plan'] = $items;
+                } elseif ($title !== '') {
+                    $legacy['conclusion']['value'][] = [
+                        'display_name' => $title,
+                        'value' => $items,
+                    ];
+                }
+            }
+        }
+
+        if (!empty($legacy['conclusion']['value']) && !isset($legacy['conclusion']['display_name'])) {
+            $legacy['conclusion']['display_name'] = 'Results';
+        }
+
+        return $legacy;
     }
 }

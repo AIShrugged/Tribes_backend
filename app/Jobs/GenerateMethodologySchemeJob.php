@@ -28,7 +28,7 @@ class GenerateMethodologySchemeJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $version = MethodologySchemeVersion::VER_1->value;
+        $version = MethodologySchemeVersion::VER_2->value;
 
         $scheme = app(MethodologySchemeGenerator::class)->generate($this->methodology->text, $version);
 

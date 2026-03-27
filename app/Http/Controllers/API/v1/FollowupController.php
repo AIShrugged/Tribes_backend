@@ -5,12 +5,13 @@ namespace App\Http\Controllers\API\v1;
 use App\Exceptions\AppException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\FollowupRequest;
-use App\Http\Resources\API\v1\FollowupResource;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\RegenerateFollowupJob;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Team;
+use App\Services\Followup\FollowupService;
+use App\Services\Followup\FollowupArtifactStateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
@@ -20,6 +21,11 @@ use Illuminate\Support\Facades\Gate;
  */
 class FollowupController extends Controller
 {
+    public function __construct(
+        private readonly FollowupArtifactStateService $artifactStateService,
+    ) {
+    }
+
     /**
      * List followups for a team
      *
@@ -35,15 +41,16 @@ class FollowupController extends Controller
      *   "success": true,
      *   "data": [
      *     {
-     *       "id": 1,
-     *       "calendar_event": {"id": 5, "title": "Q1 Planning", "start_time": "2026-02-10T09:00:00.000000Z"},
-     *       "team_id": 2,
-     *       "user": {"id": 1, "name": "Alice Johnson", "email": "alice@example.com"},
-     *       "methodology_id": 1,
-     *       "text": "Action items: 1) Finalize roadmap by Feb 20. 2) Schedule follow-up with stakeholders.",
-     *       "status": "done",
-     *       "created_at": "2026-02-10T10:00:00.000000Z",
-     *       "updated_at": "2026-02-10T10:05:00.000000Z"
+     *       "artifacts": {
+     *         "followup_1": {
+     *           "id": "followup_1",
+     *           "type": "methodology_criteria",
+     *           "title": "Followup #1 — Q1 Planning",
+     *           "data": {"blocks": []},
+     *           "status": "ready"
+     *         }
+     *       },
+     *       "layout": {"items": [{"id": "followup_1"}]}
      *     }
      *   ],
      *   "message": "Success",
@@ -66,7 +73,7 @@ class FollowupController extends Controller
             ->limit($request->getLimit())
             ->get();
 
-        return ApiResponse::list(FollowupResource::collection($followups), $count);
+        return ApiResponse::list($this->followupStates($followups), $count);
     }
 
     /**
@@ -82,15 +89,16 @@ class FollowupController extends Controller
      * @response 200 scenario="OK" {
      *   "success": true,
      *   "data": {
-     *     "id": 1,
-     *     "calendar_event": {"id": 5, "title": "Q1 Planning", "start_time": "2026-02-10T09:00:00.000000Z"},
-     *     "team_id": 2,
-     *     "user": {"id": 1, "name": "Alice Johnson", "email": "alice@example.com"},
-     *     "methodology_id": 1,
-     *     "text": "Action items: 1) Finalize roadmap by Feb 20. 2) Schedule follow-up with stakeholders.",
-     *     "status": "done",
-     *     "created_at": "2026-02-10T10:00:00.000000Z",
-     *     "updated_at": "2026-02-10T10:05:00.000000Z"
+     *     "artifacts": {
+     *       "followup_1": {
+     *         "id": "followup_1",
+     *         "type": "methodology_criteria",
+     *         "title": "Followup #1 — Q1 Planning",
+     *         "data": {"blocks": []},
+     *         "status": "ready"
+     *       }
+     *     },
+     *     "layout": {"items": [{"id": "followup_1"}]}
      *   },
      *   "message": "Success",
      *   "status": 200,
@@ -105,7 +113,7 @@ class FollowupController extends Controller
         Gate::authorize('view', $followup);
 
         return ApiResponse::success(
-            data: FollowupResource::make($followup)
+            data: $this->artifactStateService->toState($followup)
         );
     }
 
@@ -122,15 +130,16 @@ class FollowupController extends Controller
      * @response 200 scenario="OK" {
      *   "success": true,
      *   "data": {
-     *     "id": 1,
-     *     "calendar_event": {"id": 5, "title": "Q1 Planning", "start_time": "2026-02-10T09:00:00.000000Z"},
-     *     "team_id": 2,
-     *     "user": {"id": 1, "name": "Alice Johnson", "email": "alice@example.com"},
-     *     "methodology_id": 1,
-     *     "text": "Action items: 1) Finalize roadmap by Feb 20. 2) Schedule follow-up with stakeholders.",
-     *     "status": "done",
-     *     "created_at": "2026-02-10T10:00:00.000000Z",
-     *     "updated_at": "2026-02-10T10:05:00.000000Z"
+     *     "artifacts": {
+     *       "followup_1": {
+     *         "id": "followup_1",
+     *         "type": "methodology_criteria",
+     *         "title": "Followup #1 — Q1 Planning",
+     *         "data": {"blocks": []},
+     *         "status": "ready"
+     *       }
+     *     },
+     *     "layout": {"items": [{"id": "followup_1"}]}
      *   },
      *   "message": "Success",
      *   "status": 200,
@@ -152,7 +161,7 @@ class FollowupController extends Controller
 
         Gate::authorize('view', $followup);
 
-        return ApiResponse::success(data: FollowupResource::make($followup));
+        return ApiResponse::success(data: $this->artifactStateService->toState($followup));
     }
 
     /**
@@ -226,8 +235,18 @@ class FollowupController extends Controller
             $user
         );
 
-        return ApiResponse::success(
-            data: $followup
-        );
+        return ApiResponse::success(data: $this->artifactStateService->toState($followup));
+    }
+
+    /**
+     * @param \Illuminate\Database\Eloquent\Collection<int, Followup> $followups
+     * @return array<int, array<string, mixed>>
+     */
+    private function followupStates(\Illuminate\Database\Eloquent\Collection $followups): array
+    {
+        return $followups
+            ->map(fn (Followup $followup) => $this->artifactStateService->toState($followup))
+            ->values()
+            ->all();
     }
 }
