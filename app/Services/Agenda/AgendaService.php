@@ -50,13 +50,40 @@ class AgendaService
         ?MeetingSummary $previousSummary,
         Collection $issues,
     ): MeetingAgenda {
-        $agenda = MeetingAgenda::create([
-            'calendar_event_id' => $event->id,
-            'user_id' => null,
-            'type' => 'general',
-            'status' => AgendaStatus::IN_PROGRESS,
-            'send_scheduled_at' => $event->starts_at->subMinutes(30),
-        ]);
+        $existingAgenda = MeetingAgenda::query()
+            ->where('calendar_event_id', $event->id)
+            ->whereNull('user_id')
+            ->where('type', 'general')
+            ->where('status', '!=', AgendaStatus::FAILED->value)
+            ->first();
+
+        if ($existingAgenda) {
+            return $existingAgenda;
+        }
+
+        $agenda = MeetingAgenda::query()
+            ->where('calendar_event_id', $event->id)
+            ->whereNull('user_id')
+            ->where('type', 'general')
+            ->where('status', AgendaStatus::FAILED->value)
+            ->first();
+
+        if (! $agenda) {
+            $agenda = MeetingAgenda::create([
+                'calendar_event_id' => $event->id,
+                'user_id' => null,
+                'type' => 'general',
+                'status' => AgendaStatus::IN_PROGRESS,
+                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+            ]);
+        } else {
+            $agenda->update([
+                'status' => AgendaStatus::IN_PROGRESS,
+                'raw_json' => null,
+                'content' => null,
+                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+            ]);
+        }
 
         try {
             $prompt = $this->buildGeneralPrompt($event, $previousSummary, $issues);
@@ -91,13 +118,40 @@ class AgendaService
         ?CalendarEvent $previousEvent,
         Collection $allIssues,
     ): MeetingAgenda {
-        $agenda = MeetingAgenda::create([
-            'calendar_event_id' => $event->id,
-            'user_id' => $user->id,
-            'type' => 'personal',
-            'status' => AgendaStatus::IN_PROGRESS,
-            'send_scheduled_at' => $event->starts_at->subMinutes(30),
-        ]);
+        $existingAgenda = MeetingAgenda::query()
+            ->where('calendar_event_id', $event->id)
+            ->where('user_id', $user->id)
+            ->where('type', 'personal')
+            ->where('status', '!=', AgendaStatus::FAILED->value)
+            ->first();
+
+        if ($existingAgenda) {
+            return $existingAgenda;
+        }
+
+        $agenda = MeetingAgenda::query()
+            ->where('calendar_event_id', $event->id)
+            ->where('user_id', $user->id)
+            ->where('type', 'personal')
+            ->where('status', AgendaStatus::FAILED->value)
+            ->first();
+
+        if (! $agenda) {
+            $agenda = MeetingAgenda::create([
+                'calendar_event_id' => $event->id,
+                'user_id' => $user->id,
+                'type' => 'personal',
+                'status' => AgendaStatus::IN_PROGRESS,
+                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+            ]);
+        } else {
+            $agenda->update([
+                'status' => AgendaStatus::IN_PROGRESS,
+                'raw_json' => null,
+                'content' => null,
+                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+            ]);
+        }
 
         try {
             $userIssues = $allIssues->where('assignee_id', $user->id);
