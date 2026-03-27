@@ -129,11 +129,6 @@ class MethodologyController extends Controller
 
         $updateData = $request->getUpdateData();
 
-        // Lock name/text changes if methodology is actively used
-        if (!empty($updateData) && ($methodology->followups()->exists() || $methodology->teams()->exists())) {
-            throw new AppException('The methodology is in use by teams or followups.', 'METHODOLOGY_LOCK_UPDATE');
-        }
-
         if (!empty($updateData)) {
             $methodology->update($updateData);
         }
@@ -205,6 +200,4 @@ class MethodologyController extends Controller
             data: $chat ? ChatResource::make($chat) : null
         );
     }
-
-    //TODO: fix bug with bot deletion mid call, fix bug with bot change for the same event, when time change to future from before
 }
