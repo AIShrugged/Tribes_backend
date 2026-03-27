@@ -29,6 +29,7 @@ use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
+use App\Http\Controllers\API\v1\MeetingReviewController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
 use App\Http\Controllers\API\v1\InsightController;
 use App\Http\Controllers\API\v1\IssueAttachmentController;
@@ -125,6 +126,11 @@ Route::group(['prefix' => 'v1'], function () {
                 ->name('calendar-events.meeting-summary.show');
             Route::post('/{calendar_event_id}/meeting-summary/generate', [MeetingSummaryController::class, 'generate'])
                 ->name('calendar-events.meeting-summary.generate');
+
+            Route::get('/{calendar_event_id}/meeting-review', [MeetingReviewController::class, 'show'])
+                ->name('calendar-events.meeting-review.show');
+            Route::post('/{calendar_event_id}/meeting-review/generate', [MeetingReviewController::class, 'generate'])
+                ->name('calendar-events.meeting-review.generate');
 
             Route::get('/{calendar_event_id}/tasks', [MeetingTaskController::class, 'index'])
                 ->name('calendar-events.tasks.index');
