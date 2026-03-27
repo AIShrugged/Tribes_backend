@@ -2,6 +2,7 @@
 
 namespace App\Services\Agenda;
 
+use Carbon\Carbon;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
@@ -49,12 +50,14 @@ class AgendaService
         ?MeetingSummary $previousSummary,
         Collection $issues,
     ): MeetingAgenda {
+        $eventStartsAt = $this->normalizeDateTime($event->starts_at);
+
         $agenda = MeetingAgenda::create([
             'calendar_event_id' => $event->id,
             'user_id' => null,
             'type' => 'general',
             'status' => AgendaStatus::IN_PROGRESS,
-            'send_scheduled_at' => $event->starts_at->subMinutes(30),
+            'send_scheduled_at' => $eventStartsAt->copy()->subMinutes(30),
         ]);
 
         try {
@@ -90,12 +93,14 @@ class AgendaService
         ?CalendarEvent $previousEvent,
         Collection $allIssues,
     ): MeetingAgenda {
+        $eventStartsAt = $this->normalizeDateTime($event->starts_at);
+
         $agenda = MeetingAgenda::create([
             'calendar_event_id' => $event->id,
             'user_id' => $user->id,
             'type' => 'personal',
             'status' => AgendaStatus::IN_PROGRESS,
-            'send_scheduled_at' => $event->starts_at->subMinutes(30),
+            'send_scheduled_at' => $eventStartsAt->copy()->subMinutes(30),
         ]);
 
         try {
@@ -131,12 +136,14 @@ class AgendaService
         ?MeetingSummary $previousSummary,
         Collection $issues,
     ): string {
+        $eventStartsAt = $this->normalizeDateTime($event->starts_at);
+
         $parts = [];
         $parts[] = 'Ты — ассистент для подготовки к рабочим встречам. Сгенерируй общую агенду для предстоящего митинга.';
         $parts[] = '';
         $parts[] = "Название встречи: {$event->title}";
         $parts[] = "Описание: {$event->description}";
-        $parts[] = "Дата и время: {$event->starts_at->format('d.m.Y H:i')}";
+        $parts[] = "Дата и время: {$eventStartsAt->format('d.m.Y H:i')}";
 
         if ($previousSummary) {
             $parts[] = '';
@@ -194,11 +201,16 @@ class AgendaService
         ?CalendarEvent $previousEvent,
         Collection $userIssues,
     ): string {
+        $eventStartsAt = $this->normalizeDateTime($event->starts_at);
+        $previousStartsAt = $previousEvent?->starts_at
+            ? $this->normalizeDateTime($previousEvent->starts_at)
+            : null;
+
         $parts = [];
         $parts[] = "Ты — ассистент для подготовки к рабочим встречам. Сгенерируй персональную агенду для участника {$user->name}.";
         $parts[] = '';
         $parts[] = "Название встречи: {$event->title}";
-        $parts[] = "Дата и время: {$event->starts_at->format('d.m.Y H:i')}";
+        $parts[] = "Дата и время: {$eventStartsAt->format('d.m.Y H:i')}";
 
         if ($previousSummary) {
             $parts[] = '';
@@ -226,7 +238,6 @@ class AgendaService
             }
         }
 
-        $previousStartsAt = $previousEvent?->starts_at;
         $closedTasks = $userIssues
             ->where('status', 'done')
             ->when($previousStartsAt, fn ($c) => $c->where('close_date', '>=', $previousStartsAt));
@@ -242,7 +253,7 @@ class AgendaService
 
         $dueSoon = $userIssues
             ->whereIn('status', ['open', 'in_progress'])
-            ->filter(fn ($i) => $i->due_date && $i->due_date->lte($event->starts_at));
+            ->filter(fn ($i) => $i->due_date && $i->due_date->lte($eventStartsAt));
 
         if ($dueSoon->isNotEmpty()) {
             $parts[] = '';
@@ -261,6 +272,15 @@ class AgendaService
         $parts[] = '- "discussion_points": массив тем для обсуждения конкретно для этого участника (2-5 пунктов)';
 
         return implode("\n", $parts);
+    }
+
+    private function normalizeDateTime(mixed $value): Carbon
+    {
+        if ($value instanceof Carbon) {
+            return $value;
+        }
+
+        return Carbon::parse($value);
     }
 
     private function renderGeneralContent(array $data): string
