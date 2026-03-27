@@ -47,10 +47,6 @@ class AgendaController extends Controller
     {
         $event = CalendarEvent::owned(Auth::id())->findOrFail($calendarEventId);
 
-        if ($event->agendas()->exists()) {
-            return ApiResponse::error('Agendas already generated for this event', status: 409);
-        }
-
         GenerateAgendaJob::dispatch($event);
 
         return ApiResponse::success('Agenda generation started', status: 202);

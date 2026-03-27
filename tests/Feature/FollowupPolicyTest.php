@@ -118,14 +118,9 @@ class FollowupPolicyTest extends TestCase
             'success',
             'data' => [
                 '*' => [
-                    'id',
-                    'calendar_event',
-                    'team_id',
-                    'user',
-                    'methodology_id',
-                    'status',
-                    'text',
-                ]
+                    'artifacts',
+                    'layout',
+                ],
             ]
         ]);
     }
@@ -138,16 +133,9 @@ class FollowupPolicyTest extends TestCase
         $response = $this->getJson("/api/v1/followups/{$this->followup->id}");
 
         $response->assertStatus(200);
-        $response->assertJson([
-            'success' => true,
-            'data' => [
-                'id' => $this->followup->id,
-                'team_id' => $this->team->id,
-                'user' => [
-                    'id' => $this->user->id,
-                ]
-            ]
-        ]);
+        $response->assertJsonPath('success', true);
+        $response->assertJsonPath('data.layout.items.0.id', 'followup_'.$this->followup->id);
+        $response->assertJsonPath('data.artifacts.followup_'.$this->followup->id.'.type', 'methodology_criteria');
     }
 
     #[Test]
@@ -168,12 +156,8 @@ class FollowupPolicyTest extends TestCase
         $response = $this->getJson("/api/v1/followups/{$this->followup->id}");
 
         $response->assertStatus(200);
-        $response->assertJson([
-            'success' => true,
-            'data' => [
-                'id' => $this->followup->id,
-            ]
-        ]);
+        $response->assertJsonPath('success', true);
+        $response->assertJsonPath('data.layout.items.0.id', 'followup_'.$this->followup->id);
     }
 
     #[Test]
@@ -223,8 +207,8 @@ class FollowupPolicyTest extends TestCase
 
         // Пользователь видит только свой followup
         $this->assertCount(1, $data);
-        $this->assertEquals($this->followup->id, $data[0]['id']);
-        $this->assertNotEquals($otherFollowup->id, $data[0]['id']);
+        $this->assertEquals('followup_'.$this->followup->id, $data[0]['layout']['items'][0]['id']);
+        $this->assertNotEquals('followup_'.$otherFollowup->id, $data[0]['layout']['items'][0]['id']);
     }
 
     #[Test]
