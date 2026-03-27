@@ -14,7 +14,11 @@ return [
                 'insight'         => 'google/gemini-3-pro-preview',
                 'demo'            => 'google/gemini-3-pro-preview',
                 'agenda'          => 'google/gemini-3-pro-preview',
-            ]
+            ],
+            'fallback_models' => [
+                'anthropic/claude-3.5-sonnet',
+                'openai/gpt-4o-mini',
+            ],
         ]
     ],
 

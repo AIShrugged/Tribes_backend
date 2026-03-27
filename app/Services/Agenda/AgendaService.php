@@ -87,7 +87,6 @@ class AgendaService
 
         try {
             $prompt = $this->buildGeneralPrompt($event, $previousSummary, $issues);
-
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
@@ -156,7 +155,6 @@ class AgendaService
         try {
             $userIssues = $allIssues->where('assignee_id', $user->id);
             $prompt = $this->buildPersonalPrompt($event, $user, $previousSummary, $previousEvent, $userIssues);
-
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),

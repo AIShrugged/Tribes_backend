@@ -17,9 +17,36 @@ class OpenRouterClient
      */
     public static function chat(
         array $messages,
-        string $model,
+        string|array $model,
         int $maxTokens = 1024,
         bool $forceJsonResponse = false
+    ): string {
+        $lastException = null;
+
+        foreach (self::resolveModelCandidates($model) as $candidate) {
+            try {
+                return self::chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse);
+            } catch (\Throwable $e) {
+                $lastException = $e;
+
+                Log::warning('LLM model failed', [
+                    'model' => $candidate,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        throw $lastException ?? new AppException('Failed to ask AI', 'AI_REQUEST_FAILED');
+    }
+
+    /**
+     * @param MessageDTO[] $messages
+     */
+    private static function chatOnce(
+        array $messages,
+        string $model,
+        int $maxTokens,
+        bool $forceJsonResponse
     ): string {
         $payloadMessages = array_map(
             static function (MessageDTO|array $message): array {
@@ -90,9 +117,34 @@ class OpenRouterClient
     public static function chatWithTools(
         array $messages,
         ?array $tools = null,
-        string $model = 'anthropic/claude-3.5-sonnet',
+        string|array $model = 'anthropic/claude-3.5-sonnet',
         int $maxTokens = 4096,
         ?string $systemPrompt = null
+    ): array {
+        $lastException = null;
+
+        foreach (self::resolveModelCandidates($model) as $candidate) {
+            try {
+                return self::chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt);
+            } catch (\Throwable $e) {
+                $lastException = $e;
+
+                Log::warning('OpenRouter chatWithTools model failed', [
+                    'model' => $candidate,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        throw $lastException ?? new AppException('Failed to ask AI', 'AI_REQUEST_FAILED');
+    }
+
+    private static function chatWithToolsOnce(
+        array $messages,
+        ?array $tools,
+        string $model,
+        int $maxTokens,
+        ?string $systemPrompt
     ): array {
         $data = [
             'model'      => $model,
@@ -139,5 +191,22 @@ class OpenRouterClient
         ]);
 
         return $body;
+    }
+
+    /**
+     * @param string|array $model
+     * @return array<int, string>
+     */
+    private static function resolveModelCandidates(string|array $model): array
+    {
+        $fallbackModels = config('ai.providers.openrouter.fallback_models', []);
+
+        if (is_array($model)) {
+            $candidates = $model;
+        } else {
+            $candidates = array_merge([$model], is_array($fallbackModels) ? $fallbackModels : []);
+        }
+
+        return array_values(array_unique(array_filter($candidates, static fn ($value) => is_string($value) && $value !== '')));
     }
 }
