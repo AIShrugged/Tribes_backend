@@ -7,6 +7,7 @@ use App\Services\Sources\Auth\SourceAuthFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -15,9 +16,11 @@ class Source extends Model
     use SoftDeletes;
     protected $guarded = [];
 
-    public function calendarEvents(): HasMany
+    public function calendarEvents(): BelongsToMany
     {
-        return $this->hasMany(CalendarEvent::class);
+        return $this->belongsToMany(CalendarEvent::class, 'calendar_event_source')
+            ->withPivot('external_id', 'required_bot')
+            ->withTimestamps();
     }
 
     public function user(): BelongsTo

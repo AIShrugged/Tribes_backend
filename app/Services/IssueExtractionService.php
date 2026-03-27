@@ -35,7 +35,7 @@ class IssueExtractionService
 
         $messages = [
             new MessageDTO('system', $this->buildSystemPrompt()),
-            new MessageDTO('user', "Транскрипт встречи:\n".$transcript),
+            new MessageDTO('user', "Дата встречи: {$event->starts_at->toDateString()}\nТекущая дата: ".now()->toDateString()."\n\nТранскрипт встречи:\n".$transcript),
         ];
 
         try {
@@ -77,6 +77,7 @@ class IssueExtractionService
                 'type' => in_array($item['type'] ?? '', ['task', 'bug'], true) ? $item['type'] : 'task',
                 'status' => MeetingTaskStatus::OPEN->value,
                 'assignee_name' => $item['assignee_name'] ?? null,
+                'due_date' => $this->parseDueDate($item['due_date'] ?? null),
             ]);
 
             $issues->push($issue);
@@ -91,32 +92,75 @@ class IssueExtractionService
         return $issues;
     }
 
+    private function parseDueDate(?string $value): ?\Carbon\Carbon
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private function buildSystemPrompt(): string
     {
         return <<<'PROMPT'
-Ты — ИИ-ассистент для извлечения actionable issues из транскриптов встреч.
+You are an AI assistant that extracts concrete tasks from work meeting transcripts.
 
-Проанализируй транскрипт и извлеки все задачи, проблемы, баги и action items, которые были обсуждены.
+Your goal is to find real commitments and decisions the team made during the meeting. Do NOT invent tasks, do NOT generalize discussions into tasks. Extract ONLY what someone explicitly committed to or what the team explicitly decided to do.
 
-Верни JSON строго в следующем формате:
+## How to distinguish a task from a discussion
+
+✅ IS a task — when someone said:
+- "I'll do...", "I'll take care of...", "Let me look into..."
+- "We need this by Friday...", "By the next meeting..."
+- "Create a ticket for...", "Open a PR for..."
+- A concrete decision with an assignee: "Pete, handle the..."
+
+❌ NOT a task:
+- General discussions ("we'll think about it", "we should someday")
+- Unresolved questions ("what if we...?")
+- Status updates ("I checked yesterday, everything works")
+- Already completed actions ("we already fixed that")
+
+## Response format
+
+Return JSON strictly in the following format:
 {
   "issues": [
     {
-      "name": "Краткое название задачи",
-      "description": "Подробное описание: что нужно сделать, контекст из обсуждения, ожидаемый результат",
-      "type": "task или bug",
-      "assignee_name": "Имя ответственного (если упомянуто в разговоре, иначе null)"
+      "name": "Verb + what exactly to do (up to 80 characters)",
+      "description": "## Context\nWhy this is needed — what was discussed at the meeting, what problem exists.\n\n## Steps\n1. Concrete step 1\n2. Concrete step 2\n\n## Definition of done\nHow to know the task is complete.",
+      "type": "task | bug",
+      "assignee_name": "First Last | null",
+      "due_date": "YYYY-MM-DD | null"
     }
   ]
 }
 
-Правила:
-- Извлекай только конкретные, actionable элементы (не общие обсуждения)
-- Для каждого issue давай чёткое описание с контекстом из разговора
-- Если задача связана с кодом/разработкой — укажи type: "task"
-- Если обсуждается проблема/баг — укажи type: "bug"
-- Если ответственный не назван явно — assignee_name: null
-- Если actionable items не найдены — верни пустой массив: {"issues": []}
+## Field rules
+
+**name** — start with a verb: "Fix...", "Add...", "Configure...", "Investigate...". It must be clear WHAT to do without reading the description.
+
+**description** — must contain three sections:
+- "Context" — 1-3 sentences: why the task arose, what was discussed. Quote key phrases from the transcript.
+- "Steps" — numbered list of concrete actions. Not "look into it", but "check logs for the past week", "update config X".
+- "Definition of done" — one sentence: what the outcome should be (PR created, metric improved, document written).
+
+**type**:
+- "bug" — only if a breakage, error, or incorrect behavior in production or staging is being discussed
+- "task" — everything else (features, refactoring, infrastructure, documentation, research)
+
+**assignee_name** — the name of the person who EXPLICITLY took the task or was EXPLICITLY assigned it in the conversation. If unclear — null.
+
+**due_date** — only if a deadline was EXPLICITLY mentioned in the meeting ("by Friday", "by April 1st", "next week"). Convert relative dates from the meeting date. If no deadline was mentioned — null.
+
+## Important
+- Do not duplicate: if the same task was discussed multiple times — it is one task
+- Do not split a single task into micro-steps — steps go in the description
 PROMPT;
     }
 }

@@ -27,18 +27,19 @@ class PreMeetingBriefService
 
         $events = CalendarEvent::query()
             ->whereBetween('starts_at', [$from, $to])
-            ->with(['source' => fn($q) => $q->withTrashed(), 'source.user.teams', 'profiles.user'])
+            ->with(['sources' => fn($q) => $q->withTrashed(), 'sources.user.teams', 'profiles.user'])
             ->get();
 
         $sent = 0;
 
         foreach ($events as $event) {
-            $user = $event->source?->user;
-            if (! $user) {
-                continue;
-            }
+            $teams = $event->sources
+                ->map(fn($source) => $source->user)
+                ->filter()
+                ->flatMap(fn($user) => $user->teams)
+                ->unique('id');
 
-            foreach ($user->teams as $team) {
+            foreach ($teams as $team) {
                 $settings = TeamNotificationSetting::query()
                     ->where('team_id', $team->id)
                     ->where('event_type', 'pre_meeting_brief')
@@ -308,7 +309,8 @@ class PreMeetingBriefService
     private function findPreviousEvent(CalendarEvent $event): ?CalendarEvent
     {
         return CalendarEvent::query()
-            ->where('source_id', $event->source_id)
+            ->where('title', $event->title)
+            ->where('url', $event->url)
             ->where('starts_at', '<', $event->starts_at)
             ->whereHas('meetingSummary', fn($q) => $q->where('status', 'done'))
             ->orderByDesc('starts_at')
@@ -319,7 +321,8 @@ class PreMeetingBriefService
     private function findAllOpenTasks(CalendarEvent $event, int $teamId): Collection
     {
         $eventIds = CalendarEvent::query()
-            ->where('source_id', $event->source_id)
+            ->where('title', $event->title)
+            ->where('url', $event->url)
             ->where('starts_at', '<', $event->starts_at)
             ->pluck('id');
 
@@ -339,7 +342,8 @@ class PreMeetingBriefService
     private function findTasksCompletedBetween(CalendarEvent $currentEvent, CalendarEvent $previousEvent, int $teamId): Collection
     {
         $eventIds = CalendarEvent::query()
-            ->where('source_id', $currentEvent->source_id)
+            ->where('title', $currentEvent->title)
+            ->where('url', $currentEvent->url)
             ->where('starts_at', '<', $currentEvent->starts_at)
             ->pluck('id');
 
