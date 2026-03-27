@@ -14,6 +14,7 @@ class CalendarEventSyncService
 {
     public function __construct(
         private readonly BotSchedulingService $botSchedulingService,
+        private readonly CreatorResolverService $creatorResolver,
     ) {
     }
 
@@ -26,22 +27,44 @@ class CalendarEventSyncService
             return null;
         }
 
-        $calendarEvent = $source->calendarEvents()->updateOrCreate(
-            ['external_id' => $eventDTO->externalId],
-            [
+        // Deduplicate by (url, starts_at)
+        $calendarEvent = CalendarEvent::where('url', $eventDTO->url)
+            ->where('starts_at', $startTime)
+            ->first();
+
+        if ($calendarEvent) {
+            $calendarEvent->update([
                 'platform'    => $eventDTO->platform,
-                'url'         => $eventDTO->url,
                 'title'       => $eventDTO->title,
                 'description' => $eventDTO->description,
-                'starts_at'   => $startTime,
                 'ends_at'     => $endTime,
-            ]
-        );
+            ]);
+        } else {
+            $creatorUserId = $this->creatorResolver->resolve($eventDTO->creatorEmail);
+
+            $calendarEvent = CalendarEvent::create([
+                'source_id'       => $source->id,
+                'creator_user_id' => $creatorUserId,
+                'external_id'     => $eventDTO->externalId,
+                'platform'        => $eventDTO->platform,
+                'url'             => $eventDTO->url,
+                'title'           => $eventDTO->title,
+                'description'     => $eventDTO->description,
+                'starts_at'       => $startTime,
+                'ends_at'         => $endTime,
+            ]);
+        }
+
+        // Attach source to event via pivot
+        $calendarEvent->sources()->syncWithoutDetaching([
+            $source->id => ['external_id' => $eventDTO->externalId, 'required_bot' => true],
+        ]);
 
         $this->syncAttendees($calendarEvent, $attendees);
 
-        $calendarEvent->requiredBot(true);
-        $this->botSchedulingService->schedule($calendarEvent);
+        if ($calendarEvent->isRequiredBot()) {
+            $this->botSchedulingService->schedule($calendarEvent);
+        }
 
         CalendarEventChanged::dispatch($calendarEvent);
 

@@ -68,28 +68,20 @@ class BotSchedulingService
 
     /**
      * Handle the require/unrequire bot toggle from user.
+     * Checks pivot table — bot is required if ANY participant's source requires it.
      */
     public function handleRequirement(CalendarEvent $calendarEvent): void
     {
-        if (!$calendarEvent->required_bot && !$calendarEvent->bot_id) {
-            return;
-        }
+        $anyoneRequires = $calendarEvent->isRequiredBot();
 
-        if ($this->shouldRemoveBot($calendarEvent)) {
+        if (!$anyoneRequires && $calendarEvent->bot?->is_active) {
             $this->remove($calendarEvent);
 
             return;
         }
 
-        if ($calendarEvent->required_bot && !$calendarEvent->bot?->is_active) {
+        if ($anyoneRequires && !$calendarEvent->bot?->is_active) {
             $this->schedule($calendarEvent);
         }
-    }
-
-    private function shouldRemoveBot(CalendarEvent $calendarEvent): bool
-    {
-        return !$calendarEvent->required_bot
-            && $calendarEvent->bot
-            && $calendarEvent->bot->is_active;
     }
 }

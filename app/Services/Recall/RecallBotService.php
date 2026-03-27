@@ -23,9 +23,10 @@ class RecallBotService
 
     public function schedule(CalendarEvent $calendarEvent): BotDTO
     {
-        $url = sprintf(self::API_URL, $calendarEvent->external_id);
+        $externalId = $calendarEvent->getRecallExternalId() ?? $calendarEvent->external_id;
+        $url = sprintf(self::API_URL, $externalId);
 
-        $deduplicationKey = md5($calendarEvent->external_id);
+        $deduplicationKey = md5($externalId);
 
         $response = $this->httpClient->post($url, [
             'deduplication_key' => $deduplicationKey,
@@ -65,7 +66,8 @@ class RecallBotService
 
     public function removeBot(CalendarEvent $calendarEvent): void
     {
-        $url = sprintf(self::API_URL, $calendarEvent->external_id);
+        $externalId = $calendarEvent->getRecallExternalId() ?? $calendarEvent->external_id;
+        $url = sprintf(self::API_URL, $externalId);
 
         $response = $this->httpClient->delete($url);
 

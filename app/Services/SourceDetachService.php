@@ -21,7 +21,7 @@ class SourceDetachService
         RecallCalendarService::detach($source->external_id);
 
         DB::transaction(function () use ($source) {
-            $this->deleteUpcomingEvents($source);
+            $this->detachUpcomingEvents($source);
 
             SourceOauth::where('source_id', $source->id)->delete();
             $source->disconnect();
@@ -29,21 +29,33 @@ class SourceDetachService
         });
     }
 
-    private function deleteUpcomingEvents(Source $source): void
+    /**
+     * Detach source from upcoming events via pivot.
+     * Only delete orphaned events (no remaining sources).
+     */
+    private function detachUpcomingEvents(Source $source): void
     {
-        $eventIds = $source->calendarEvents()
+        $upcomingEvents = $source->calendarEvents()
             ->where('starts_at', '>', Carbon::now())
-            ->pluck('id');
+            ->get();
 
-        if ($eventIds->isEmpty()) {
+        if ($upcomingEvents->isEmpty()) {
             return;
         }
 
-        $this->deleteEventRelations($eventIds);
+        // Detach this source from all upcoming events
+        $source->calendarEvents()->detach($upcomingEvents->pluck('id'));
 
-        $source->calendarEvents()
-            ->whereIn('id', $eventIds)
-            ->delete();
+        // Find orphaned events (no remaining sources) and delete them
+        $orphanedIds = CalendarEvent::whereIn('id', $upcomingEvents->pluck('id'))
+            ->whereDoesntHave('sources')
+            ->pluck('id');
+
+        if ($orphanedIds->isNotEmpty()) {
+            $this->deleteEventRelations($orphanedIds);
+
+            CalendarEvent::whereIn('id', $orphanedIds)->delete();
+        }
     }
 
     private function deleteEventRelations(Collection $eventIds): void

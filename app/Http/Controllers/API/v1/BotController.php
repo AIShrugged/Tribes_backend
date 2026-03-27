@@ -19,8 +19,8 @@ class BotController extends Controller
     /**
      * Set bot requirement for event
      *
-     * Marks whether the recording bot should join the specified calendar event.
-     * Returns the updated calendar event object.
+     * Marks whether the recording bot should join the specified calendar event
+     * for the current user's source. The bot is active if any participant requires it.
      *
      * @authenticated
      *
@@ -36,8 +36,7 @@ class BotController extends Controller
      *     "description": "Quarterly planning session",
      *     "starts_at": "2026-02-10T09:00:00.000000Z",
      *     "ends_at": "2026-02-10T10:00:00.000000Z",
-     *     "external_id": "ext_abc123",
-     *     "source_id": 1,
+     *     "creator_user_id": 1,
      *     "required_bot": true
      *   },
      *   "message": "Success",
@@ -52,7 +51,16 @@ class BotController extends Controller
         $calendarEvent = CalendarEvent::owned(Auth::id())
             ->findOrFail($request->getCalendarEventId());
 
-        $calendarEvent->requiredBot($request->getRequiredBot());
+        // Update required_bot for the current user's source in the pivot
+        $source = $calendarEvent->sources()
+            ->where('user_id', Auth::id())
+            ->first();
+
+        if ($source) {
+            $calendarEvent->sources()->updateExistingPivot($source->id, [
+                'required_bot' => $request->getRequiredBot(),
+            ]);
+        }
 
         CalendarEventChanged::dispatch($calendarEvent);
 

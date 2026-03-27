@@ -12,6 +12,7 @@ class EventDTO extends BaseDTO
         public string $url,
         public string $title,
         public string $description,
+        public ?string $creatorEmail = null,
     ) {
     }
 
@@ -38,6 +39,7 @@ class EventDTO extends BaseDTO
             $data['meeting_url'],
             $data['raw']['summary'] ?? '',
             $data['raw']['description'] ?? '',
+            $data['raw']['creator']['email'] ?? null,
         );
     }
 }

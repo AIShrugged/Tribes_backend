@@ -9,19 +9,35 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Facades\DB;
 
 class CalendarEvent extends Model
 {
     protected $guarded = [];
 
-    public function host(): BelongsTo
+    protected function casts(): array
     {
-        return $this->source->user();
+        return [
+            'starts_at' => 'datetime',
+            'ends_at' => 'datetime',
+        ];
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'creator_user_id');
     }
 
     public function source(): BelongsTo
     {
         return $this->belongsTo(Source::class);
+    }
+
+    public function sources(): BelongsToMany
+    {
+        return $this->belongsToMany(Source::class, 'calendar_event_source')
+            ->withPivot('external_id', 'required_bot')
+            ->withTimestamps();
     }
 
     public function bot(): BelongsTo
@@ -71,14 +87,25 @@ class CalendarEvent extends Model
 
     public function scopeOwned(Builder $query, int $userId): Builder
     {
-        return $query->whereHas('source', function (Builder $query) use ($userId) {
-            $query->where('user_id', $userId);
-        });
+        return $query->whereHas('sources', fn (Builder $q) => $q->where('user_id', $userId));
     }
 
-    public function requiredBot(bool $require): void
+    public function isRequiredBot(): bool
     {
-        $this->required_bot = $require;
-        $this->save();
+        return DB::table('calendar_event_source')
+            ->where('calendar_event_id', $this->id)
+            ->where('required_bot', true)
+            ->exists();
+    }
+
+    /**
+     * Get any Recall external_id from the pivot (for API calls to Recall).
+     */
+    public function getRecallExternalId(): ?string
+    {
+        return DB::table('calendar_event_source')
+            ->where('calendar_event_id', $this->id)
+            ->whereNotNull('external_id')
+            ->value('external_id');
     }
 }
