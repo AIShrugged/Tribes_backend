@@ -10,6 +10,7 @@ return [
                 'wanda'           => 'google/gemini-3-pro-preview',
                 'telegram_agent'  => 'anthropic/claude-3.5-sonnet',
                 'meeting_summary' => 'google/gemini-3-pro-preview',
+                'meeting_review'  => 'google/gemini-3-pro-preview',
                 'meeting_tasks'   => 'google/gemini-3-pro-preview',
                 'insight'         => 'google/gemini-3-pro-preview',
                 'demo'            => 'google/gemini-3-pro-preview',
