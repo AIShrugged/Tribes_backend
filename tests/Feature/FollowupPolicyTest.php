@@ -118,8 +118,16 @@ class FollowupPolicyTest extends TestCase
             'success',
             'data' => [
                 '*' => [
-                    'artifacts',
-                    'layout',
+                    'id',
+                    'calendar_event',
+                    'team_id',
+                    'user',
+                    'methodology_id',
+                    'is_deprecated',
+                    'text',
+                    'status',
+                    'created_at',
+                    'updated_at',
                 ],
             ]
         ]);
@@ -134,8 +142,9 @@ class FollowupPolicyTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonPath('success', true);
-        $response->assertJsonPath('data.layout.items.0.id', 'followup_'.$this->followup->id);
-        $response->assertJsonPath('data.artifacts.followup_'.$this->followup->id.'.type', 'methodology_criteria');
+        $response->assertJsonPath('data.id', $this->followup->id);
+        $response->assertJsonPath('data.text.layout.items.0.id', 'followup_'.$this->followup->id);
+        $response->assertJsonPath('data.text.artifacts.followup_'.$this->followup->id.'.type', 'methodology_criteria');
     }
 
     #[Test]
@@ -157,7 +166,7 @@ class FollowupPolicyTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonPath('success', true);
-        $response->assertJsonPath('data.layout.items.0.id', 'followup_'.$this->followup->id);
+        $response->assertJsonPath('data.text.layout.items.0.id', 'followup_'.$this->followup->id);
     }
 
     #[Test]
@@ -207,8 +216,9 @@ class FollowupPolicyTest extends TestCase
 
         // Пользователь видит только свой followup
         $this->assertCount(1, $data);
-        $this->assertEquals('followup_'.$this->followup->id, $data[0]['layout']['items'][0]['id']);
-        $this->assertNotEquals('followup_'.$otherFollowup->id, $data[0]['layout']['items'][0]['id']);
+        $this->assertEquals($this->followup->id, $data[0]['id']);
+        $this->assertEquals('followup_'.$this->followup->id, $data[0]['text']['layout']['items'][0]['id']);
+        $this->assertNotEquals('followup_'.$otherFollowup->id, $data[0]['text']['layout']['items'][0]['id']);
     }
 
     #[Test]
@@ -238,6 +248,8 @@ class FollowupPolicyTest extends TestCase
 
         // Менеджер видит все followup'ы команды
         $this->assertCount(2, $data);
+        $this->assertEquals($this->followup->id, $data[0]['id']);
+        $this->assertEquals($otherFollowup->id, $data[1]['id']);
     }
 
     #[Test]
