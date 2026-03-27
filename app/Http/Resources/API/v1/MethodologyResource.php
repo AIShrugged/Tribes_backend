@@ -15,11 +15,13 @@ class MethodologyResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'         => $this->id,
-            'name'       => $this->name,
-            'text'       => $this->text,
-            'is_default' => $this->is_default,
-            'teams'      => TeamResource::collection($this->teams),
+            'id'             => $this->id,
+            'name'           => $this->name,
+            'text'           => $this->text,
+            'scheme'         => $this->scheme,
+            'scheme_version' => $this->scheme_version,
+            'is_default'     => $this->is_default,
+            'teams'          => TeamResource::collection($this->teams),
             'organization_id' => $this->organization_id
         ];
     }

@@ -4,6 +4,7 @@ namespace App\Services\Followup;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\FollowupStatus;
+use App\Services\Artifact\ArtifactSchema;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Methodology;
@@ -77,11 +78,19 @@ class FollowupService
         try {
             $event = $followup->calendarEvent;
             $transcript = $this->transcriptBuilder->build($event);
+            $artifactId = 'followup_'.$followup->id;
+            $artifactTitle = $event->title
+                ? "Followup #{$followup->id} — {$event->title}"
+                : "Followup #{$followup->id}";
 
             $messages = [
-                new MessageDTO('user', view('prompts.methodology_prompt', ['scheme' => $methodology->scheme])->render()),
-                new MessageDTO('user', "Текст с методикой:\n" . $methodology->text),
-                new MessageDTO('user', "Транскрипт встречи:\n" . $transcript),
+                new MessageDTO('user', view('prompts.methodology_prompt', [
+                    'methodology' => $methodology->text,
+                    'transcript' => $transcript,
+                    'artifact_id' => $artifactId,
+                    'artifact_title' => $artifactTitle,
+                    'artifact_schema' => ArtifactSchema::dataDescription(),
+                ])->render()),
             ];
 
             Log::info('messages', $messages);

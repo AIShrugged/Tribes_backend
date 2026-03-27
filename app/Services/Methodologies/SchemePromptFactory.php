@@ -4,11 +4,13 @@ namespace App\Services\Methodologies;
 
 use App\Exceptions\AppException;
 use App\Services\Methodologies\Prompts\PromptV1;
+use App\Services\Methodologies\Prompts\PromptV2;
 
 class SchemePromptFactory
 {
     private const PROMPTS = [
-        PromptV1::class
+        PromptV1::class,
+        PromptV2::class,
     ];
 
     public static function resolve(string $version): BaseSchemePrompt

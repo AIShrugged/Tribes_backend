@@ -104,15 +104,13 @@ class SaveMethodologyTool implements ToolInterface
             ];
         }
 
-        $scheme = $this->convertBlocksToScheme($artifact['data']);
-
         $methodology = Methodology::create([
-            'name'           => $name,
-            'text'           => $methodologyText,
-            'scheme'         => json_encode($scheme),
-            'scheme_version' => MethodologySchemeVersion::VER_1->value,
+            'name'            => $name,
+            'text'            => $methodologyText,
+            'scheme'          => json_encode($artifact['data'], JSON_UNESCAPED_UNICODE),
+            'scheme_version'  => MethodologySchemeVersion::VER_2->value,
             'organization_id' => $organizationId,
-            'is_default'     => false,
+            'is_default'      => false,
         ]);
 
         $teamsAssigned = 0;
@@ -131,8 +129,7 @@ class SaveMethodologyTool implements ToolInterface
     }
 
     /**
-     * Convert the block-based artifact data into the scheme format
-     * expected by FollowupService (total/metrics/conclusion).
+     * Legacy converter kept for older versioned methodologies.
      */
     private function convertBlocksToScheme(array $data): array
     {

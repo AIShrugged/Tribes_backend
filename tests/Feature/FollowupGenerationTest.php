@@ -150,10 +150,71 @@ class FollowupGenerationTest extends TestCase
         $mockClient = Mockery::mock(OpenRouterClient::class);
         $mockClient->shouldReceive('chat')
             ->once()
-            ->andReturn(json_encode([
-                'summary' => 'Meeting summary',
-                'action_items' => ['Task 1', 'Task 2']
-            ]));
+            ->andReturnUsing(function (array $messages) {
+                $prompt = collect($messages)
+                    ->pluck('content')
+                    ->filter(fn ($content) => is_string($content))
+                    ->implode("\n");
+
+                preg_match('/ID будущего артефакта:\s*([a-zA-Z0-9_\-]+)/', $prompt, $matches);
+                $artifactId = $matches[1] ?? 'followup_mock';
+
+                return json_encode([
+                    'artifacts' => [
+                        $artifactId => [
+                            'id' => $artifactId,
+                            'type' => 'methodology_criteria',
+                            'title' => 'Mocked followup',
+                            'data' => [
+                                'blocks' => [
+                                    [
+                                        'type' => 'header',
+                                        'text' => 'Mocked followup',
+                                    ],
+                                    [
+                                        'type' => 'progress_summary',
+                                        'items' => [
+                                            [
+                                                'label' => 'Общий балл',
+                                                'value' => 42,
+                                                'max' => 72,
+                                            ],
+                                        ],
+                                    ],
+                                    [
+                                        'type' => 'scoring_table',
+                                        'columns' => ['Метрика', 'Балл', 'Макс.', 'Комментарий'],
+                                        'rows' => [
+                                            ['Small talk', 3, 4, 'Good'],
+                                        ],
+                                    ],
+                                    [
+                                        'type' => 'text_list',
+                                        'title' => 'Сильные стороны',
+                                        'items' => ['Mocked strength'],
+                                    ],
+                                    [
+                                        'type' => 'text_list',
+                                        'title' => 'Зоны для развития',
+                                        'items' => ['Mocked area'],
+                                    ],
+                                    [
+                                        'type' => 'text_list',
+                                        'title' => 'План действий',
+                                        'items' => ['Mocked action'],
+                                    ],
+                                ],
+                            ],
+                            'status' => 'ready',
+                        ],
+                    ],
+                    'layout' => [
+                        'items' => [
+                            ['id' => $artifactId],
+                        ],
+                    ],
+                ]);
+            });
 
         $this->app->instance(OpenRouterClient::class, $mockClient);
 
@@ -187,9 +248,13 @@ class FollowupGenerationTest extends TestCase
 
         // Проверяем содержимое
         $text = json_decode($followup->text, true);
-        $this->assertArrayHasKey('summary', $text);
-        $this->assertArrayHasKey('action_items', $text);
-        $this->assertCount(2, $text['action_items']);
+        $this->assertArrayHasKey('artifacts', $text);
+        $this->assertArrayHasKey('layout', $text);
+        $this->assertArrayHasKey('followup_'.$followup->id, $text['artifacts']);
+        $artifact = $text['artifacts']['followup_'.$followup->id];
+        $this->assertSame('methodology_criteria', $artifact['type']);
+        $this->assertArrayHasKey('blocks', $artifact['data']);
+        $this->assertNotEmpty($artifact['data']['blocks']);
     }
 
     #[Test]
