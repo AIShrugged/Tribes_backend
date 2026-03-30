@@ -83,7 +83,7 @@ class IssueController extends Controller
             'assignee_id' => $data['assignee_id'] ?? null,
         ])->load('assignee');
 
-        return ApiResponse::success(data: IssueResource::make($issue), status: 201);
+        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load('assignee')), status: 201);
     }
 
     public function show(IssueRequest $request, int $issue): ApiResponse
@@ -134,7 +134,7 @@ class IssueController extends Controller
     {
         return Issue::query()
             ->visibleTo($user)
-            ->with('assignee')
+            ->with(['assignee', 'agentFlow.steps.agentTask.latestRun'])
             ->findOrFail($issueId);
     }
 

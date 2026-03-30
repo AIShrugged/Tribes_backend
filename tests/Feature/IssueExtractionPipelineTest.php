@@ -230,10 +230,10 @@ class IssueExtractionPipelineTest extends TestCase
         Event::assertNotDispatched(IssuesExtracted::class);
     }
 
-    // ── 4. DispatchAgentTasksForIssues creates agent tasks ──
+    // ── 4. DispatchAgentTasksForIssues stays idle for extracted issues ──
 
     #[Test]
-    public function issues_extracted_event_creates_agent_tasks(): void
+    public function issues_extracted_event_does_not_create_agent_tasks(): void
     {
         Queue::fake();
 
@@ -242,19 +242,14 @@ class IssueExtractionPipelineTest extends TestCase
 
         IssuesExtracted::dispatch($issues, $this->team, $this->user);
 
-        $this->assertDatabaseCount('agent_tasks', 2);
+        $this->assertDatabaseCount('agent_tasks', 0);
 
-        foreach ($issues as $issue) {
-            $issue->refresh();
-            $this->assertNotNull($issue->agent_task_id);
+        $development = $issues->firstWhere('type', 'development');
+        $organization = $issues->firstWhere('type', 'organization');
 
-            $agentTask = AgentTask::find($issue->agent_task_id);
-            $this->assertNotNull($agentTask);
-            $this->assertEquals($this->user->id, $agentTask->user_id);
-            $this->assertEquals($this->team->id, $agentTask->team_id);
-            $this->assertEquals($issue->id, $agentTask->metadata['issue_id']);
-            $this->assertTrue($agentTask->metadata['auto_dispatched']);
-        }
+        $this->assertNotNull($development);
+        $this->assertNull($development->agent_task_id);
+        $this->assertNull($organization?->agent_task_id);
     }
 
     // ── 5. Issue status transitions ──
@@ -363,7 +358,7 @@ class IssueExtractionPipelineTest extends TestCase
     // ── 7. Full pipeline integration ──
 
     #[Test]
-    public function full_pipeline_from_transcript_to_agent_tasks(): void
+    public function full_pipeline_from_transcript_to_manual_reopen_agent_task(): void
     {
         Queue::fake();
 
@@ -372,21 +367,25 @@ class IssueExtractionPipelineTest extends TestCase
         $issues = $service->extract($this->calendarEvent, $this->team, $this->user);
         $this->assertCount(2, $issues);
 
-        // Шаг 2: Диспатч события → создание agent tasks
+        // Шаг 2: Диспатч события не создаёт agent tasks автоматически
         IssuesExtracted::dispatch($issues, $this->team, $this->user);
 
-        // Проверяем: 2 issues в базе, 2 agent tasks, все связаны
+        // Проверяем: 2 issues в базе, agent tasks ещё нет
         $this->assertDatabaseCount('issues', 2);
-        $this->assertDatabaseCount('agent_tasks', 2);
+        $this->assertDatabaseCount('agent_tasks', 0);
 
-        foreach (Issue::all() as $issue) {
-            $this->assertNotNull($issue->agent_task_id);
-            $this->assertEquals(MeetingTaskStatus::OPEN->value, $issue->status);
-            $this->assertEquals($this->calendarEvent->id, $issue->sourceable_id);
-        }
+        $development = Issue::query()->where('type', 'development')->firstOrFail();
+        $organization = Issue::query()->where('type', 'organization')->firstOrFail();
 
-        // Шаг 3: Симулируем агент поставил review
-        $issue = Issue::first();
+        $this->assertNull($development->agent_task_id);
+        $this->assertNull($organization->agent_task_id);
+        $this->assertEquals(MeetingTaskStatus::OPEN->value, $development->status);
+        $this->assertEquals(MeetingTaskStatus::OPEN->value, $organization->status);
+        $this->assertEquals($this->calendarEvent->id, $development->sourceable_id);
+        $this->assertEquals($this->calendarEvent->id, $organization->sourceable_id);
+
+        // Шаг 3: Пользователь переводит issue в review вручную
+        $issue = $development;
         $issue->update([
             'status' => MeetingTaskStatus::REVIEW->value,
             'pr_url' => 'https://github.com/org/repo/pull/1',
@@ -400,8 +399,9 @@ class IssueExtractionPipelineTest extends TestCase
         $issue->update(['status' => MeetingTaskStatus::REOPEN->value]);
 
         $issue->refresh();
-        $this->assertNotEquals($oldAgentTaskId, $issue->agent_task_id);
-        $this->assertDatabaseCount('agent_tasks', 3); // 2 из экстракции + 1 из reopen
+        $this->assertNull($oldAgentTaskId);
+        $this->assertNotNull($issue->agent_task_id);
+        $this->assertDatabaseCount('agent_tasks', 1); // только из reopen
     }
 
     // ── Helpers ──

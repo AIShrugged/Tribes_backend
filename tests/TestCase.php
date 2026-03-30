@@ -80,6 +80,32 @@ abstract class TestCase extends BaseTestCase
             ]);
         }
 
+        if (str_contains($prompt, 'development issue flow') && str_contains($prompt, 'Return ONLY valid JSON object')) {
+            return json_encode([
+                'goal' => 'Deliver the requested development issue through a sequenced agent workflow.',
+                'steps' => [
+                    [
+                        'title' => 'Inspect and plan',
+                        'prompt' => 'Review the issue context, identify the relevant code paths, and prepare the implementation approach.',
+                        'acceptance_criteria' => [
+                            'Relevant repository area identified',
+                            'Implementation approach is clear',
+                        ],
+                        'output_mode' => 'md',
+                    ],
+                    [
+                        'title' => 'Implement and verify',
+                        'prompt' => 'Apply the requested fix using the previous step output as input, then verify the result with tests or validation.',
+                        'acceptance_criteria' => [
+                            'Code changes are applied',
+                            'Validation is completed',
+                        ],
+                        'output_mode' => 'md',
+                    ],
+                ],
+            ]);
+        }
+
         if (str_contains($prompt, '"participants"') && str_contains($prompt, '"relationships"')) {
             return json_encode([
                 'participants' => [],
