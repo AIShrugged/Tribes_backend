@@ -24,10 +24,11 @@ class IssueController extends Controller
     {
         $query = Issue::query()
             ->visibleTo($request->user())
-            ->with('assignee')
-            ->latest('id');
+            ->with('assignee');
 
         $filters = $request->getIndexFilters();
+
+        $query->orderBy($filters['sort'], $filters['order']);
 
         if ($filters['status']) {
             $query->where('status', $filters['status']);
