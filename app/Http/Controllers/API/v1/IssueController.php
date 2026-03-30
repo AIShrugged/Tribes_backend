@@ -50,6 +50,10 @@ class IssueController extends Controller
             $query->where('team_id', $filters['team_id']);
         }
 
+        if ($filters['search']) {
+            $query->where('name', 'like', '%' . $filters['search'] . '%');
+        }
+
         $count = (clone $query)->count();
         $issues = $query->offset($request->getOffset())
             ->limit($request->getLimit())
