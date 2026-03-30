@@ -40,7 +40,7 @@ class AgentDelegationToolsTest extends TestCase
 
         $issueResult = $registry->get('create_issue')?->execute([
             'name' => 'Prepare release notes',
-            'type' => 'task',
+            'type' => 'organization',
             'description' => 'Summarize backend changes for release.',
         ]);
 
@@ -50,7 +50,7 @@ class AgentDelegationToolsTest extends TestCase
         $this->assertSame($user->id, $issue->user_id);
         $this->assertSame($organization->id, $issue->organization_id);
         $this->assertSame($team->id, $issue->team_id);
-        $this->assertSame('task', $issue->type);
+        $this->assertSame('organization', $issue->type);
         $this->assertSame('open', $issue->status);
 
         $agentTaskResult = $registry->get('create_agent_task')?->execute([

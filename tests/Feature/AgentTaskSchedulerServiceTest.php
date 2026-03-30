@@ -42,7 +42,10 @@ class AgentTaskSchedulerServiceTest extends TestCase
         ]);
         $this->assertNotNull($task->fresh()->locked_at);
 
-        Queue::assertPushed(RunAgentTaskJob::class, fn (RunAgentTaskJob $job) => $job->agentTaskId === $task->id);
+        Queue::assertPushed(
+            RunAgentTaskJob::class,
+            fn (RunAgentTaskJob $job) => $job->agentTaskId === $task->id && $job->queue === 'agent-tasks'
+        );
     }
 
     #[Test]
