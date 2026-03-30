@@ -16,6 +16,15 @@ class RunAgentTaskJobTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function it_uses_the_dedicated_agent_tasks_queue_and_timeout(): void
+    {
+        $job = new RunAgentTaskJob(1, 2, 3);
+
+        $this->assertSame('agent-tasks', $job->queue);
+        $this->assertSame(1800, $job->timeout);
+    }
+
+    #[Test]
     public function it_completes_one_off_agent_task_and_disables_it(): void
     {
         $user = User::factory()->create();

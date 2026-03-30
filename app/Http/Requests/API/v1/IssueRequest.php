@@ -3,6 +3,7 @@
 namespace App\Http\Requests\API\v1;
 
 use App\Enums\MeetingTaskStatus;
+use App\Models\Issue;
 use App\Traits\PaginatedRequestTrait;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -18,7 +19,7 @@ class IssueRequest extends FormRequest
         return match ($this->route()?->getName()) {
             'issues.index' => [
                 'status' => ['nullable', Rule::in(self::VALID_STATUSES)],
-                'type' => ['nullable', Rule::in(['task', 'bug'])],
+                'type' => ['nullable', Rule::in(Issue::TYPES)],
                 'assignee' => ['nullable', 'integer', 'exists:users,id'],
                 'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
@@ -31,7 +32,7 @@ class IssueRequest extends FormRequest
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
                 'description' => ['nullable', 'string'],
-                'type' => ['required', Rule::in(['task', 'bug'])],
+                'type' => ['required', Rule::in(Issue::TYPES)],
                 'status' => ['nullable', Rule::in(self::VALID_STATUSES)],
                 'organization_id' => ['required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
@@ -40,7 +41,7 @@ class IssueRequest extends FormRequest
             'issues.update' => [
                 'name' => ['sometimes', 'required', 'string', 'max:255'],
                 'description' => ['sometimes', 'nullable', 'string'],
-                'type' => ['sometimes', 'required', Rule::in(['task', 'bug'])],
+                'type' => ['sometimes', 'required', Rule::in(Issue::TYPES)],
                 'status' => ['sometimes', 'required', Rule::in(self::VALID_STATUSES)],
                 'organization_id' => ['sometimes', 'required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],

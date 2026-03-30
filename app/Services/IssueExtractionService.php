@@ -74,7 +74,7 @@ class IssueExtractionService
                 'sourceable_id' => $event->id,
                 'name' => $name,
                 'description' => $item['description'] ?? null,
-                'type' => in_array($item['type'] ?? '', ['task', 'bug'], true) ? $item['type'] : 'task',
+                'type' => Issue::normalizeType($item['type'] ?? null) ?? Issue::TYPE_DEVELOPMENT,
                 'status' => MeetingTaskStatus::OPEN->value,
                 'assignee_name' => $item['assignee_name'] ?? null,
                 'due_date' => $this->parseDueDate($item['due_date'] ?? null),
@@ -134,7 +134,7 @@ Return JSON strictly in the following format:
     {
       "name": "Verb + what exactly to do (up to 80 characters)",
       "description": "## Context\nWhy this is needed — what was discussed at the meeting, what problem exists.\n\n## Steps\n1. Concrete step 1\n2. Concrete step 2\n\n## Definition of done\nHow to know the task is complete.",
-      "type": "task | bug",
+      "type": "development | organization",
       "assignee_name": "First Last | null",
       "due_date": "YYYY-MM-DD | null"
     }
@@ -151,8 +151,8 @@ Return JSON strictly in the following format:
 - "Definition of done" — one sentence: what the outcome should be (PR created, metric improved, document written).
 
 **type**:
-- "bug" — only if a breakage, error, or incorrect behavior in production or staging is being discussed
-- "task" — everything else (features, refactoring, infrastructure, documentation, research)
+- "organization" — for coordination, process, operations, or non-implementation work
+- "development" — everything else (features, refactoring, infrastructure, documentation, research)
 
 **assignee_name** — the name of the person who EXPLICITLY took the task or was EXPLICITLY assigned it in the conversation. If unclear — null.
 
