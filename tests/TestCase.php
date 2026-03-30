@@ -185,13 +185,13 @@ abstract class TestCase extends BaseTestCase
                     [
                         'name' => 'Исправить баг в авторизации',
                         'description' => 'При логине через Google OAuth не сохраняется сессия',
-                        'type' => 'bug',
+                        'type' => 'development',
                         'assignee_name' => 'John Doe',
                     ],
                     [
                         'name' => 'Добавить экспорт отчётов в PDF',
                         'description' => 'Нужно добавить кнопку экспорта на странице отчётов',
-                        'type' => 'task',
+                        'type' => 'organization',
                         'assignee_name' => null,
                     ],
                 ],

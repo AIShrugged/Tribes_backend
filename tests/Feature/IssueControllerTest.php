@@ -37,13 +37,13 @@ class IssueControllerTest extends TestCase
             ->postJson('/api/v1/issues', [
                 'name' => 'Fix webhook race',
                 'description' => 'Retry handling duplicates work.',
-                'type' => 'bug',
+                'type' => 'development',
                 'organization_id' => $organization->id,
                 'team_id' => $team->id,
                 'assignee_id' => $assignee->id,
             ])->assertStatus(201)
             ->assertJsonPath('data.name', 'Fix webhook race')
-            ->assertJsonPath('data.type', 'bug')
+            ->assertJsonPath('data.type', 'development')
             ->assertJsonPath('data.organization_id', $organization->id)
             ->assertJsonPath('data.team_id', $team->id)
             ->assertJsonPath('data.assignee_id', $assignee->id)
@@ -52,7 +52,7 @@ class IssueControllerTest extends TestCase
         $issueId = $createResponse->json('data.id');
 
         $this->actingAs($owner)
-            ->getJson('/api/v1/issues?type=bug&assignee='.$assignee->id.'&organization_id='.$organization->id.'&team_id='.$team->id)
+            ->getJson('/api/v1/issues?type=development&assignee='.$assignee->id.'&organization_id='.$organization->id.'&team_id='.$team->id)
             ->assertStatus(200)
             ->assertJsonPath('data.0.id', $issueId);
 
@@ -68,7 +68,7 @@ class IssueControllerTest extends TestCase
             'organization_id' => $organization->id,
             'team_id' => $team->id,
             'assignee_id' => $assignee->id,
-            'type' => 'bug',
+            'type' => 'development',
             'status' => 'done',
         ]);
 
@@ -136,7 +136,7 @@ class IssueControllerTest extends TestCase
         $this->actingAs($owner)
             ->postJson('/api/v1/issues', [
                 'name' => 'Foreign issue',
-                'type' => 'task',
+                'type' => 'development',
                 'organization_id' => $organization->id,
                 'team_id' => $otherTeam->id,
             ])->assertStatus(422)
@@ -155,7 +155,7 @@ class IssueControllerTest extends TestCase
             'team_id' => $team->id,
             'name' => 'Meeting follow-up',
             'description' => 'Created from meeting source.',
-            'type' => 'task',
+            'type' => 'organization',
             'status' => 'open',
             'sourceable_type' => 'App\Models\CalendarEvent',
             'sourceable_id' => 123,
@@ -187,7 +187,7 @@ class IssueControllerTest extends TestCase
             'organization_id' => $organization->id,
             'team_id' => null,
             'name' => 'Org-level issue',
-            'type' => 'task',
+            'type' => 'organization',
             'status' => 'open',
         ]);
 
@@ -196,7 +196,7 @@ class IssueControllerTest extends TestCase
             'organization_id' => $organization->id,
             'team_id' => $team->id,
             'name' => 'Team-level issue',
-            'type' => 'bug',
+            'type' => 'development',
             'status' => 'open',
             'assignee_id' => $employee->id,
         ]);
@@ -223,7 +223,7 @@ class IssueControllerTest extends TestCase
         $this->actingAs($employee)
             ->postJson('/api/v1/issues', [
                 'name' => 'Org issue by employee',
-                'type' => 'task',
+                'type' => 'organization',
                 'organization_id' => $organization->id,
             ])->assertStatus(422)
             ->assertJsonValidationErrors(['organization_id']);
@@ -241,7 +241,7 @@ class IssueControllerTest extends TestCase
         $this->actingAs($manager)
             ->postJson('/api/v1/issues', [
                 'name' => 'Paused issue',
-                'type' => 'task',
+                'type' => 'organization',
                 'status' => 'paused',
                 'organization_id' => $organization->id,
                 'team_id' => $team->id,
@@ -251,7 +251,7 @@ class IssueControllerTest extends TestCase
         $this->actingAs($manager)
             ->postJson('/api/v1/issues', [
                 'name' => 'Cancelled issue',
-                'type' => 'task',
+                'type' => 'organization',
                 'status' => 'cancelled',
                 'organization_id' => $organization->id,
                 'team_id' => $team->id,

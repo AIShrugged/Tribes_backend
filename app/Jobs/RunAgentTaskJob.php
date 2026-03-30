@@ -25,7 +25,9 @@ class RunAgentTaskJob implements ShouldQueue
         public int $agentTaskId,
         public int $agentTaskRunId,
         public int $maxAttempts,
-    ) {}
+    ) {
+        $this->onQueue('agent-tasks');
+    }
 
     public function tries(): int
     {
@@ -117,6 +119,33 @@ class RunAgentTaskJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    public function failed(?\Throwable $e = null): void
+    {
+        $task = AgentTask::find($this->agentTaskId);
+        $run = AgentTaskRun::find($this->agentTaskRunId);
+
+        if (! $task || ! $run) {
+            return;
+        }
+
+        if ($run->status !== AgentTaskRunStatus::FAILED) {
+            $run->update([
+                'status' => AgentTaskRunStatus::FAILED->value,
+                'finished_at' => $run->finished_at ?? now(),
+                'error_message' => $e?->getMessage() ?? $run->error_message,
+            ]);
+        }
+
+        $task->update([
+            'last_failed_at' => now(),
+            'last_error' => $e?->getMessage() ?? $task->last_error,
+            'locked_at' => null,
+            'next_run_at' => $task->isInterval()
+                ? $task->nextRunFrom($run->scheduled_for ?? now())
+                : $task->next_run_at,
+        ]);
     }
 
     private function saveTestResults(AgentTaskRun $run): void

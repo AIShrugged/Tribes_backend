@@ -156,20 +156,20 @@ class IssueExtractionPipelineTest extends TestCase
 
         $this->assertCount(2, $issues);
 
-        $bug = $issues->firstWhere('type', 'bug');
-        $this->assertNotNull($bug);
-        $this->assertEquals('Исправить баг в авторизации', $bug->name);
-        $this->assertEquals('John Doe', $bug->assignee_name);
-        $this->assertEquals(MeetingTaskStatus::OPEN->value, $bug->status);
-        $this->assertEquals($this->calendarEvent->id, $bug->sourceable_id);
-        $this->assertEquals(CalendarEvent::class, $bug->sourceable_type);
-        $this->assertEquals($this->organization->id, $bug->organization_id);
-        $this->assertEquals($this->team->id, $bug->team_id);
+        $development = $issues->firstWhere('type', 'development');
+        $this->assertNotNull($development);
+        $this->assertEquals('Исправить баг в авторизации', $development->name);
+        $this->assertEquals('John Doe', $development->assignee_name);
+        $this->assertEquals(MeetingTaskStatus::OPEN->value, $development->status);
+        $this->assertEquals($this->calendarEvent->id, $development->sourceable_id);
+        $this->assertEquals(CalendarEvent::class, $development->sourceable_type);
+        $this->assertEquals($this->organization->id, $development->organization_id);
+        $this->assertEquals($this->team->id, $development->team_id);
 
-        $task = $issues->firstWhere('type', 'task');
-        $this->assertNotNull($task);
-        $this->assertEquals('Добавить экспорт отчётов в PDF', $task->name);
-        $this->assertNull($task->assignee_name);
+        $organization = $issues->firstWhere('type', 'organization');
+        $this->assertNotNull($organization);
+        $this->assertEquals('Добавить экспорт отчётов в PDF', $organization->name);
+        $this->assertNull($organization->assignee_name);
     }
 
     #[Test]
@@ -269,7 +269,7 @@ class IssueExtractionPipelineTest extends TestCase
             'organization_id' => $this->organization->id,
             'team_id' => $this->team->id,
             'name' => 'Test issue',
-            'type' => 'task',
+            'type' => 'organization',
             'status' => MeetingTaskStatus::OPEN->value,
         ]);
 
@@ -296,7 +296,7 @@ class IssueExtractionPipelineTest extends TestCase
             'organization_id' => $this->organization->id,
             'team_id' => $this->team->id,
             'name' => 'Fix login bug',
-            'type' => 'bug',
+            'type' => 'development',
             'status' => MeetingTaskStatus::REVIEW->value,
             'pr_url' => 'https://github.com/org/repo/pull/42',
             'pr_number' => 42,
@@ -326,7 +326,7 @@ class IssueExtractionPipelineTest extends TestCase
             'organization_id' => $this->organization->id,
             'team_id' => $this->team->id,
             'name' => 'Non-code task',
-            'type' => 'task',
+            'type' => 'organization',
             'status' => MeetingTaskStatus::REVIEW->value,
         ]);
 
@@ -349,7 +349,7 @@ class IssueExtractionPipelineTest extends TestCase
             'organization_id' => $this->organization->id,
             'team_id' => $this->team->id,
             'name' => 'Regular task',
-            'type' => 'task',
+            'type' => 'organization',
             'status' => MeetingTaskStatus::OPEN->value,
         ]);
 

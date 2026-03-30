@@ -131,7 +131,7 @@ return [
         'lock_ttl_seconds' => 3900,
         'backoff_seconds' => [30, 120],
         'default_timeout_seconds' => 1800,
-        'max_timeout_seconds' => 3600,
+        'max_timeout_seconds' => 1800,
         'followups' => [
             'max_depth' => 5,
             'max_delay_seconds' => 86400,

@@ -16,6 +16,15 @@ class Issue extends Model
 {
     use SoftDeletes;
 
+    public const TYPE_DEVELOPMENT = 'development';
+
+    public const TYPE_ORGANIZATION = 'organization';
+
+    public const TYPES = [
+        self::TYPE_DEVELOPMENT,
+        self::TYPE_ORGANIZATION,
+    ];
+
     protected $table = 'issues';
 
     protected $guarded = [];
@@ -111,6 +120,15 @@ class Issue extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(IssueAttachment::class, 'issue_id');
+    }
+
+    public static function normalizeType(?string $type): ?string
+    {
+        return match ($type) {
+            self::TYPE_DEVELOPMENT, 'bug' => self::TYPE_DEVELOPMENT,
+            self::TYPE_ORGANIZATION, 'task' => self::TYPE_ORGANIZATION,
+            default => null,
+        };
     }
 
     public function agentTask(): BelongsTo
