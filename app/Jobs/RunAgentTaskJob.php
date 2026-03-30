@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\AgentTaskRunStatus;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Services\IssueAgentFlowProgressService;
 use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
 use App\Services\SandboxRunWorkspaceService;
@@ -44,6 +45,7 @@ class RunAgentTaskJob implements ShouldQueue
         InlineAgentTaskExecutor $inlineExecutor,
         IsolatedAgentTaskExecutor $isolatedExecutor,
         SandboxRunWorkspaceService $sandboxRunWorkspaceService,
+        IssueAgentFlowProgressService $flowProgressService,
     ): void
     {
         $task = AgentTask::find($this->agentTaskId);
@@ -96,6 +98,15 @@ class RunAgentTaskJob implements ShouldQueue
                 'locked_at' => null,
             ]);
 
+            try {
+                $flowProgressService->handleTaskCompleted($task, $run);
+            } catch (\Throwable $flowException) {
+                Log::warning('Issue agent flow progress failed after task completion', [
+                    'agent_task_id' => $task->id,
+                    'agent_task_run_id' => $run->id,
+                    'error' => $flowException->getMessage(),
+                ]);
+            }
             $this->sendTelegramNotification($task, $run, 'completed');
             $sandboxRunWorkspaceService->cleanup($run);
         } catch (\Throwable $e) {
@@ -128,6 +139,7 @@ class RunAgentTaskJob implements ShouldQueue
 
     public function failed(?\Throwable $e = null): void
     {
+        $flowProgressService = app(IssueAgentFlowProgressService::class);
         $task = AgentTask::find($this->agentTaskId);
         $run = AgentTaskRun::find($this->agentTaskRunId);
         $sandboxRunWorkspaceService = app(SandboxRunWorkspaceService::class);
@@ -154,6 +166,8 @@ class RunAgentTaskJob implements ShouldQueue
         ]);
 
         $sandboxRunWorkspaceService->cleanup($run);
+
+        $flowProgressService->handleTaskFailed($task, $run);
     }
 
     private function saveTestResults(AgentTaskRun $run, SandboxRunWorkspaceService $sandboxRunWorkspaceService): void

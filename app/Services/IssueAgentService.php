@@ -4,21 +4,26 @@ namespace App\Services;
 
 use App\Enums\AgentScheduleType;
 use App\Enums\AgentTaskExecutionMode;
+use App\Models\Issue;
 use App\Models\AgentProfile;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
-use App\Models\Issue;
 use App\Models\User;
 
 class IssueAgentService
 {
     public function __construct(
+        private readonly IssueAgentFlowService $flowService,
         private readonly AgentTaskSchedulerService $scheduler,
     ) {
     }
 
     public function dispatch(Issue $issue, User $user, ?int $agentProfileId = null): AgentTaskRun
     {
+        if ($issue->type === Issue::TYPE_DEVELOPMENT) {
+            return $this->flowService->start($issue, $user, $agentProfileId);
+        }
+
         $task = $this->createTask($issue, $user, $agentProfileId);
 
         $issue->update(['agent_task_id' => $task->id]);

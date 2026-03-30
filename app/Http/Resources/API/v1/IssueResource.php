@@ -20,6 +20,8 @@ class IssueResource extends JsonResource
             'sourceable_type' => $this->sourceable_type,
             'sourceable_id' => $this->sourceable_id,
             'agent_task_id' => $this->agent_task_id,
+            'agent_flow_id' => $this->issue_agent_flow_id,
+            'agent_flow' => $this->whenLoaded('agentFlow', fn () => IssueAgentFlowResource::make($this->agentFlow)),
             'assignee_id' => $this->assignee_id,
             'assignee' => $this->whenLoaded('assignee', fn () => UserResource::make($this->assignee)),
             'registration_date' => $this->registration_date,
