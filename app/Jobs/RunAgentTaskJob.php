@@ -19,14 +19,15 @@ class RunAgentTaskJob implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
 
-    public string $queue = 'agent-tasks';
     public int $timeout = 1800;
 
     public function __construct(
         public int $agentTaskId,
         public int $agentTaskRunId,
         public int $maxAttempts,
-    ) {}
+    ) {
+        $this->onQueue('agent-tasks');
+    }
 
     public function tries(): int
     {

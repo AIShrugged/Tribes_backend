@@ -69,6 +69,7 @@ case "$command" in
     prepare_github_app_private_key
     ensure_workspace_storage
     build_sandbox_image_if_enabled
+    queue_names="${QUEUE_NAMES:-default}"
 
     stop_worker() {
       echo "Stopping queue worker..."
@@ -81,6 +82,7 @@ case "$command" in
     trap stop_worker SIGTERM SIGINT SIGHUP
 
     exec php artisan queue:work \
+      --queue="${queue_names}" \
       --sleep=1 \
       --tries=3 \
       --timeout=90 \
