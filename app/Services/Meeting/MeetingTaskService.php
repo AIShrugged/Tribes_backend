@@ -4,6 +4,7 @@ namespace App\Services\Meeting;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\MeetingTaskStatus;
+use App\Events\MeetingTasksExtracted;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Services\Followup\TranscriptBuilderService;
@@ -61,6 +62,11 @@ class MeetingTaskService
                     'due_date'      => $item['due_date'] ?? null,
                     'status'        => MeetingTaskStatus::OPEN->value,
                 ]);
+            }
+
+            $issues = $event->issues()->get();
+            if ($issues->isNotEmpty()) {
+                MeetingTasksExtracted::dispatch($event, $issues);
             }
         } catch (\Throwable $e) {
             Log::error('MeetingTaskService: extraction failed', ['error' => $e->getMessage()]);
