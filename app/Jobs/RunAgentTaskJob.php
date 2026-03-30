@@ -19,6 +19,8 @@ class RunAgentTaskJob implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
 
+    public int $timeout = 3900;
+
     public function __construct(
         public int $agentTaskId,
         public int $agentTaskRunId,
