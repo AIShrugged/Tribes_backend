@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\MeetingAgenda;
 use App\Models\MeetingSummary;
 use App\Models\Team;
 use App\Models\TeamNotificationSetting;
@@ -73,7 +75,16 @@ class PreMeetingBriefService
     private function send(TelegramChatRegistration $registration, CalendarEvent $event, Team $team, string $channelType): void
     {
         try {
-            $text = $this->formatMessage($event, $team, $channelType);
+            $agenda = MeetingAgenda::query()
+                ->where('calendar_event_id', $event->id)
+                ->whereNull('user_id')
+                ->where('type', 'general')
+                ->where('status', AgendaStatus::DONE->value)
+                ->first();
+
+            $text = $agenda
+                ? $this->formatFromAgenda($agenda, $event, $team, $channelType)
+                : $this->formatMessage($event, $team, $channelType);
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
@@ -230,6 +241,150 @@ class PreMeetingBriefService
         }
 
         return $text;
+    }
+
+    private function formatFromAgenda(MeetingAgenda $agenda, CalendarEvent $event, Team $team, string $channelType): string
+    {
+        $raw = $agenda->raw_json ?? [];
+        $lines = [];
+        $lines[] = '📅 <b>Upcoming meeting in 15 minutes</b>';
+        $lines[] = '';
+        $lines[] = '<b>' . e($event->title) . '</b>';
+
+        $start = Carbon::parse($event->starts_at);
+        $end = $event->ends_at ? Carbon::parse($event->ends_at) : null;
+        if ($end) {
+            $duration = $start->diffInMinutes($end);
+            $lines[] = '🕐 ' . $start->format('H:i') . ' — ' . $end->format('H:i') . ' (' . $duration . ' min)';
+        } else {
+            $lines[] = '🕐 ' . $start->format('H:i');
+        }
+
+        if ($event->url) {
+            $lines[] = '🔗 <a href="' . e($event->url) . '">Join meeting</a>';
+        }
+
+        $attendees = $raw['attendees'] ?? [];
+        if (!empty($attendees)) {
+            $lines[] = '👥 ' . implode(', ', array_map('e', $attendees));
+        }
+
+        $attendeeEmails = $raw['attendee_emails'] ?? [];
+        if (!empty($attendeeEmails)) {
+            $team->loadMissing('users');
+            $absent = $team->users
+                ->filter(fn($u) => !in_array($u->email, $attendeeEmails))
+                ->map(fn($u) => $u->name)
+                ->filter()
+                ->values();
+            if ($absent->isNotEmpty()) {
+                $lines[] = '⚠️ <b>Not attending:</b> ' . $absent->join(', ');
+            }
+        }
+
+        $prevSummary = $raw['previous_summary'] ?? null;
+        if ($prevSummary) {
+            $daysAgo = $prevSummary['days_ago'] ?? 0;
+            $daysLabel = $daysAgo === 1 ? '1 day ago' : $daysAgo . ' days ago';
+            $lines[] = '';
+            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
+            $lines[] = '📋 <b>Previous meeting</b> <i>(' . $daysLabel . ')</i>';
+
+            $summaryLines = [e($prevSummary['summary'] ?? '')];
+            if (!empty($prevSummary['key_points'])) {
+                $summaryLines[] = '';
+                $summaryLines[] = '<b>Key points:</b>';
+                foreach ($prevSummary['key_points'] as $point) {
+                    $summaryLines[] = '• ' . e($point);
+                }
+            }
+
+            $summaryBlock = implode("\n", $summaryLines);
+            if ($channelType === 'telegram') {
+                $lines[] = '<blockquote expandable>' . $summaryBlock . '</blockquote>';
+            } else {
+                $lines[] = '';
+                $lines[] = $summaryBlock;
+            }
+        }
+
+        $completedTasks = $raw['completed_tasks'] ?? [];
+        if (!empty($completedTasks)) {
+            $lines[] = '';
+            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
+            $lines[] = '✅ <b>Completed since last meeting:</b> ' . count($completedTasks);
+            $this->appendTaskArrayLines($lines, $completedTasks, '  ✓ ');
+        }
+
+        $unresolvedDecisions = $raw['unresolved_decisions'] ?? [];
+        if (!empty($unresolvedDecisions)) {
+            $lines[] = '';
+            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
+            $lines[] = '🔄 <b>Topics to revisit:</b>';
+            foreach ($unresolvedDecisions as $decision) {
+                $lines[] = '• ' . e($decision);
+            }
+        }
+
+        $overdueTasks = $raw['overdue_tasks'] ?? [];
+        if (!empty($overdueTasks)) {
+            $lines[] = '';
+            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
+            $lines[] = '🔴 <b>Overdue tasks:</b> ' . count($overdueTasks);
+            $this->appendTaskArrayLines($lines, $overdueTasks, '• ', showDueDate: true);
+        }
+
+        $openTasks = $raw['open_tasks'] ?? [];
+        if (!empty($openTasks)) {
+            $lines[] = '';
+            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
+            $lines[] = '📌 <b>Open tasks:</b> ' . count($openTasks);
+            $this->appendTaskArrayLines($lines, $openTasks, '• ', showDueDate: true);
+        }
+
+        $topicsToDiscuss = $raw['topics_to_discuss'] ?? [];
+        if (!empty($topicsToDiscuss)) {
+            $lines[] = '';
+            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
+            $lines[] = '📝 <b>Topics to discuss:</b>';
+            foreach ($topicsToDiscuss as $i => $topic) {
+                $lines[] = ($i + 1) . '. ' . e($topic);
+            }
+        }
+
+        $text = implode("\n", $lines);
+
+        if (mb_strlen($text) > self::TELEGRAM_MAX_LENGTH) {
+            $cut = mb_substr($text, 0, self::TELEGRAM_MAX_LENGTH - 20);
+            $lastNewline = mb_strrpos($cut, "\n");
+            if ($lastNewline !== false) {
+                $cut = mb_substr($cut, 0, $lastNewline);
+            }
+            $text = $cut . "\n\n<i>…truncated</i>";
+        }
+
+        return $text;
+    }
+
+    private function appendTaskArrayLines(array &$lines, array $tasks, string $prefix, bool $showDueDate = false): void
+    {
+        $shown = array_slice($tasks, 0, self::MAX_TASKS_SHOWN);
+        $remaining = count($tasks) - count($shown);
+
+        foreach ($shown as $task) {
+            $line = $prefix . e($task['name'] ?? '');
+            if ($showDueDate && !empty($task['due_date'])) {
+                $line .= ' <i>(due ' . $task['due_date'] . ')</i>';
+            }
+            if (!empty($task['assignee'])) {
+                $line .= ' — ' . e($task['assignee']);
+            }
+            $lines[] = $line;
+        }
+
+        if ($remaining > 0) {
+            $lines[] = $prefix . '<i>…and ' . $remaining . ' more</i>';
+        }
     }
 
     private function appendTaskLines(array &$lines, Collection $tasks, string $prefix, bool $showDueDate = false): void

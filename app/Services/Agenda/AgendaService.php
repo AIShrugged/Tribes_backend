@@ -33,7 +33,7 @@ class AgendaService
             ? Issue::whereIn('team_id', $teamIds)->get()
             : collect();
 
-        $this->generateGeneralAgenda($event, $previousSummary, $issues);
+        $this->generateGeneralAgenda($event, $previousEvent, $previousSummary, $issues);
 
         $resolvedUsers = $event->participants
             ->filter(fn ($p) => $p->profile?->user_id)
@@ -47,6 +47,7 @@ class AgendaService
 
     private function generateGeneralAgenda(
         CalendarEvent $event,
+        ?CalendarEvent $previousEvent,
         ?MeetingSummary $previousSummary,
         Collection $issues,
     ): MeetingAgenda {
@@ -94,10 +95,13 @@ class AgendaService
                 forceJsonResponse: true,
             );
 
+            $llmData = json_decode($json, true);
+            $structuredData = $this->collectStructuredData($event, $previousEvent, $previousSummary);
+
             $agenda->update([
                 'status' => AgendaStatus::DONE,
-                'raw_json' => json_decode($json, true),
-                'content' => $this->renderGeneralContent(json_decode($json, true)),
+                'raw_json' => array_merge($llmData, $structuredData),
+                'content' => $this->renderGeneralContent($llmData),
             ]);
         } catch (\Throwable $e) {
             $agenda->update(['status' => AgendaStatus::FAILED]);
@@ -177,6 +181,91 @@ class AgendaService
         }
 
         return $agenda;
+    }
+
+    private function collectStructuredData(
+        CalendarEvent $event,
+        ?CalendarEvent $previousEvent,
+        ?MeetingSummary $previousSummary,
+    ): array {
+        $event->loadMissing('profiles.user');
+        $attendees = $event->profiles->map(fn($p) => $p->user?->name)->filter()->values()->toArray();
+        $attendeeEmails = $event->profiles->map(fn($p) => $p->user?->email)->filter()->values()->toArray();
+
+        $previousSummaryData = null;
+        if ($previousSummary && $previousEvent) {
+            $daysSince = (int) Carbon::parse($previousEvent->starts_at)->diffInDays(Carbon::parse($event->starts_at));
+            $previousSummaryData = [
+                'days_ago' => $daysSince,
+                'summary' => $previousSummary->summary,
+                'key_points' => $previousSummary->key_points ?? [],
+                'decisions' => $previousSummary->decisions ?? [],
+            ];
+        }
+
+        $eventIds = CalendarEvent::query()
+            ->where('title', $event->title)
+            ->where('url', $event->url)
+            ->where('starts_at', '<', $event->starts_at)
+            ->pluck('id');
+
+        $completedTasks = collect();
+        $openTasks = collect();
+        $overdueTasks = collect();
+        $unresolvedDecisions = collect();
+
+        if ($eventIds->isNotEmpty()) {
+            $allIssues = Issue::query()
+                ->where('sourceable_type', CalendarEvent::class)
+                ->whereIn('sourceable_id', $eventIds)
+                ->with('assignee')
+                ->get();
+
+            $now = Carbon::now();
+            $mapTask = fn($i) => [
+                'name' => $i->name,
+                'assignee' => $i->assignee?->name ?? $i->assignee_name,
+                'due_date' => $i->due_date ? Carbon::parse($i->due_date)->format('d.m.Y') : null,
+            ];
+
+            if ($previousEvent) {
+                $completedTasks = $allIssues
+                    ->where('status', 'done')
+                    ->filter(fn($i) => Carbon::parse($i->updated_at)->gte(Carbon::parse($previousEvent->starts_at)))
+                    ->map($mapTask)
+                    ->values();
+            }
+
+            $openIssues = $allIssues->filter(fn($i) => !in_array($i->status, ['done', 'cancelled']));
+            $overdueTasks = $openIssues
+                ->filter(fn($i) => $i->due_date && Carbon::parse($i->due_date)->lt($now))
+                ->map($mapTask)->values();
+            $openTasks = $openIssues
+                ->filter(fn($i) => !$i->due_date || Carbon::parse($i->due_date)->gte($now))
+                ->map($mapTask)->values();
+
+            if ($previousSummary && $previousEvent && !empty($previousSummary->decisions)) {
+                $prevEventIssues = $allIssues->where('sourceable_id', $previousEvent->id);
+                $activeTasks = $prevEventIssues
+                    ->filter(fn($i) => !in_array($i->status, ['done', 'cancelled']))
+                    ->count();
+                $totalTasks = $prevEventIssues->count();
+
+                if (!($totalTasks > 0 && $activeTasks === 0)) {
+                    $unresolvedDecisions = collect($previousSummary->decisions);
+                }
+            }
+        }
+
+        return [
+            'attendees' => $attendees,
+            'attendee_emails' => $attendeeEmails,
+            'previous_summary' => $previousSummaryData,
+            'completed_tasks' => $completedTasks->toArray(),
+            'open_tasks' => $openTasks->toArray(),
+            'overdue_tasks' => $overdueTasks->toArray(),
+            'unresolved_decisions' => $unresolvedDecisions->toArray(),
+        ];
     }
 
     private function buildGeneralPrompt(
