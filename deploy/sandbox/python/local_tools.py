@@ -308,8 +308,10 @@ def _execute_workspace_command(state: SandboxRuntimeState, command: str, cwd: pa
         )
     except subprocess.TimeoutExpired as exc:
         state.log(f"Local command timed out after {timeout_seconds}s: {command}")
-        stdout = trim_command_output(exc.stdout or "")
-        stderr = trim_command_output(exc.stderr or "")
+        raw_stdout = exc.stdout if exc.stdout is not None else b""
+        raw_stderr = exc.stderr if exc.stderr is not None else b""
+        stdout = trim_command_output(raw_stdout.decode("utf-8", errors="replace") if isinstance(raw_stdout, bytes) else raw_stdout)
+        stderr = trim_command_output(raw_stderr.decode("utf-8", errors="replace") if isinstance(raw_stderr, bytes) else raw_stderr)
         stdout_artifact = state.write_artifact("command-stdout", stdout, description=f"stdout for command: {command}")
         stderr_artifact = state.write_artifact("command-stderr", stderr, description=f"stderr for command: {command}")
         details = build_test_summary({"command": command, "exit_code": None}, True) if command_kind(command) == "run_tests" else "command timed out"

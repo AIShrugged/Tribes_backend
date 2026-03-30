@@ -128,7 +128,7 @@ return [
 
     'agent_tasks' => [
         'dispatch_limit' => 50,
-        'lock_ttl_seconds' => 600,
+        'lock_ttl_seconds' => 3900,
         'backoff_seconds' => [30, 120],
         'default_timeout_seconds' => 1800,
         'max_timeout_seconds' => 3600,
