@@ -18,6 +18,7 @@ use App\Services\AgentTaskRunTokenService;
 use App\Services\AgentTaskToolExecutor;
 use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
+use App\Services\SandboxRunWorkspaceService;
 use App\Services\Workspace\WorkspaceAccessService;
 use App\Services\Workspace\WorkspaceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -107,7 +108,7 @@ class IsolatedAgentTaskExecutionFlowTest extends TestCase
 
             protected function runSandboxProcess(AgentTask $task, AgentTaskRun $run, string $mountWorkspace, ?array $persistentWorkspace = null): array
             {
-                $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
+                $workspace = app(SandboxRunWorkspaceService::class)->pathForRun($run);
                 $payload = json_decode((string) File::get($workspace.'/input/task.json'), true);
 
                 if (! is_array($payload)) {

@@ -7,6 +7,7 @@ use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
+use App\Services\SandboxRunWorkspaceService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -42,6 +43,7 @@ class RunAgentTaskJob implements ShouldQueue
     public function handle(
         InlineAgentTaskExecutor $inlineExecutor,
         IsolatedAgentTaskExecutor $isolatedExecutor,
+        SandboxRunWorkspaceService $sandboxRunWorkspaceService,
     ): void
     {
         $task = AgentTask::find($this->agentTaskId);
@@ -81,7 +83,7 @@ class RunAgentTaskJob implements ShouldQueue
                 'error_message' => null,
             ]);
 
-            $this->saveTestResults($run);
+            $this->saveTestResults($run, $sandboxRunWorkspaceService);
 
             $nextRunAt = $task->nextRunFrom($run->scheduled_for ?? now());
 
@@ -95,6 +97,7 @@ class RunAgentTaskJob implements ShouldQueue
             ]);
 
             $this->sendTelegramNotification($task, $run, 'completed');
+            $sandboxRunWorkspaceService->cleanup($run);
         } catch (\Throwable $e) {
             $terminal = $attempt >= $this->tries();
 
@@ -117,6 +120,8 @@ class RunAgentTaskJob implements ShouldQueue
                 $this->sendTelegramNotification($task, $run, 'failed', $e->getMessage());
             }
 
+            $sandboxRunWorkspaceService->cleanup($run);
+
             throw $e;
         }
     }
@@ -125,6 +130,7 @@ class RunAgentTaskJob implements ShouldQueue
     {
         $task = AgentTask::find($this->agentTaskId);
         $run = AgentTaskRun::find($this->agentTaskRunId);
+        $sandboxRunWorkspaceService = app(SandboxRunWorkspaceService::class);
 
         if (! $task || ! $run) {
             return;
@@ -146,9 +152,11 @@ class RunAgentTaskJob implements ShouldQueue
                 ? $task->nextRunFrom($run->scheduled_for ?? now())
                 : $task->next_run_at,
         ]);
+
+        $sandboxRunWorkspaceService->cleanup($run);
     }
 
-    private function saveTestResults(AgentTaskRun $run): void
+    private function saveTestResults(AgentTaskRun $run, SandboxRunWorkspaceService $sandboxRunWorkspaceService): void
     {
         $sandboxResult = $run->metadata['sandbox_result'] ?? null;
         if (! $sandboxResult) {
@@ -161,7 +169,7 @@ class RunAgentTaskJob implements ShouldQueue
 
         $parsed = null;
         foreach ($testActions as $ta) {
-            $parsed = $this->parseTestArtifact($ta, $run);
+            $parsed = $this->parseTestArtifact($ta, $run, $sandboxRunWorkspaceService);
             if ($parsed) {
                 break;
             }
@@ -277,7 +285,7 @@ class RunAgentTaskJob implements ShouldQueue
         $parsed = $run->metadata['test_results'] ?? null;
         if (! $parsed) {
             foreach ($testActions as $ta) {
-                $parsed = $this->parseTestArtifact($ta, $run);
+                $parsed = $this->parseTestArtifact($ta, $run, app(SandboxRunWorkspaceService::class));
                 if ($parsed) {
                     break;
                 }
@@ -315,7 +323,7 @@ class RunAgentTaskJob implements ShouldQueue
         return $lines;
     }
 
-    private function parseTestArtifact(array $testAction, AgentTaskRun $run): ?array
+    private function parseTestArtifact(array $testAction, AgentTaskRun $run, SandboxRunWorkspaceService $sandboxRunWorkspaceService): ?array
     {
         $artifactPath = $testAction['evidence']['stdout_artifact'] ?? null;
         if (! $artifactPath) {
@@ -323,7 +331,7 @@ class RunAgentTaskJob implements ShouldQueue
         }
 
         $filename = basename($artifactPath);
-        $localPath = storage_path("app/private/sandbox-runs/{$run->id}/artifacts/{$filename}");
+        $localPath = $sandboxRunWorkspaceService->pathForRun($run).'/artifacts/'.$filename;
 
         if (! file_exists($localPath)) {
             return null;
