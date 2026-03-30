@@ -18,7 +18,6 @@ services:
             GITHUB_DEFAULT_REPO: "${GITHUB_DEFAULT_REPO}"
             SANDBOX_INTERNAL_BASE_URL: http://nginx
             AGENT_TASK_SANDBOX_NETWORK: spodial_hr_backend_app
-            AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: /home/anor/projects/spodial_hr_backend/storage/app/private/sandbox-runs
         volumes:
             - .:/var/www
             - /var/run/docker.sock:/var/run/docker.sock
@@ -140,7 +139,6 @@ services:
             AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
             AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
             AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
-            AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: "${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT}"
         depends_on:
             postgres:
                 condition: service_healthy
@@ -149,7 +147,6 @@ services:
         volumes:
             - .:/var/www
             - /var/run/docker.sock:/var/run/docker.sock
-            - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
         networks:
             - app
         command: ["queue-worker"]

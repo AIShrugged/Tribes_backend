@@ -24,6 +24,7 @@ class SandboxToolGatewayService
     public function __construct(
         private readonly AgentTaskRunTokenService $runTokenService,
         private readonly AgentTaskToolExecutor $toolExecutor,
+        private readonly SandboxRunWorkspaceService $sandboxRunWorkspaceService,
     ) {}
 
     public function executeToolCall(AgentTaskRun $run, string $plainToken, string $toolName, ?array $arguments = null): array
@@ -72,7 +73,7 @@ class SandboxToolGatewayService
             }
         }
 
-        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
+        $workspace = $this->sandboxRunWorkspaceService->pathForRun($run);
         $result = $this->toolExecutor->execute($task, $user, $toolName, $arguments, $workspace, $run);
 
         $run->refresh();

@@ -142,6 +142,7 @@ return [
         'default_sandbox_image' => env('AGENT_TASK_SANDBOX_IMAGE', 'spodial-agent-python:latest'),
         'sandbox_network' => env('AGENT_TASK_SANDBOX_NETWORK', 'bridge'),
         'sandbox_host_runs_root' => env('AGENT_TASK_SANDBOX_HOST_RUNS_ROOT'),
+        'sandbox_run_root' => env('AGENT_TASK_SANDBOX_RUN_ROOT', sys_get_temp_dir().'/spodial-sandbox-runs'),
         'persistent_workspace_root' => env('AGENT_TASK_PERSISTENT_WORKSPACE_ROOT'),
         'sandbox_cpus' => env('AGENT_TASK_SANDBOX_CPUS', '2'),
         'sandbox_memory' => env('AGENT_TASK_SANDBOX_MEMORY', '2g'),

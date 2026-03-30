@@ -19,6 +19,7 @@ class IsolatedAgentTaskExecutor
         private readonly AgentMemoryIngestionService $memoryIngestionService,
         private readonly WorkspaceAccessService $workspaceAccessService,
         private readonly WorkspaceService $workspaceService,
+        private readonly SandboxRunWorkspaceService $sandboxRunWorkspaceService,
     ) {}
 
     public function execute(AgentTask $task, AgentTaskRun $run): string
@@ -28,164 +29,164 @@ class IsolatedAgentTaskExecutor
             throw new \RuntimeException('Agent task user not found');
         }
 
-        $plainToken = $this->runTokenService->issue($run);
-        $context = $this->contextBuilder->build($task);
-        $gatewayBaseUrl = rtrim($this->resolveSandboxGatewayUrl(), '/');
-        $gatewayHost = parse_url($gatewayBaseUrl, PHP_URL_HOST);
-        $allowedOutboundHosts = $context['allowed_outbound_hosts'];
-        if ($task->restrictsOutboundHosts() && is_string($gatewayHost) && $gatewayHost !== '') {
-            $allowedOutboundHosts[] = $gatewayHost;
-        }
-        $allowedOutboundHosts = array_values(array_unique($allowedOutboundHosts));
-        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
-        $mountWorkspace = $this->resolveDockerWorkspaceMount($run->id, $workspace);
-        $persistentWorkspace = $this->resolvePersistentWorkspace($task);
-        $inputDir = $workspace.'/input';
-        $outputDir = $workspace.'/output';
-        $artifactsDir = $workspace.'/artifacts';
-        $syncedWorkspacesDir = $workspace.'/synced-workspaces';
+        $workspace = $this->sandboxRunWorkspaceService->prepare($run);
+        try {
+            $plainToken = $this->runTokenService->issue($run);
+            $context = $this->contextBuilder->build($task);
+            $gatewayBaseUrl = rtrim($this->resolveSandboxGatewayUrl(), '/');
+            $gatewayHost = parse_url($gatewayBaseUrl, PHP_URL_HOST);
+            $allowedOutboundHosts = $context['allowed_outbound_hosts'];
+            if ($task->restrictsOutboundHosts() && is_string($gatewayHost) && $gatewayHost !== '') {
+                $allowedOutboundHosts[] = $gatewayHost;
+            }
+            $allowedOutboundHosts = array_values(array_unique($allowedOutboundHosts));
+            $mountWorkspace = $this->resolveDockerWorkspaceMount($run->id, $workspace);
+            $persistentWorkspace = $this->resolvePersistentWorkspace($task);
+            $inputDir = $workspace.'/input';
+            $outputDir = $workspace.'/output';
+            $artifactsDir = $workspace.'/artifacts';
+            $syncedWorkspacesDir = $workspace.'/synced-workspaces';
 
-        File::ensureDirectoryExists($inputDir);
-        File::ensureDirectoryExists($outputDir);
-        File::ensureDirectoryExists($artifactsDir);
-        File::ensureDirectoryExists($syncedWorkspacesDir);
-        if ($persistentWorkspace !== null) {
-            File::ensureDirectoryExists($persistentWorkspace['host_path']);
-            @chmod($persistentWorkspace['host_path'], 0777);
-        }
-        @chmod($workspace, 0777);
-        @chmod($inputDir, 0777);
-        @chmod($outputDir, 0777);
-        @chmod($artifactsDir, 0777);
-        @chmod($syncedWorkspacesDir, 0777);
+            if ($persistentWorkspace !== null) {
+                File::ensureDirectoryExists($persistentWorkspace['host_path']);
+                @chmod($persistentWorkspace['host_path'], 0777);
+            }
+            @chmod($workspace, 0777);
+            @chmod($inputDir, 0777);
+            @chmod($outputDir, 0777);
+            @chmod($artifactsDir, 0777);
+            @chmod($syncedWorkspacesDir, 0777);
 
-        $workspaceManifest = $this->workspaceAccessService->manifestForUser(
-            $user,
-            null,
-            $task->organization_id,
-            $task->team_id,
-        )->all();
-        $materializedWorkspaces = $this->workspaceService->materializeWorkspaces($workspaceManifest, $syncedWorkspacesDir);
-
-        $payload = [
-            'task' => [
-                'id' => $task->id,
-                'run_id' => $run->id,
-                'name' => $task->name,
-                'organization_id' => $task->organization_id,
-                'team_id' => $task->team_id,
-                'prompt' => $context['user_prompt'],
-                'sandbox_profile' => $context['sandbox_profile'],
-                'allowed_tools' => $context['allowed_tools'],
-                'allowed_outbound_hosts' => $allowedOutboundHosts,
-                'max_iterations' => (int) ($task->metadata['max_iterations'] ?? 8),
-                'input_payload' => $context['input_payload'],
-                'lineage' => $context['task_lineage'],
-            ],
-            'agent_profile' => [
-                'key' => $context['profile']?->key,
-                'name' => $context['profile']?->name,
-                'system_prompt' => $context['system_prompt_extension'],
-            ],
-            'agent_memory' => $context['memories'],
-            'followup_policy' => $context['followup_policy'],
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-            ],
-            'workspaces' => $materializedWorkspaces,
-            'gateway' => [
-                'base_url' => $gatewayBaseUrl,
-                'tool_call_path' => '/api/v1/internal/agent-task-runs/'.$run->id.'/tool-calls',
-                'llm_completion_path' => '/api/v1/internal/agent-task-runs/'.$run->id.'/llm-completions',
-                'token' => $plainToken,
-            ],
-            'network_policy' => [
-                'restrict_hosts' => $task->restrictsOutboundHosts(),
-                'allowed_hosts' => $allowedOutboundHosts,
-                'allowed_schemes' => ['http', 'https'],
-            ],
-            'sandbox' => [
-                'persistent_workspace' => $persistentWorkspace,
-                'synced_workspaces_dir' => '/workspace/synced-workspaces',
-            ],
-            'tools' => $this->toolExecutor->describeTools(
-                $task,
+            $workspaceManifest = $this->workspaceAccessService->manifestForUser(
                 $user,
-                $persistentWorkspace['container_path'] ?? $workspace,
-                $run,
-            ),
-        ];
+                null,
+                $task->organization_id,
+                $task->team_id,
+            )->all();
+            $materializedWorkspaces = $this->workspaceService->materializeWorkspaces($workspaceManifest, $syncedWorkspacesDir);
 
-        File::put($inputDir.'/task.json', json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-
-        $processResult = $this->runSandboxProcess($task, $run, $mountWorkspace, $persistentWorkspace);
-
-        $run->update([
-            'metadata' => [
-                ...($run->metadata ?? []),
+            $payload = [
+                'task' => [
+                    'id' => $task->id,
+                    'run_id' => $run->id,
+                    'name' => $task->name,
+                    'organization_id' => $task->organization_id,
+                    'team_id' => $task->team_id,
+                    'prompt' => $context['user_prompt'],
+                    'sandbox_profile' => $context['sandbox_profile'],
+                    'allowed_tools' => $context['allowed_tools'],
+                    'allowed_outbound_hosts' => $allowedOutboundHosts,
+                    'max_iterations' => (int) ($task->metadata['max_iterations'] ?? 8),
+                    'input_payload' => $context['input_payload'],
+                    'lineage' => $context['task_lineage'],
+                ],
+                'agent_profile' => [
+                    'key' => $context['profile']?->key,
+                    'name' => $context['profile']?->name,
+                    'system_prompt' => $context['system_prompt_extension'],
+                ],
+                'agent_memory' => $context['memories'],
+                'followup_policy' => $context['followup_policy'],
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                ],
+                'workspaces' => $materializedWorkspaces,
+                'gateway' => [
+                    'base_url' => $gatewayBaseUrl,
+                    'tool_call_path' => '/api/v1/internal/agent-task-runs/'.$run->id.'/tool-calls',
+                    'llm_completion_path' => '/api/v1/internal/agent-task-runs/'.$run->id.'/llm-completions',
+                    'token' => $plainToken,
+                ],
+                'network_policy' => [
+                    'restrict_hosts' => $task->restrictsOutboundHosts(),
+                    'allowed_hosts' => $allowedOutboundHosts,
+                    'allowed_schemes' => ['http', 'https'],
+                ],
                 'sandbox' => [
-                    'workspace' => $workspace,
-                    'mount_workspace' => $mountWorkspace,
                     'persistent_workspace' => $persistentWorkspace,
-                    'synced_workspaces' => $materializedWorkspaces,
-                    'stdout' => $processResult['stdout'] ?? '',
-                    'stderr' => $processResult['stderr'] ?? '',
-                    'exit_code' => $processResult['exit_code'] ?? null,
+                    'synced_workspaces_dir' => '/workspace/synced-workspaces',
                 ],
-            ],
-        ]);
+                'tools' => $this->toolExecutor->describeTools(
+                    $task,
+                    $user,
+                    $persistentWorkspace['container_path'] ?? $workspace,
+                    $run,
+                ),
+            ];
 
-        if (! ($processResult['successful'] ?? false)) {
-            $stderr = trim((string) ($processResult['stderr'] ?? ''));
-            $stdout = trim((string) ($processResult['stdout'] ?? ''));
-            $details = $stderr !== '' ? $stderr : ($stdout !== '' ? $stdout : 'Sandbox container exited without stdout/stderr output.');
+            File::put($inputDir.'/task.json', json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-            throw new \RuntimeException(sprintf(
-                'Sandbox execution failed (exit code %s): %s',
-                (string) (($processResult['exit_code'] ?? null) ?? 'unknown'),
-                $details,
-            ));
-        }
+            $processResult = $this->runSandboxProcess($task, $run, $mountWorkspace, $persistentWorkspace);
 
-        $resultPath = $outputDir.'/result.json';
-        if (! File::exists($resultPath)) {
-            throw new \RuntimeException('Sandbox result file was not produced');
-        }
-
-        $result = json_decode((string) File::get($resultPath), true);
-        if (! is_array($result)) {
-            throw new \RuntimeException('Sandbox result file is invalid JSON');
-        }
-
-        if (($result['success'] ?? false) !== true) {
-            throw new \RuntimeException((string) ($result['error'] ?? 'Sandbox task failed'));
-        }
-
-        $this->workspaceService->syncBackMaterializedWorkspaces($materializedWorkspaces);
-
-        $memoryCandidates = is_array($result['memory_candidates'] ?? null) ? $result['memory_candidates'] : [];
-        $ingestedMemories = $this->memoryIngestionService->ingest($task, $run, $memoryCandidates);
-
-        $run->update([
-            'metadata' => [
-                ...($run->metadata ?? []),
-                'sandbox_result' => [
-                    'summary' => $result['summary'] ?? null,
-                    'blocker' => $result['blocker'] ?? null,
-                    'actions' => is_array($result['actions'] ?? null) ? $result['actions'] : [],
-                    'findings' => is_array($result['findings'] ?? null) ? $result['findings'] : [],
-                    'artifacts' => is_array($result['artifacts'] ?? null) ? $result['artifacts'] : [],
-                    'plan' => is_array($result['plan'] ?? null) ? $result['plan'] : [],
-                    'handoff' => is_array($result['handoff'] ?? null) ? $result['handoff'] : null,
-                    'memory_candidates_count' => count($memoryCandidates),
-                    'ingested_memories' => $ingestedMemories,
+            $run->update([
+                'metadata' => [
+                    ...($run->metadata ?? []),
+                    'sandbox' => [
+                        'workspace' => $workspace,
+                        'mount_workspace' => $mountWorkspace,
+                        'persistent_workspace' => $persistentWorkspace,
+                        'synced_workspaces' => $materializedWorkspaces,
+                        'stdout' => $processResult['stdout'] ?? '',
+                        'stderr' => $processResult['stderr'] ?? '',
+                        'exit_code' => $processResult['exit_code'] ?? null,
+                    ],
                 ],
-            ],
-        ]);
+            ]);
 
-        return (string) ($result['output'] ?? '');
+            if (! ($processResult['successful'] ?? false)) {
+                $stderr = trim((string) ($processResult['stderr'] ?? ''));
+                $stdout = trim((string) ($processResult['stdout'] ?? ''));
+                $details = $stderr !== '' ? $stderr : ($stdout !== '' ? $stdout : 'Sandbox container exited without stdout/stderr output.');
+
+                throw new \RuntimeException(sprintf(
+                    'Sandbox execution failed (exit code %s): %s',
+                    (string) (($processResult['exit_code'] ?? null) ?? 'unknown'),
+                    $details,
+                ));
+            }
+
+            $resultPath = $outputDir.'/result.json';
+            if (! File::exists($resultPath)) {
+                throw new \RuntimeException('Sandbox result file was not produced');
+            }
+
+            $result = json_decode((string) File::get($resultPath), true);
+            if (! is_array($result)) {
+                throw new \RuntimeException('Sandbox result file is invalid JSON');
+            }
+
+            if (($result['success'] ?? false) !== true) {
+                throw new \RuntimeException((string) ($result['error'] ?? 'Sandbox task failed'));
+            }
+
+            $this->workspaceService->syncBackMaterializedWorkspaces($materializedWorkspaces);
+
+            $memoryCandidates = is_array($result['memory_candidates'] ?? null) ? $result['memory_candidates'] : [];
+            $ingestedMemories = $this->memoryIngestionService->ingest($task, $run, $memoryCandidates);
+
+            $run->update([
+                'metadata' => [
+                    ...($run->metadata ?? []),
+                    'sandbox_result' => [
+                        'summary' => $result['summary'] ?? null,
+                        'blocker' => $result['blocker'] ?? null,
+                        'actions' => is_array($result['actions'] ?? null) ? $result['actions'] : [],
+                        'findings' => is_array($result['findings'] ?? null) ? $result['findings'] : [],
+                        'artifacts' => is_array($result['artifacts'] ?? null) ? $result['artifacts'] : [],
+                        'plan' => is_array($result['plan'] ?? null) ? $result['plan'] : [],
+                        'handoff' => is_array($result['handoff'] ?? null) ? $result['handoff'] : null,
+                        'memory_candidates_count' => count($memoryCandidates),
+                        'ingested_memories' => $ingestedMemories,
+                    ],
+                ],
+            ]);
+
+            return (string) ($result['output'] ?? '');
+        } finally {
+            $this->sandboxRunWorkspaceService->cleanup($run);
+        }
     }
 
     protected function runSandboxProcess(AgentTask $task, AgentTaskRun $run, string $mountWorkspace, ?array $persistentWorkspace = null): array

@@ -13,6 +13,7 @@ class SandboxLlmGatewayService
         private readonly AgentTaskRunTokenService $runTokenService,
         private readonly AgentTaskToolExecutor $toolExecutor,
         private readonly AgentModelRouter $modelRouter,
+        private readonly SandboxRunWorkspaceService $sandboxRunWorkspaceService,
     ) {}
 
     public function executeCompletion(
@@ -43,7 +44,7 @@ class SandboxLlmGatewayService
             throw new \RuntimeException('Sandbox run is already finished');
         }
 
-        $workspace = storage_path('app/private/sandbox-runs/'.$run->id);
+        $workspace = $this->sandboxRunWorkspaceService->pathForRun($run);
         $tools = $includeTools ? $this->toolExecutor->describeTools($task, $user, $workspace) : [];
         if ($includeTools && $extraTools !== []) {
             $tools = array_values([...$tools, ...$extraTools]);

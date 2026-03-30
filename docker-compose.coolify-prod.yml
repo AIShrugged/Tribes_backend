@@ -34,8 +34,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    volumes:
-      - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     networks:
       - app
     command: ["backend"]
@@ -83,7 +81,6 @@ services:
       AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
       AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
       AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
-      AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: "${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT}"
       QUEUE_NAMES: default
     depends_on:
       postgres:
@@ -94,7 +91,6 @@ services:
       - app
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     command: ["queue-worker"]
     restart: unless-stopped
 
@@ -135,7 +131,6 @@ services:
       AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
       AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
       AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
-      AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: "${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT}"
       QUEUE_NAMES: agent-tasks
     depends_on:
       postgres:
@@ -146,7 +141,6 @@ services:
       - app
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${AGENT_TASK_SANDBOX_HOST_RUNS_ROOT:-./storage/sandbox-runs}:/var/www/storage/app/private/sandbox-runs
     command: ["queue-worker"]
     restart: unless-stopped
 
