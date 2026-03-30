@@ -89,7 +89,17 @@ class TeamController extends Controller
     {
         Gate::authorize('view', $team);
 
-        $team->load('users');
+        $team->load([
+            'users' => function ($query) use ($team) {
+                $query->addSelect([
+                    'users.*',
+                    'ou.role as organization_role',
+                ])->leftJoin('organization_user as ou', function ($join) use ($team) {
+                    $join->on('ou.user_id', '=', 'users.id')
+                        ->where('ou.organization_id', '=', $team->organization_id);
+                });
+            },
+        ]);
 
         return ApiResponse::success(data: TeamResource::make($team));
     }

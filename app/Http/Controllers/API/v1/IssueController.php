@@ -24,10 +24,11 @@ class IssueController extends Controller
     {
         $query = Issue::query()
             ->visibleTo($request->user())
-            ->with('assignee')
-            ->latest('id');
+            ->with('assignee');
 
         $filters = $request->getIndexFilters();
+
+        $query->orderBy($filters['sort'], $filters['order']);
 
         if ($filters['status']) {
             $query->where('status', $filters['status']);
@@ -47,6 +48,10 @@ class IssueController extends Controller
 
         if ($filters['team_id']) {
             $query->where('team_id', $filters['team_id']);
+        }
+
+        if ($filters['search']) {
+            $query->where('name', 'like', '%' . $filters['search'] . '%');
         }
 
         $count = (clone $query)->count();

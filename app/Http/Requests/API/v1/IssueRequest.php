@@ -24,6 +24,9 @@ class IssueRequest extends FormRequest
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
                 'offset' => ['nullable', 'integer', 'min:0'],
                 'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at'])],
+                'order' => ['nullable', Rule::in(['asc', 'desc'])],
+                'search' => ['nullable', 'string', 'max:255'],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -60,6 +63,9 @@ class IssueRequest extends FormRequest
                 'assignee' => $this->query('assignee'),
                 'organization_id' => $this->query('organization_id'),
                 'team_id' => $this->query('team_id'),
+                'sort' => $this->query('sort'),
+                'order' => $this->query('order'),
+                'search' => $this->query('search'),
             ]);
         }
     }
@@ -72,6 +78,9 @@ class IssueRequest extends FormRequest
             'assignee_id' => $this->input('assignee'),
             'organization_id' => $this->input('organization_id'),
             'team_id' => $this->input('team_id'),
+            'sort' => $this->input('sort', 'updated_at'),
+            'order' => $this->input('order', 'desc'),
+            'search' => $this->input('search'),
         ];
     }
 
