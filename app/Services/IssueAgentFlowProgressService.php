@@ -9,6 +9,7 @@ use App\Enums\IssueAgentFlowStepKind;
 use App\Enums\IssueAgentFlowStepStatus;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Models\Issue;
 use App\Models\IssueAgentFlow;
 use App\Models\IssueAgentFlowStep;
 use Illuminate\Support\Facades\DB;
@@ -330,11 +331,7 @@ PROMPT;
 
     private function parsePlan(string $output): array
     {
-        $json = trim($output);
-        $json = preg_replace('/^```(?:json)?\s*/i', '', $json) ?? $json;
-        $json = preg_replace('/\s*```$/', '', $json) ?? $json;
-
-        $decoded = json_decode($json, true);
+        $decoded = $this->decodePlannerOutput($output);
         if (! is_array($decoded)) {
             throw new \RuntimeException('Planner output is not valid JSON.');
         }
@@ -373,6 +370,50 @@ PROMPT;
             'goal' => trim((string) ($decoded['goal'] ?? '')),
             'steps' => $normalizedSteps,
         ];
+    }
+
+    private function decodePlannerOutput(string $output): ?array
+    {
+        $candidates = [];
+
+        $trimmed = trim($output);
+        if ($trimmed !== '') {
+            $candidates[] = $this->stripJsonCodeFence($trimmed);
+            $candidates[] = $this->extractJsonObject($trimmed);
+        }
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate) || trim($candidate) === '') {
+                continue;
+            }
+
+            $decoded = json_decode(trim($candidate), true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
+    private function stripJsonCodeFence(string $output): string
+    {
+        $json = preg_replace('/^```(?:json)?\s*/i', '', $output) ?? $output;
+        $json = preg_replace('/\s*```$/', '', $json) ?? $json;
+
+        return trim($json);
+    }
+
+    private function extractJsonObject(string $output): ?string
+    {
+        $start = strpos($output, '{');
+        $end = strrpos($output, '}');
+
+        if ($start === false || $end === false || $end <= $start) {
+            return null;
+        }
+
+        return substr($output, $start, $end - $start + 1);
     }
 
     private function markWorkflowBlocked(IssueAgentFlowStep $step, string $errorMessage, ?string $output = null, bool $markStepFailed = false): void
