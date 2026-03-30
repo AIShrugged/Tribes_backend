@@ -19,7 +19,14 @@ class TeamResource extends JsonResource
             'name'           => $this->name,
             'slug'           => $this->slug,
             'employee_count' => $this->employee_count,
-            'members'        => UserResource::collection($this->whenLoaded('users')),
+            'members'        => $this->whenLoaded('users', function () {
+                return $this->users->map(fn ($user) => [
+                    'id'    => $user->id,
+                    'name'  => $user->name,
+                    'email' => $user->email,
+                    'role'  => $user->organization_role,
+                ]);
+            }),
         ];
     }
 }
