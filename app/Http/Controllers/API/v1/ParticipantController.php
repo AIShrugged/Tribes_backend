@@ -7,6 +7,7 @@ use App\Http\Requests\API\v1\ParticipantRequest;
 use App\Http\Resources\API\v1\ParticipantResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -44,7 +45,7 @@ class ParticipantController extends Controller
      */
     public function index(ParticipantRequest $request): ApiResponse
     {
-        $calendarEvent = CalendarEvent::owned(Auth::id())->findOrFail($request->getCalendarEventId());
+        $calendarEvent = $this->findVisibleCalendarEvent($request->getCalendarEventId());
 
         $participants = $calendarEvent->participants();
 
@@ -84,7 +85,7 @@ class ParticipantController extends Controller
      */
     public function setProfile(ParticipantRequest $request): ApiResponse
     {
-        $calendarEvent = CalendarEvent::owned(Auth::id())->findOrFail($request->getCalendarEventId());
+        $calendarEvent = $this->findVisibleCalendarEvent($request->getCalendarEventId());
 
         $participant = $calendarEvent->participants()->findOrFail($request->getParticipantId());
 
@@ -96,5 +97,19 @@ class ParticipantController extends Controller
         return ApiResponse::success(
             data: ParticipantResource::make($participant),
         );
+    }
+
+    private function findVisibleCalendarEvent(int $calendarEventId): CalendarEvent
+    {
+        return CalendarEvent::query()
+            ->whereKey($calendarEventId)
+            ->where(function (Builder $builder): void {
+                $builder->whereHas('sources', function (Builder $sources): void {
+                    $sources->where('user_id', Auth::id());
+                })->orWhereHas('followups', function (Builder $followups): void {
+                    $followups->owned(Auth::id());
+                });
+            })
+            ->firstOrFail();
     }
 }
