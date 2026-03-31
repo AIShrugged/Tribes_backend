@@ -23,9 +23,9 @@ class IssueAgentFlowService
 
     public function start(Issue $issue, User $user, ?int $agentProfileId = null): AgentTaskRun
     {
-        if ($issue->type !== Issue::TYPE_DEVELOPMENT) {
+        if (! $issue->isDevelopment()) {
             throw new AppException(
-                'Development issue flow is only available for issues with type "development".',
+                'Development issue flow is only available for frontend or backend issues.',
                 'ISSUE_AGENT_FLOW_UNSUPPORTED_TYPE',
                 422,
             );
@@ -50,6 +50,7 @@ class IssueAgentFlowService
                 'status' => IssueAgentFlowStatus::PLANNING->value,
                 'metadata' => [
                     'issue_type' => $issue->type,
+                    'issue_type_id' => $issue->issue_type_id,
                     'issue_name' => $issue->name,
                 ],
             ]);
@@ -121,13 +122,13 @@ class IssueAgentFlowService
         $dueDate = $issue->due_date ? "\nДедлайн: {$issue->due_date->format('Y-m-d')}" : '';
 
         return <<<PROMPT
-Ты planning-агент для development issue flow. Сначала сформируй четкий план, который потом будет исполнен отдельными агентскими задачами по одной.
+        Ты planning-агент для issue flow по frontend/backend задаче. Сначала сформируй четкий план, который потом будет исполнен отдельными агентскими задачами по одной.
 
 ## Issue
 
 - ID: {$issue->id}
 - Title: {$issue->name}
-- Type: {$issue->type}
+        - Type: {$issue->type}
 - Status: {$issue->status}{$assigneeBlock}{$dueDate}
 
 {$description}
@@ -163,6 +164,7 @@ PROMPT;
                 'issue_agent_flow_id' => $flow->id,
                 'issue_id' => $issue->id,
                 'issue_type' => $issue->type,
+                'issue_type_id' => $issue->issue_type_id,
             ],
             'issue' => [
                 'id' => $issue->id,

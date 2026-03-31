@@ -24,6 +24,7 @@ class ExecuteSqlQueryTool implements ToolInterface
             . 'Only SELECT statements are allowed. '
             . 'Use the __ACCESSIBLE_USER_IDS__ placeholder in WHERE clauses when querying '
             . 'followups, sources, or calendar_events to enforce row-level access control. '
+            . 'Meeting action items are stored in issues and are usually linked to calendar_events via sourceable_type/sourceable_id. '
             . 'Example: SELECT u.name, t.name AS team FROM users u JOIN team_user tu ON tu.user_id = u.id JOIN teams t ON t.id = tu.team_id WHERE t.name ILIKE \'%backenders%\'';
     }
 
@@ -36,7 +37,7 @@ class ExecuteSqlQueryTool implements ToolInterface
                     'type'        => 'string',
                     'description' => 'The SELECT SQL query to execute. Must be read-only. '
                         . 'Use __ACCESSIBLE_USER_IDS__ in WHERE clause when querying followups, sources, or calendar_events. '
-                        . 'Example: SELECT * FROM meeting_tasks WHERE calendar_event_id = 42',
+                        . 'Example: SELECT * FROM issues WHERE sourceable_type = \'App\\\\Models\\\\CalendarEvent\' AND sourceable_id = 42',
                 ],
             ],
             'required' => ['sql'],

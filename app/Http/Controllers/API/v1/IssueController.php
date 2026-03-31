@@ -24,7 +24,7 @@ class IssueController extends Controller
     {
         $query = Issue::query()
             ->visibleTo($request->user())
-            ->with('assignee');
+            ->with(['assignee', 'issueType']);
 
         $filters = $request->getIndexFilters();
 
@@ -81,9 +81,9 @@ class IssueController extends Controller
             'description' => $data['description'] ?? null,
             'type' => $data['type'],
             'assignee_id' => $data['assignee_id'] ?? null,
-        ])->load('assignee');
+        ])->load(['assignee', 'issueType']);
 
-        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load('assignee')), status: 201);
+        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load(['assignee', 'issueType'])), status: 201);
     }
 
     public function show(IssueRequest $request, int $issue): ApiResponse
@@ -134,7 +134,7 @@ class IssueController extends Controller
     {
         return Issue::query()
             ->visibleTo($user)
-            ->with(['assignee', 'agentFlow.steps.agentTask.latestRun'])
+            ->with(['assignee', 'issueType', 'agentFlow.steps.agentTask.latestRun'])
             ->findOrFail($issueId);
     }
 

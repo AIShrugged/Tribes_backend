@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Observers\IssueObserver;
+use App\Services\IssueTypeResolver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -17,13 +18,19 @@ class Issue extends Model
 {
     use SoftDeletes;
 
-    public const TYPE_DEVELOPMENT = 'development';
+    public const TYPE_FRONTEND = 'frontend';
+
+    public const TYPE_BACKEND = 'backend';
 
     public const TYPE_ORGANIZATION = 'organization';
 
+    public const TYPE_DEVELOPMENT = 'development';
+
     public const TYPES = [
-        self::TYPE_DEVELOPMENT,
+        self::TYPE_FRONTEND,
+        self::TYPE_BACKEND,
         self::TYPE_ORGANIZATION,
+        self::TYPE_DEVELOPMENT,
     ];
 
     protected $table = 'issues';
@@ -33,6 +40,7 @@ class Issue extends Model
     protected function casts(): array
     {
         return [
+            'issue_type_id' => 'integer',
             'due_date' => 'date',
             'registration_date' => 'datetime',
             'close_date' => 'datetime',
@@ -48,6 +56,18 @@ class Issue extends Model
         });
 
         static::saving(function (self $issue): void {
+            $resolver = app(IssueTypeResolver::class);
+            $issueType = $issue->issue_type_id
+                ? $issue->issueType
+                : $resolver->resolveForIssue($issue);
+
+            if ($issueType) {
+                $issue->issue_type_id = $issueType->id;
+                $issue->type = $issueType->key;
+            } elseif (blank($issue->type)) {
+                $issue->type = self::TYPE_ORGANIZATION;
+            }
+
             if ($issue->status === 'done') {
                 $issue->close_date ??= now();
             } elseif ($issue->isDirty('status')) {
@@ -118,6 +138,11 @@ class Issue extends Model
         return $this->belongsTo(User::class, 'assignee_id');
     }
 
+    public function issueType(): BelongsTo
+    {
+        return $this->belongsTo(OrganizationIssueType::class, 'issue_type_id');
+    }
+
     public function attachments(): HasMany
     {
         return $this->hasMany(IssueAttachment::class, 'issue_id');
@@ -126,10 +151,22 @@ class Issue extends Model
     public static function normalizeType(?string $type): ?string
     {
         return match ($type) {
-            self::TYPE_DEVELOPMENT, 'bug' => self::TYPE_DEVELOPMENT,
-            self::TYPE_ORGANIZATION, 'task' => self::TYPE_ORGANIZATION,
+            self::TYPE_FRONTEND, self::TYPE_BACKEND, self::TYPE_ORGANIZATION => $type,
+            self::TYPE_DEVELOPMENT, 'bug' => self::TYPE_BACKEND,
+            'task' => self::TYPE_ORGANIZATION,
             default => null,
         };
+    }
+
+    public function isDevelopment(): bool
+    {
+        $baseType = $this->issueType?->base_type;
+
+        if ($baseType !== null) {
+            return $baseType === 'development';
+        }
+
+        return in_array($this->type, [self::TYPE_FRONTEND, self::TYPE_BACKEND, self::TYPE_DEVELOPMENT], true);
     }
 
     public function agentTask(): BelongsTo

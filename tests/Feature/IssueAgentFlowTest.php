@@ -35,7 +35,7 @@ class IssueAgentFlowTest extends TestCase
             'team_id' => $team->id,
             'name' => 'Fix login edge case',
             'description' => 'The workflow should split work into sequential agent tasks.',
-            'type' => Issue::TYPE_DEVELOPMENT,
+            'type' => Issue::TYPE_BACKEND,
             'status' => 'open',
         ]);
 
@@ -139,6 +139,8 @@ class IssueAgentFlowTest extends TestCase
             'slug' => 'flow-organization',
         ]);
 
+        $organization->users()->attach($user->id, ['role' => 'manager']);
+
         $team = Team::create([
             'organization_id' => $organization->id,
             'name' => 'Flow Team',
@@ -152,8 +154,7 @@ class IssueAgentFlowTest extends TestCase
                 ])->id,
         ]);
 
-        $organization->users()->attach($user->id, ['role' => 'manager']);
-        $team->users()->attach($user->id, ['role' => 'manager']);
+        $team->users()->attach($user->id);
 
         return [$organization, $team];
     }

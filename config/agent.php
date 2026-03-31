@@ -30,7 +30,7 @@ return [
         'profiles',
         'channels',
         'meeting_summaries',
-        'meeting_tasks',
+        'issues',
         'insight_sources',
         'insight_items',
         'insight_profiles',

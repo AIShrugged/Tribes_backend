@@ -37,13 +37,13 @@ class IssueControllerTest extends TestCase
             ->postJson('/api/v1/issues', [
                 'name' => 'Fix webhook race',
                 'description' => 'Retry handling duplicates work.',
-                'type' => 'development',
+                'type' => 'backend',
                 'organization_id' => $organization->id,
                 'team_id' => $team->id,
                 'assignee_id' => $assignee->id,
             ])->assertStatus(201)
             ->assertJsonPath('data.name', 'Fix webhook race')
-            ->assertJsonPath('data.type', 'development')
+            ->assertJsonPath('data.type', 'backend')
             ->assertJsonPath('data.organization_id', $organization->id)
             ->assertJsonPath('data.team_id', $team->id)
             ->assertJsonPath('data.assignee_id', $assignee->id)
@@ -52,7 +52,7 @@ class IssueControllerTest extends TestCase
         $issueId = $createResponse->json('data.id');
 
         $this->actingAs($owner)
-            ->getJson('/api/v1/issues?type=development&assignee='.$assignee->id.'&organization_id='.$organization->id.'&team_id='.$team->id)
+            ->getJson('/api/v1/issues?type=backend&assignee='.$assignee->id.'&organization_id='.$organization->id.'&team_id='.$team->id)
             ->assertStatus(200)
             ->assertJsonPath('data.0.id', $issueId);
 
@@ -68,7 +68,7 @@ class IssueControllerTest extends TestCase
             'organization_id' => $organization->id,
             'team_id' => $team->id,
             'assignee_id' => $assignee->id,
-            'type' => 'development',
+            'type' => 'backend',
             'status' => 'done',
         ]);
 
@@ -136,10 +136,10 @@ class IssueControllerTest extends TestCase
         $this->actingAs($owner)
             ->postJson('/api/v1/issues', [
                 'name' => 'Foreign issue',
-                'type' => 'development',
-                'organization_id' => $organization->id,
-                'team_id' => $otherTeam->id,
-            ])->assertStatus(422)
+            'type' => 'backend',
+            'organization_id' => $organization->id,
+            'team_id' => $otherTeam->id,
+        ])->assertStatus(422)
             ->assertJsonValidationErrors(['team_id']);
     }
 
@@ -196,7 +196,7 @@ class IssueControllerTest extends TestCase
             'organization_id' => $organization->id,
             'team_id' => $team->id,
             'name' => 'Team-level issue',
-            'type' => 'development',
+            'type' => 'backend',
             'status' => 'open',
             'assignee_id' => $employee->id,
         ]);

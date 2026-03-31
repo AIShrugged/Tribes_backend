@@ -75,23 +75,39 @@ class IssueRequest extends FormRequest
     {
         return [
             'status' => $this->input('status'),
-            'type' => $this->input('type'),
+            'type' => Issue::normalizeType($this->input('type')) ?? $this->input('type'),
             'assignee_id' => $this->input('assignee'),
             'organization_id' => $this->input('organization_id'),
             'team_id' => $this->input('team_id'),
-            'sort' => $this->input('sort', 'updated_at'),
-            'order' => $this->input('order', 'desc'),
+            'sort' => filled($this->input('sort')) ? $this->input('sort') : 'updated_at',
+            'order' => filled($this->input('order')) ? $this->input('order') : 'desc',
             'search' => $this->input('search'),
         ];
     }
 
     public function getStoreData(): array
     {
-        return $this->only(['name', 'description', 'type', 'status', 'organization_id', 'team_id', 'assignee_id']);
+        return [
+            'name' => $this->input('name'),
+            'description' => $this->input('description'),
+            'type' => Issue::normalizeType($this->input('type')) ?? $this->input('type'),
+            'status' => $this->input('status'),
+            'organization_id' => $this->input('organization_id'),
+            'team_id' => $this->input('team_id'),
+            'assignee_id' => $this->input('assignee_id'),
+        ];
     }
 
     public function getUpdateData(): array
     {
-        return $this->only(['name', 'description', 'type', 'status', 'organization_id', 'team_id', 'assignee_id']);
+        return array_filter([
+            'name' => $this->input('name'),
+            'description' => $this->input('description'),
+            'type' => Issue::normalizeType($this->input('type')) ?? $this->input('type'),
+            'status' => $this->input('status'),
+            'organization_id' => $this->input('organization_id'),
+            'team_id' => $this->input('team_id'),
+            'assignee_id' => $this->input('assignee_id'),
+        ], static fn ($value) => $value !== null);
     }
 }

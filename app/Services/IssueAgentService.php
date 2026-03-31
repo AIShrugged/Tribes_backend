@@ -20,7 +20,7 @@ class IssueAgentService
 
     public function dispatch(Issue $issue, User $user, ?int $agentProfileId = null): AgentTaskRun
     {
-        if ($issue->type === Issue::TYPE_DEVELOPMENT) {
+        if ($issue->isDevelopment()) {
             return $this->flowService->start($issue, $user, $agentProfileId);
         }
 
@@ -62,10 +62,12 @@ class IssueAgentService
 
     private function buildPrompt(Issue $issue): string
     {
+        $issueType = $issue->issueType;
+        $typeLabel = $issueType?->name ?? $issue->type;
         $parts = [
             "## Задача",
             "**Название:** {$issue->name}",
-            "**Тип:** {$issue->type}",
+            "**Тип:** {$typeLabel}",
             "**Статус:** {$issue->status}",
         ];
 

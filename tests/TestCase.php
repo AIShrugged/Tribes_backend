@@ -42,6 +42,22 @@ abstract class TestCase extends BaseTestCase
             ->filter(fn ($content) => is_string($content))
             ->implode("\n\n");
 
+        if (
+            str_contains($prompt, 'frontend/backend') &&
+            str_contains($prompt, 'Return ONLY valid JSON object') &&
+            str_contains($prompt, '"steps"')
+        ) {
+            return Http::response([
+                'choices' => [[
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => $this->fakeLlmContent($payload, $prompt),
+                    ],
+                    'finish_reason' => 'stop',
+                ]],
+            ], 200);
+        }
+
         if (! empty($payload['tools'])) {
             return Http::response([
                 'choices' => [[
@@ -67,20 +83,11 @@ abstract class TestCase extends BaseTestCase
 
     private function fakeLlmContent(array $payload, string $prompt): string
     {
-        $forceJson = ($payload['response_format']['type'] ?? null) === 'json_object';
-
-        if (! $forceJson) {
-            return 'Mocked LLM response';
-        }
-
-        if (str_contains($prompt, '"new_tasks"') && str_contains($prompt, '"status_updates"')) {
-            return json_encode([
-                'new_tasks' => [],
-                'status_updates' => [],
-            ]);
-        }
-
-        if (str_contains($prompt, 'development issue flow') && str_contains($prompt, 'Return ONLY valid JSON object')) {
+        if (
+            str_contains($prompt, 'frontend/backend') &&
+            str_contains($prompt, 'Return ONLY valid JSON object') &&
+            str_contains($prompt, '"steps"')
+        ) {
             return json_encode([
                 'goal' => 'Deliver the requested development issue through a sequenced agent workflow.',
                 'steps' => [
@@ -103,6 +110,19 @@ abstract class TestCase extends BaseTestCase
                         'output_mode' => 'md',
                     ],
                 ],
+            ]);
+        }
+
+        $forceJson = ($payload['response_format']['type'] ?? null) === 'json_object';
+
+        if (! $forceJson) {
+            return 'Mocked LLM response';
+        }
+
+        if (str_contains($prompt, '"new_tasks"') && str_contains($prompt, '"status_updates"')) {
+            return json_encode([
+                'new_tasks' => [],
+                'status_updates' => [],
             ]);
         }
 
@@ -205,13 +225,17 @@ abstract class TestCase extends BaseTestCase
             ]);
         }
 
-        if (str_contains($prompt, 'actionable issues') || str_contains($prompt, 'извлечения actionable issues')) {
+        if (
+            str_contains($prompt, 'concrete tasks from work meeting transcripts')
+            || str_contains($prompt, 'actionable issues')
+            || str_contains($prompt, 'извлечения actionable issues')
+        ) {
             return json_encode([
                 'issues' => [
                     [
                         'name' => 'Исправить баг в авторизации',
                         'description' => 'При логине через Google OAuth не сохраняется сессия',
-                        'type' => 'development',
+                        'type' => 'backend',
                         'assignee_name' => 'John Doe',
                     ],
                     [

@@ -6,6 +6,7 @@ use App\Exceptions\AppException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class Organization extends Model
@@ -27,6 +28,37 @@ class Organization extends Model
     public function methodologies(): HasMany
     {
         return $this->hasMany(Methodology::class);
+    }
+
+    public function issueTypes(): HasMany
+    {
+        return $this->hasMany(OrganizationIssueType::class)
+            ->with('agentProfile')
+            ->orderBy('base_type')
+            ->orderBy('key');
+    }
+
+    public function resolvedIssueTypes(): Collection
+    {
+        $issueTypes = OrganizationIssueType::query()
+            ->where(function ($query): void {
+                $query->whereNull('organization_id')
+                    ->orWhere('organization_id', $this->id);
+            })
+            ->where('is_active', true)
+            ->with('agentProfile')
+            ->orderByRaw('CASE WHEN organization_id = ? THEN 0 ELSE 1 END', [$this->id])
+            ->orderBy('base_type')
+            ->orderBy('key')
+            ->get();
+
+        return $issueTypes
+            ->groupBy('key')
+            ->map(function (Collection $group): OrganizationIssueType {
+                return $group->firstWhere('organization_id', $this->id)
+                    ?? $group->first();
+            })
+            ->values();
     }
 
     public function workspaces(): HasMany
