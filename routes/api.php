@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\AgendaController;
+use App\Http\Controllers\API\v1\UpcomingAgendaController;
 use App\Http\Controllers\API\v1\AgentActivityLogController;
 use App\Http\Controllers\API\v1\AgentMemoryController;
 use App\Http\Controllers\API\v1\AgentProfileController;
@@ -160,6 +161,10 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::get('me/agendas', [AgendaController::class, 'myAgendas'])
             ->name('agendas.my');
+        Route::get('me/upcoming-agenda', [UpcomingAgendaController::class, 'show'])
+            ->name('me.upcoming-agenda');
+        Route::get('me/latest-tasks', [UpcomingAgendaController::class, 'latestTasks'])
+            ->name('me.latest-tasks');
 
         Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
