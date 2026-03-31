@@ -8,6 +8,7 @@ use App\Http\Requests\API\v1\OrganizationRequest;
 use App\Http\Resources\API\v1\OrganizationResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
+use App\Models\OrganizationIssueType;
 use App\Services\Workspace\WorkspaceBootstrapService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
@@ -91,7 +92,6 @@ class OrganizationController extends Controller
 
             $organization->users()->attach(Auth::id(), ['role' => UserRole::MANAGER->value]);
             $this->workspaceBootstrapService->ensureOrganizationDefaults($organization);
-
             DB::commit();
             return ApiResponse::success(data: OrganizationResource::make($organization));
         } catch (\Exception $e) {
@@ -118,7 +118,16 @@ class OrganizationController extends Controller
 
     public function update(OrganizationRequest $request, Organization $organization): ApiResponse
     {
-        $organization->update($request->getUpdateData());
+        $data = $request->getUpdateData();
+        $issueTypes = $data['issue_types'] ?? null;
+
+        unset($data['issue_types']);
+
+        $organization->update($data);
+
+        if (is_array($issueTypes)) {
+            $this->syncIssueTypes($organization, $issueTypes);
+        }
 
         return ApiResponse::success(data: OrganizationResource::make($organization->refresh()));
     }
@@ -142,5 +151,36 @@ class OrganizationController extends Controller
         $organization->deleteCompletely();
 
         return ApiResponse::success();
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $issueTypes
+     */
+    private function syncIssueTypes(Organization $organization, array $issueTypes): void
+    {
+        foreach ($issueTypes as $issueType) {
+            if (! is_array($issueType)) {
+                continue;
+            }
+
+            $key = (string) ($issueType['key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+
+            OrganizationIssueType::query()->updateOrCreate(
+                [
+                    'organization_id' => $organization->id,
+                    'key' => $key,
+                ],
+                [
+                    'name' => (string) ($issueType['name'] ?? $key),
+                    'base_type' => (string) ($issueType['base_type'] ?? 'development'),
+                    'agent_profile_id' => $issueType['agent_profile_id'] ?? null,
+                    'metadata' => $issueType['metadata'] ?? null,
+                    'is_active' => (bool) ($issueType['is_active'] ?? true),
+                ],
+            );
+        }
     }
 }

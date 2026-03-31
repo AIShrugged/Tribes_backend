@@ -156,7 +156,7 @@ class IssueExtractionPipelineTest extends TestCase
 
         $this->assertCount(2, $issues);
 
-        $development = $issues->firstWhere('type', 'development');
+        $development = $issues->firstWhere('type', 'backend');
         $this->assertNotNull($development);
         $this->assertEquals('Исправить баг в авторизации', $development->name);
         $this->assertEquals('John Doe', $development->assignee_name);
@@ -244,7 +244,7 @@ class IssueExtractionPipelineTest extends TestCase
 
         $this->assertDatabaseCount('agent_tasks', 0);
 
-        $development = $issues->firstWhere('type', 'development');
+        $development = $issues->firstWhere('type', 'backend');
         $organization = $issues->firstWhere('type', 'organization');
 
         $this->assertNotNull($development);
@@ -291,7 +291,7 @@ class IssueExtractionPipelineTest extends TestCase
             'organization_id' => $this->organization->id,
             'team_id' => $this->team->id,
             'name' => 'Fix login bug',
-            'type' => 'development',
+            'type' => 'backend',
             'status' => MeetingTaskStatus::REVIEW->value,
             'pr_url' => 'https://github.com/org/repo/pull/42',
             'pr_number' => 42,
@@ -374,7 +374,7 @@ class IssueExtractionPipelineTest extends TestCase
         $this->assertDatabaseCount('issues', 2);
         $this->assertDatabaseCount('agent_tasks', 0);
 
-        $development = Issue::query()->where('type', 'development')->firstOrFail();
+        $development = Issue::query()->where('type', 'backend')->firstOrFail();
         $organization = Issue::query()->where('type', 'organization')->firstOrFail();
 
         $this->assertNull($development->agent_task_id);

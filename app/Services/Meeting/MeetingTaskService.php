@@ -53,15 +53,16 @@ class MeetingTaskService
             foreach ($items as $item) {
                 Issue::create([
                     'user_id' => $event->source?->user_id,
-                    'sourceable_type' => CalendarEvent::class,
-                    'sourceable_id'   => $event->id,
-                    'name'          => $item['title'],
-                    'description'   => $item['description'] ?? null,
-                    'assignee_name' => $item['assignee_name'] ?? null,
-                    'assignee_id'   => isset($item['profile_id']) ? ($assigneeByProfileId[$item['profile_id']] ?? null) : null,
-                    'due_date'      => $item['due_date'] ?? null,
-                    'status'        => MeetingTaskStatus::OPEN->value,
-                ]);
+                'sourceable_type' => CalendarEvent::class,
+                'sourceable_id'   => $event->id,
+                'name'          => $item['title'],
+                'description'   => $item['description'] ?? null,
+                'assignee_name' => $item['assignee_name'] ?? null,
+                'assignee_id'   => isset($item['profile_id']) ? ($assigneeByProfileId[$item['profile_id']] ?? null) : null,
+                'due_date'      => $item['due_date'] ?? null,
+                'type' => Issue::normalizeType($item['type'] ?? null) ?? Issue::TYPE_BACKEND,
+                'status'        => MeetingTaskStatus::OPEN->value,
+            ]);
             }
 
             $issues = $event->issues()->get();
@@ -98,6 +99,7 @@ class MeetingTaskService
                 "description": "Detailed description or null",
                 "assignee_name": "Assignee name as mentioned in the transcript, or null",
                 "profile_id": 5,
+                "type": "frontend | backend | organization",
                 "due_date": "YYYY-MM-DD or null"
             }
         ]
@@ -105,6 +107,7 @@ class MeetingTaskService
         Rules:
         - Set profile_id only if you can confidently match the assignee to one of the known participants above
         - If the assignee is unknown or not in the participants list — set profile_id to null
+        - Use "frontend" for UI/web app tasks, "backend" for APIs/services/data/integrations, and "organization" for coordination or process work
         - If there are no tasks — return an empty array []
         - Respond with valid JSON only, no additional text
 

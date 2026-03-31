@@ -9,6 +9,7 @@ use App\Models\Issue;
 use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\IssueTypeResolver;
 use App\Services\Followup\TranscriptBuilderService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,7 @@ class IssueExtractionService
     public function __construct(
         private readonly OpenRouterClient $llm,
         private readonly TranscriptBuilderService $transcriptBuilder,
+        private readonly IssueTypeResolver $issueTypeResolver,
     ) {}
 
     /**
@@ -74,7 +76,11 @@ class IssueExtractionService
                 'sourceable_id' => $event->id,
                 'name' => $name,
                 'description' => $item['description'] ?? null,
-                'type' => Issue::normalizeType($item['type'] ?? null) ?? Issue::TYPE_DEVELOPMENT,
+                'type' => $this->issueTypeResolver->resolve(
+                    $team->organization_id,
+                    $team->id,
+                    $item['type'] ?? null
+                )?->key ?? Issue::TYPE_BACKEND,
                 'status' => MeetingTaskStatus::OPEN->value,
                 'assignee_name' => $item['assignee_name'] ?? null,
                 'due_date' => $this->parseDueDate($item['due_date'] ?? null),
@@ -134,7 +140,7 @@ Return JSON strictly in the following format:
     {
       "name": "Verb + what exactly to do (up to 80 characters)",
       "description": "## Context\nWhy this is needed — what was discussed at the meeting, what problem exists.\n\n## Steps\n1. Concrete step 1\n2. Concrete step 2\n\n## Definition of done\nHow to know the task is complete.",
-      "type": "development | organization",
+      "type": "frontend | backend | organization",
       "assignee_name": "First Last | null",
       "due_date": "YYYY-MM-DD | null"
     }
@@ -151,8 +157,9 @@ Return JSON strictly in the following format:
 - "Definition of done" — one sentence: what the outcome should be (PR created, metric improved, document written).
 
 **type**:
-- "organization" — for coordination, process, operations, or non-implementation work
-- "development" — everything else (features, refactoring, infrastructure, documentation, research)
+- "frontend" — UI, web app, client-side work
+- "backend" — APIs, services, infrastructure, data, integrations
+- "organization" — coordination, process, operations, or non-implementation work
 
 **assignee_name** — the name of the person who EXPLICITLY took the task or was EXPLICITLY assigned it in the conversation. If unclear — null.
 

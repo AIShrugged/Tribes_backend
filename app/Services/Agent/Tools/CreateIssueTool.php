@@ -60,7 +60,7 @@ class CreateIssueTool extends AbstractAgentTool
                 'type' => [
                     'type' => 'string',
                     'enum' => Issue::TYPES,
-                    'description' => 'Issue type. Use development for implementation work and organization for coordination or operational work.',
+                    'description' => 'Issue type. Use frontend or backend for implementation work and organization for coordination or operational work.',
                 ],
                 'status' => [
                     'type' => 'string',
@@ -112,7 +112,7 @@ class CreateIssueTool extends AbstractAgentTool
 
         $type = trim((string) ($parameters['type'] ?? ''));
         if (! in_array($type, Issue::TYPES, true)) {
-            return ['success' => false, 'error' => 'type must be one of: development, organization'];
+            return ['success' => false, 'error' => 'type must be one of: frontend, backend, organization, development'];
         }
 
         $status = $parameters['status'] ?? MeetingTaskStatus::OPEN->value;

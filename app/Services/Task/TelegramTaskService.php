@@ -117,6 +117,7 @@ class TelegramTaskService
                 'description' => $taskData['description'] ?? null,
                 'assignee_name' => $taskData['assignee_name'] ?? null,
                 'due_date' => $taskData['due_date'] ?? null,
+                'type' => Issue::TYPE_ORGANIZATION,
                 'status' => MeetingTaskStatus::OPEN->value,
             ]);
 
