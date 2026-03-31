@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\API\v1;
 
 use App\Domain\Errors\OAuthInvalidStateError;
-use App\Domain\Errors\SourceExistsError;
 use App\Enums\SourceAuthType;
 use App\Enums\SourceType;
 use App\Exceptions\AppException;
@@ -57,41 +56,60 @@ class GoogleCalendarController extends Controller
         }
 
         try {
-            DB::beginTransaction();
             $oauthDTO = app(GoogleOAuthService::class)->callback($oauthState, $request->getCode());
 
-            $source = Source::firstWhere([
-                'user_id'  => $oauthState->user_id,
-                'identity' => $oauthDTO->email,
-                'type'     => SourceType::GOOGLE_CALENDAR->value
-            ]);
-
-            if ($source) {
-                RecallCalendarService::reAttach($oauthDTO, SourceType::GOOGLE_CALENDAR, $source->external_id);
-            } else {
-                $sourceDTO = RecallCalendarService::attach($oauthDTO, SourceType::GOOGLE_CALENDAR);
-
-                $source = Source::create([
-                    'user_id'     => $oauthState->user_id,
-                    'external_id' => $sourceDTO->externalId,
-                    'identity'    => $sourceDTO->identity,
-                    'auth_type'   => SourceAuthType::OAUTH2->value,
-                    'type'        => SourceType::GOOGLE_CALENDAR->value
+            DB::transaction(function () use ($oauthDTO, $oauthState): void {
+                $source = Source::withTrashed()->firstWhere([
+                    'user_id'  => $oauthState->user_id,
+                    'identity' => $oauthDTO->email,
+                    'type'     => SourceType::GOOGLE_CALENDAR->value,
                 ]);
-            }
 
-            SourceOauth::updateOrCreate(['source_id' => $source->id], [
-                'access_token'  => $oauthDTO->accessToken,
-                'refresh_token' => $oauthDTO->refreshToken,
-                'expires_at'    => Carbon::now()->addSeconds($oauthDTO->expiresIn),
-                'email'         => $oauthDTO->email,
-            ]);
+                if ($source) {
+                    if ($source->trashed()) {
+                        $sourceDTO = RecallCalendarService::attach($oauthDTO, SourceType::GOOGLE_CALENDAR);
 
-            DB::commit();
+                        $source->restore();
+                        $source->update([
+                            'external_id' => $sourceDTO->externalId,
+                            'identity'    => $sourceDTO->identity,
+                            'auth_type'   => SourceAuthType::OAUTH2->value,
+                            'type'        => SourceType::GOOGLE_CALENDAR->value,
+                            'is_connected' => true,
+                        ]);
+                    } else {
+                        RecallCalendarService::reAttach($oauthDTO, SourceType::GOOGLE_CALENDAR, $source->external_id);
+
+                        $source->update([
+                            'identity'     => $oauthDTO->email,
+                            'auth_type'    => SourceAuthType::OAUTH2->value,
+                            'type'        => SourceType::GOOGLE_CALENDAR->value,
+                            'is_connected' => true,
+                        ]);
+                    }
+                } else {
+                    $sourceDTO = RecallCalendarService::attach($oauthDTO, SourceType::GOOGLE_CALENDAR);
+
+                    $source = Source::create([
+                        'user_id'      => $oauthState->user_id,
+                        'external_id'  => $sourceDTO->externalId,
+                        'identity'     => $sourceDTO->identity,
+                        'auth_type'    => SourceAuthType::OAUTH2->value,
+                        'type'         => SourceType::GOOGLE_CALENDAR->value,
+                        'is_connected' => true,
+                    ]);
+                }
+
+                SourceOauth::updateOrCreate(['source_id' => $source->id], [
+                    'access_token'  => $oauthDTO->accessToken,
+                    'refresh_token' => $oauthDTO->refreshToken,
+                    'expires_at'    => Carbon::now()->addSeconds($oauthDTO->expiresIn),
+                    'email'         => $oauthDTO->email,
+                ]);
+            });
+
             return redirect(config('app.frontend_url') . '/dashboard/calendar?attached=1');
         } catch (\Exception $exception) {
-            DB::rollBack();
-
             throw $exception;
         } finally {
             $oauthState->delete();
