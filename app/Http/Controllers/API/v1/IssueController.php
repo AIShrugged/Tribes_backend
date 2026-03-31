@@ -180,16 +180,6 @@ class IssueController extends Controller
             $teamId,
             allowUnbound: false,
         );
-
-        if ($teamId !== null) {
-            return;
-        }
-
-        if (! $user->isOrganizationManager($organizationId)) {
-            throw ValidationException::withMessages([
-                'organization_id' => ['Only organization managers can access organization-level issues without a team scope.'],
-            ]);
-        }
     }
 
 }
