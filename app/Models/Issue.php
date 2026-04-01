@@ -114,6 +114,9 @@ class Issue extends Model
                     ->whereNull('organization_id')
                     ->whereNull('team_id');
             });
+
+            // Assignees can always see their own tasks regardless of org/team ownership
+            $builder->orWhere('assignee_id', $user->id);
         });
     }
 
