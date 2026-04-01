@@ -84,7 +84,7 @@ class UpcomingAgendaService
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
-                maxTokens: 2048,
+                maxTokens: 8192,
                 forceJsonResponse: true,
             );
 
