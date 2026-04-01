@@ -150,6 +150,15 @@ class Issue extends Model
         return $this->belongsTo(User::class, 'assignee_id');
     }
 
+    public function effectiveAgentProfileId(?int $explicitAgentProfileId = null): ?int
+    {
+        if ($explicitAgentProfileId !== null) {
+            return $explicitAgentProfileId;
+        }
+
+        return $this->issueType?->agent_profile_id;
+    }
+
     public function issueType(): BelongsTo
     {
         return $this->belongsTo(OrganizationIssueType::class, 'issue_type_id');

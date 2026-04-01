@@ -8,6 +8,7 @@ use App\Models\AgentTaskRun;
 use App\Models\IssueAgentFlow;
 use App\Models\Issue;
 use App\Models\Organization;
+use App\Models\OrganizationIssueType;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\InlineAgentTaskExecutor;
@@ -20,6 +21,62 @@ use Tests\TestCase;
 class IssueAgentFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[Test]
+    public function development_issue_dispatch_uses_issue_type_profile_and_repository_context(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($user);
+
+        $profile = \App\Models\AgentProfile::create([
+            'key' => 'backend-flow',
+            'name' => 'Backend flow',
+            'system_prompt' => 'Use repository context and the configured sandbox.',
+            'execution_mode' => 'isolated',
+            'metadata' => [
+                'repository' => [
+                    'provider' => 'github',
+                    'owner' => 'acme',
+                    'repo' => 'api',
+                ],
+                'notes' => [
+                    'source' => 'profile metadata',
+                ],
+            ],
+            'enabled' => true,
+        ]);
+
+        OrganizationIssueType::query()
+            ->whereNull('organization_id')
+            ->where('key', 'backend')
+            ->firstOrFail()
+            ->update([
+                'agent_profile_id' => $profile->id,
+            ]);
+
+        $issue = Issue::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Fix login edge case',
+            'description' => 'The workflow should split work into sequential agent tasks.',
+            'type' => Issue::TYPE_BACKEND,
+            'status' => 'open',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->postJson("/api/v1/issues/{$issue->id}/dispatch", [])
+            ->assertStatus(201);
+
+        $plannerTask = AgentTask::findOrFail((int) $response->json('data.agent_task_id'));
+
+        $this->assertSame($profile->id, $plannerTask->agent_profile_id);
+        $this->assertSame('isolated', $plannerTask->effectiveExecutionMode()->value);
+        $this->assertSame($profile->metadata, data_get($plannerTask->metadata, 'profile_metadata'));
+        $this->assertSame($profile->metadata, data_get($plannerTask->input_payload, 'profile_metadata'));
+    }
 
     #[Test]
     public function development_issue_flow_plans_steps_blocks_on_failure_and_resumes_after_retry(): void

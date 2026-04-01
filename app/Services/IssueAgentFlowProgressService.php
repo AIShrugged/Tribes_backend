@@ -244,6 +244,36 @@ class IssueAgentFlowProgressService
         $definition = is_array($step->definition) ? $step->definition : [];
         $outputMode = (string) ($definition['output_mode'] ?? 'md');
         $outputMode = in_array($outputMode, ['md', 'plain'], true) ? $outputMode : 'md';
+        $profile = $flow->profile;
+
+        $inputPayload = [
+            'flow' => [
+                'issue_agent_flow_id' => $flow->id,
+                'issue_id' => $flow->issue_id,
+                'status' => $flow->status?->value ?? $flow->status,
+                'current_step_position' => $step->position,
+            ],
+            'step' => [
+                'id' => $step->id,
+                'position' => $step->position,
+                'kind' => $step->kind?->value ?? $step->kind,
+                'title' => $step->title,
+                'prompt' => $step->prompt,
+                'definition' => $definition,
+            ],
+            'previous_step_output' => $previousOutput,
+            'issue' => [
+                'id' => $issue->id,
+                'name' => $issue->name,
+                'description' => $issue->description,
+                'type' => $issue->type,
+                'status' => $issue->status,
+            ],
+        ];
+
+        if ($profile && is_array($profile->metadata)) {
+            $inputPayload['profile_metadata'] = $profile->metadata;
+        }
 
         return AgentTask::create([
             'user_id' => $flow->user_id,
@@ -259,31 +289,9 @@ class IssueAgentFlowProgressService
             'enabled' => true,
             'max_attempts' => 3,
             'next_run_at' => now(),
-            'input_payload' => [
-                'flow' => [
-                    'issue_agent_flow_id' => $flow->id,
-                    'issue_id' => $flow->issue_id,
-                    'status' => $flow->status?->value ?? $flow->status,
-                    'current_step_position' => $step->position,
-                ],
-                'step' => [
-                    'id' => $step->id,
-                    'position' => $step->position,
-                    'kind' => $step->kind?->value ?? $step->kind,
-                    'title' => $step->title,
-                    'prompt' => $step->prompt,
-                    'definition' => $definition,
-                ],
-                'previous_step_output' => $previousOutput,
-                'issue' => [
-                    'id' => $issue->id,
-                    'name' => $issue->name,
-                    'description' => $issue->description,
-                    'type' => $issue->type,
-                    'status' => $issue->status,
-                ],
-            ],
+            'input_payload' => $inputPayload,
             'metadata' => [
+                'profile_metadata' => is_array($profile?->metadata) ? $profile->metadata : [],
                 'issue_agent_flow_id' => $flow->id,
                 'issue_id' => $issue->id,
                 'flow_kind' => 'execution',

@@ -135,6 +135,213 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
+    public function calendar_sync_event_marks_meeting_as_required_bot_and_schedules_it(): void
+    {
+        Http::fake([
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+                'results' => [
+                    [
+                        'id' => 'recall-event-1',
+                        'meeting_platform' => 'google_meet',
+                        'meeting_url' => 'https://meet.google.com/sync-test',
+                        'start_time' => now()->addHour()->toIso8601String(),
+                        'end_time' => now()->addHours(2)->toIso8601String(),
+                        'raw' => [
+                            'summary' => 'Synced meeting',
+                            'description' => 'Meeting from Recall sync_events webhook',
+                            'attendees' => [],
+                        ],
+                    ],
+                ],
+            ], 200),
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*/bot/' => Http::response([
+                'bots' => [
+                    [
+                        'bot_id' => 'bot-sync-1',
+                        'deduplication_key' => md5('recall-event-1'),
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $source = Source::create([
+            'user_id' => $this->user->id,
+            'type' => 'google_calendar',
+            'external_id' => 'sync-source-id',
+            'identity' => 'sync@example.com',
+        ]);
+
+        $event = CalendarEvent::create([
+            'platform' => 'google_meet',
+            'title' => 'Synced meeting',
+            'url' => 'https://meet.google.com/sync-test',
+            'description' => 'Meeting from Recall sync_events webhook',
+            'starts_at' => now()->addHour(),
+            'ends_at' => now()->addHours(2),
+            'required_bot' => false,
+        ]);
+
+        $event->sources()->attach($source->id, [
+            'external_id' => 'recall-event-1',
+            'required_bot' => false,
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data' => [
+                'calendar_id' => $source->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $event->refresh();
+
+        $this->assertTrue($event->isRequiredBot());
+        $this->assertNotNull($event->bot_id);
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $event->id,
+            'source_id' => $source->id,
+            'required_bot' => true,
+        ]);
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'bot-sync-1',
+            'meeting_url' => 'https://meet.google.com/sync-test',
+            'is_active' => true,
+        ]);
+    }
+
+    #[Test]
+    public function calendar_update_event_resyncs_meeting_time_and_schedules_bot(): void
+    {
+        $baseTime = now()->startOfSecond();
+        $existingStartsAt = $baseTime->copy()->addHour();
+        $existingEndsAt = $baseTime->copy()->addHours(2);
+        $updatedStartsAt = $baseTime->copy()->addHours(3);
+        $updatedEndsAt = $baseTime->copy()->addHours(4);
+
+        Http::fake([
+            'https://us-west-2.recall.ai/api/v2/calendars/update-calendar-id' => Http::response([
+                'status' => 'connected',
+            ], 200),
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+                'results' => [
+                    [
+                        'id' => 'recall-update-event-1',
+                        'meeting_platform' => 'google_meet',
+                        'meeting_url' => 'https://meet.google.com/update-test',
+                        'start_time' => $updatedStartsAt->toIso8601String(),
+                        'end_time' => $updatedEndsAt->toIso8601String(),
+                        'raw' => [
+                            'summary' => 'Updated meeting',
+                            'description' => 'Meeting after calendar.update webhook',
+                            'attendees' => [],
+                        ],
+                    ],
+                ],
+            ], 200),
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*/bot/' => Http::response([
+                'bots' => [
+                    [
+                        'bot_id' => 'bot-update-1',
+                        'deduplication_key' => md5('recall-update-event-1'),
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $source = Source::create([
+            'user_id' => $this->user->id,
+            'type' => 'google_calendar',
+            'external_id' => 'update-calendar-id',
+            'identity' => 'update@example.com',
+        ]);
+
+        $existingEvent = CalendarEvent::create([
+            'platform' => 'google_meet',
+            'title' => 'Updated meeting',
+            'url' => 'https://meet.google.com/update-test',
+            'description' => 'Meeting before calendar.update webhook',
+            'starts_at' => $existingStartsAt,
+            'ends_at' => $existingEndsAt,
+            'required_bot' => false,
+        ]);
+
+        $existingEvent->sources()->attach($source->id, [
+            'external_id' => 'recall-update-event-1',
+            'required_bot' => false,
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.update',
+            'data' => [
+                'calendar_id' => $source->external_id,
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $updatedEvent = CalendarEvent::query()
+            ->where('url', 'https://meet.google.com/update-test')
+            ->where('starts_at', $updatedStartsAt)
+            ->firstOrFail();
+
+        $this->assertTrue($updatedEvent->isRequiredBot());
+        $this->assertNotNull($updatedEvent->bot_id);
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $updatedEvent->id,
+            'source_id' => $source->id,
+            'required_bot' => true,
+        ]);
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'bot-update-1',
+            'meeting_url' => 'https://meet.google.com/update-test',
+            'is_active' => true,
+        ]);
+    }
+
+    #[Test]
+    public function bot_require_recreates_active_recall_bot_when_required_bot_is_true(): void
+    {
+        Http::fake(function ($request) {
+            if ($request->method() === 'DELETE') {
+                return Http::response(['status' => 'deleted'], 200);
+            }
+
+            return Http::response([
+                'bots' => [
+                    [
+                        'bot_id' => 'bot-refresh-1',
+                        'deduplication_key' => md5('test-event-id'),
+                    ],
+                ],
+            ], 200);
+        });
+
+        $this->actingAs($this->user);
+
+        $response = $this->postJson('/api/v1/calendar-events/' . $this->calendarEvent->id . '/bot/require', [
+            'required_bot' => true,
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'test-bot-123',
+            'is_active' => false,
+        ]);
+
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'bot-refresh-1',
+            'meeting_url' => 'https://meet.google.com/test',
+            'is_active' => true,
+        ]);
+
+        $this->assertSame('bot-refresh-1', $this->calendarEvent->fresh()->bot?->external_id);
+    }
+
+    #[Test]
     public function parse_transcript_job_creates_transcript_entries_and_dispatches_event()
     {
         Event::fake();

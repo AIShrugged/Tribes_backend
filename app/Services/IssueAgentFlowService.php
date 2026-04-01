@@ -8,6 +8,7 @@ use App\Enums\IssueAgentFlowStatus;
 use App\Enums\IssueAgentFlowStepKind;
 use App\Enums\IssueAgentFlowStepStatus;
 use App\Exceptions\AppException;
+use App\Models\AgentProfile;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\Issue;
@@ -41,12 +42,15 @@ class IssueAgentFlowService
         }
 
         [$flow, $plannerTask] = DB::transaction(function () use ($issue, $user, $agentProfileId): array {
+            $resolvedAgentProfileId = $issue->effectiveAgentProfileId($agentProfileId);
+            $profile = $resolvedAgentProfileId ? AgentProfile::query()->find($resolvedAgentProfileId) : null;
+
             $flow = IssueAgentFlow::create([
                 'issue_id' => $issue->id,
                 'user_id' => $user->id,
                 'organization_id' => $issue->organization_id,
                 'team_id' => $issue->team_id,
-                'agent_profile_id' => $agentProfileId,
+                'agent_profile_id' => $resolvedAgentProfileId,
                 'status' => IssueAgentFlowStatus::PLANNING->value,
                 'metadata' => [
                     'issue_type' => $issue->type,
@@ -59,11 +63,11 @@ class IssueAgentFlowService
                 'user_id' => $user->id,
                 'organization_id' => $issue->organization_id,
                 'team_id' => $issue->team_id,
-                'agent_profile_id' => null,
+                'agent_profile_id' => $resolvedAgentProfileId,
                 'name' => "Plan development flow for issue #{$issue->id}: {$issue->name}",
                 'prompt' => $this->buildPlanningPrompt($issue),
                 'schedule_type' => AgentScheduleType::ONE_OFF->value,
-                'execution_mode' => AgentTaskExecutionMode::INLINE->value,
+                'execution_mode' => $resolvedAgentProfileId ? null : AgentTaskExecutionMode::INLINE->value,
                 'agent_task_type' => 'background',
                 'output_mode' => 'plain',
                 'allowed_tools' => [],
@@ -71,8 +75,9 @@ class IssueAgentFlowService
                 'enabled' => true,
                 'max_attempts' => 3,
                 'next_run_at' => now(),
-                'input_payload' => $this->buildPlanningInputPayload($issue, $flow),
+                'input_payload' => $this->buildPlanningInputPayload($issue, $flow, $profile),
                 'metadata' => [
+                    'profile_metadata' => is_array($profile?->metadata) ? $profile->metadata : [],
                     'issue_agent_flow_id' => $flow->id,
                     'issue_id' => $issue->id,
                     'flow_kind' => 'planning',
@@ -157,9 +162,9 @@ Rules:
 PROMPT;
     }
 
-    public function buildPlanningInputPayload(Issue $issue, IssueAgentFlow $flow): array
+    public function buildPlanningInputPayload(Issue $issue, IssueAgentFlow $flow, ?AgentProfile $profile = null): array
     {
-        return [
+        $payload = [
             'flow' => [
                 'issue_agent_flow_id' => $flow->id,
                 'issue_id' => $issue->id,
@@ -176,5 +181,11 @@ PROMPT;
                 'team_id' => $issue->team_id,
             ],
         ];
+
+        if ($profile && is_array($profile->metadata)) {
+            $payload['profile_metadata'] = $profile->metadata;
+        }
+
+        return $payload;
     }
 }

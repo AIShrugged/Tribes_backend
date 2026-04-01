@@ -4,6 +4,8 @@ namespace App\Services\Recall\Handlers;
 
 use App\Exceptions\AppException;
 use App\Models\Source;
+use App\Services\Recall\CalendarEventSyncService;
+use App\Services\RecallEventService;
 use App\Services\Recall\Payloads\CalendarUpdatePayload;
 use App\Services\Recall\RecallEventHandlerInterface;
 use App\Services\Recall\RecallPayloadInterface;
@@ -11,6 +13,10 @@ use App\Services\RecallCalendarService;
 
 class CalendarUpdateHandler implements RecallEventHandlerInterface
 {
+    public function __construct(
+        private readonly CalendarEventSyncService $calendarEventSyncService,
+    ) {
+    }
 
     public function handle(CalendarUpdatePayload|RecallPayloadInterface $payload): void
     {
@@ -22,6 +28,12 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
 
         if (!RecallCalendarService::isConnected($source->external_id)) {
             $source->disconnect();
+        }
+
+        $eventService = new RecallEventService($source);
+
+        foreach ($eventService->getAllByCalendar() as $eventDTO) {
+            $this->calendarEventSyncService->sync($source, $eventDTO, []);
         }
     }
 }

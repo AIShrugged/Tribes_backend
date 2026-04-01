@@ -19,13 +19,18 @@ class AgentTaskContextBuilder
         $profile = $task->profile;
         $memories = $this->resolveMemories($task);
         $followupContext = $this->buildFollowupContext($task);
+        $profileMetadata = is_array($profile?->metadata) ? $profile->metadata : [];
 
         $profilePrompt = trim((string) ($profile?->system_prompt ?? ''));
         $memoryPrompt = $this->renderMemoryPrompt($memories);
         $taskPayloadPrompt = $this->renderTaskPayloadPrompt($task);
+        $profileMetadataPrompt = $profileMetadata !== []
+            ? "## Agent Profile Metadata\n\n```json\n".json_encode($profileMetadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n```"
+            : null;
 
         $systemPromptExtension = trim(implode("\n\n", array_filter([
             $profilePrompt !== '' ? "## Agent Profile\n\n{$profilePrompt}" : null,
+            $profileMetadataPrompt,
             $memoryPrompt,
         ])));
 
@@ -36,6 +41,7 @@ class AgentTaskContextBuilder
 
         return [
             'profile' => $profile,
+            'profile_metadata' => $profileMetadata,
             'memories' => $memories->map(fn (AgentMemory $memory) => [
                 'id' => $memory->id,
                 'scope_type' => $memory->scope_type,

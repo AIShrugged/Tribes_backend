@@ -71,6 +71,10 @@ class AgentTaskMutationService
         $data['schedule_type'] = $scheduleType;
         $data['interval_seconds'] = $intervalSeconds;
         $data['next_run_at'] = $nextRunAt;
+        $data['metadata'] = [
+            ...($data['metadata'] ?? $existingTask?->metadata ?? []),
+            'profile_metadata' => is_array($profile?->metadata) ? $profile->metadata : [],
+        ];
 
         return $data;
     }
