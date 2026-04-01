@@ -84,6 +84,7 @@ class IsolatedAgentTaskExecutor
                     'key' => $context['profile']?->key,
                     'name' => $context['profile']?->name,
                     'system_prompt' => $context['system_prompt_extension'],
+                    'metadata' => $context['profile_metadata'],
                 ],
                 'agent_memory' => $context['memories'],
                 'followup_policy' => $context['followup_policy'],

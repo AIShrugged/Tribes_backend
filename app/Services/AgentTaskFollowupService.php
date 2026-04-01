@@ -49,6 +49,7 @@ class AgentTaskFollowupService
         $effectiveExecutionMode = $payload['execution_mode'] ?? $parentTask->effectiveExecutionMode()->value;
         $effectiveSandboxProfile = $payload['sandbox_profile'] ?? $parentTask->effectiveSandboxProfile();
         $inputPayload = is_array($payload['input_payload'] ?? null) ? $payload['input_payload'] : ($parentTask->input_payload ?? []);
+        $profileMetadata = is_array($parentTask->profile?->metadata ?? null) ? $parentTask->profile->metadata : [];
 
         $followupPrompt = $prompt;
         if ($contextSummary !== '') {
@@ -90,6 +91,7 @@ class AgentTaskFollowupService
                 'next_run_at' => now()->addSeconds($delaySeconds),
                 'metadata' => [
                     ...($parentTask->metadata ?? []),
+                    'profile_metadata' => $profileMetadata,
                     'followup' => [
                         'created_from_task_id' => $parentTask->id,
                         'created_from_run_id' => $originRun->id,

@@ -213,7 +213,10 @@ class CreateAgentTaskTool extends AbstractAgentTool
             'next_run_at' => $parameters['next_run_at'] ?? now(),
             'enabled' => array_key_exists('enabled', $parameters) ? (bool) $parameters['enabled'] : true,
             'max_attempts' => isset($parameters['max_attempts']) ? (int) $parameters['max_attempts'] : 3,
-            'metadata' => $parameters['metadata'] ?? null,
+            'metadata' => [
+                ...($parameters['metadata'] ?? []),
+                'profile_metadata' => is_array($profile?->metadata) ? $profile->metadata : [],
+            ],
         ]);
 
         return [

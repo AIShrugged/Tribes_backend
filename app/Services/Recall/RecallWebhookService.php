@@ -40,6 +40,6 @@ class RecallWebhookService
         /** @var RecallPayloadInterface $event['payload'] */
         $payload = $event['payload']::fromArray($data['data']);
 
-        (new $event['handler'])->handle($payload);
+        app($event['handler'])->handle($payload);
     }
 }

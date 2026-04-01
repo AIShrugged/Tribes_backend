@@ -4,10 +4,10 @@ namespace App\Services;
 
 use App\Enums\AgentScheduleType;
 use App\Enums\AgentTaskExecutionMode;
-use App\Models\Issue;
 use App\Models\AgentProfile;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Models\Issue;
 use App\Models\User;
 
 class IssueAgentService
@@ -44,6 +44,8 @@ class IssueAgentService
     private function createTask(Issue $issue, User $user, ?int $agentProfileId): AgentTask
     {
         $prompt = $this->buildPrompt($issue);
+        $resolvedAgentProfileId = $issue->effectiveAgentProfileId($agentProfileId);
+        $profile = $resolvedAgentProfileId ? AgentProfile::query()->find($resolvedAgentProfileId) : null;
 
         return AgentTask::create([
             'user_id'          => $user->id,
@@ -51,13 +53,50 @@ class IssueAgentService
             'team_id'          => $issue->team_id,
             'name'             => "Issue #{$issue->id}: {$issue->name}",
             'prompt'           => $prompt,
-            'agent_profile_id' => $agentProfileId,
+            'agent_profile_id' => $resolvedAgentProfileId,
             'schedule_type'    => AgentScheduleType::ONE_OFF->value,
-            'execution_mode'   => AgentTaskExecutionMode::INLINE->value,
+            'execution_mode'   => $resolvedAgentProfileId ? null : AgentTaskExecutionMode::INLINE->value,
             'agent_task_type'  => 'background',
             'enabled'          => true,
             'next_run_at'      => now(),
+            'input_payload'    => $this->buildInputPayload($issue, $profile),
+            'metadata'         => $this->buildTaskMetadata($profile),
         ]);
+    }
+
+    private function buildInputPayload(Issue $issue, ?AgentProfile $profile): array
+    {
+        $payload = [
+            'issue_id' => $issue->id,
+            'issue_type' => $issue->type,
+            'organization_id' => $issue->organization_id,
+            'team_id' => $issue->team_id,
+        ];
+
+        if ($profile && is_array($profile->metadata)) {
+            $payload['profile_metadata'] = $profile->metadata;
+        }
+
+        if ($issue->pr_number) {
+            $payload['pr_number'] = $issue->pr_number;
+        }
+
+        if ($issue->pr_url) {
+            $payload['pr_url'] = $issue->pr_url;
+        }
+
+        if ($issue->pr_repository) {
+            $payload['pr_repository'] = $issue->pr_repository;
+        }
+
+        return $payload;
+    }
+
+    private function buildTaskMetadata(?AgentProfile $profile): array
+    {
+        return [
+            'profile_metadata' => is_array($profile?->metadata) ? $profile->metadata : [],
+        ];
     }
 
     private function buildPrompt(Issue $issue): string

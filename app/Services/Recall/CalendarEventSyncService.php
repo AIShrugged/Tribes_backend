@@ -13,7 +13,6 @@ use Carbon\Carbon;
 class CalendarEventSyncService
 {
     public function __construct(
-        private readonly BotSchedulingService $botSchedulingService,
         private readonly CreatorResolverService $creatorResolver,
     ) {
     }
@@ -60,11 +59,14 @@ class CalendarEventSyncService
             $source->id => ['external_id' => $eventDTO->externalId, 'required_bot' => true],
         ]);
 
-        $this->syncAttendees($calendarEvent, $attendees);
+        // syncWithoutDetaching keeps existing pivot rows as-is, so make sure
+        // an already-linked meeting is actually marked as requiring the bot.
+        $calendarEvent->sources()->updateExistingPivot($source->id, [
+            'external_id' => $eventDTO->externalId,
+            'required_bot' => true,
+        ]);
 
-        if ($calendarEvent->isRequiredBot()) {
-            $this->botSchedulingService->schedule($calendarEvent);
-        }
+        $this->syncAttendees($calendarEvent, $attendees);
 
         CalendarEventChanged::dispatch($calendarEvent);
 

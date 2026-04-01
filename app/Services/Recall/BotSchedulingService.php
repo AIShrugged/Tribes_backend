@@ -17,7 +17,10 @@ class BotSchedulingService
 
     /**
      * Schedule a bot for the calendar event.
-     * If a bot already exists for the same meeting URL, reuse it.
+     *
+     * The bot is always recreated in Recall so meeting time changes and
+     * repeated "require bot" actions refresh the live bot state instead of
+     * reusing an older one.
      */
     public function schedule(CalendarEvent $calendarEvent): void
     {
@@ -28,21 +31,15 @@ class BotSchedulingService
         ]);
 
         DB::transaction(function () use ($calendarEvent) {
-            $existingBot = Bot::where('meeting_url', $calendarEvent->url)
-                ->where('is_active', true)
-                ->first();
-
-            if ($existingBot) {
-                Log::info('BotSchedulingService: reusing existing active bot', [
+            if ($calendarEvent->bot?->is_active) {
+                Log::info('BotSchedulingService: recreating active bot', [
                     'calendar_event_id' => $calendarEvent->id,
-                    'bot_id' => $existingBot->id,
+                    'bot_id' => $calendarEvent->bot->id,
                     'meeting_url' => $calendarEvent->url,
                 ]);
 
-                $calendarEvent->bot()->associate($existingBot);
-                $calendarEvent->save();
-
-                return;
+                $this->recallBotService->removeBot($calendarEvent);
+                $calendarEvent->bot->deactivate();
             }
 
             Log::info('BotSchedulingService: creating bot via Recall', [
@@ -99,6 +96,9 @@ class BotSchedulingService
     /**
      * Handle the require/unrequire bot toggle from user.
      * Checks pivot table — bot is required if ANY participant's source requires it.
+     *
+     * When the meeting is required, the bot is recreated in Recall so the live
+     * bot always matches the current meeting time.
      */
     public function handleRequirement(CalendarEvent $calendarEvent): void
     {
@@ -119,7 +119,7 @@ class BotSchedulingService
             return;
         }
 
-        if ($anyoneRequires && !$botIsActive) {
+        if ($anyoneRequires) {
             $this->schedule($calendarEvent);
 
             return;
