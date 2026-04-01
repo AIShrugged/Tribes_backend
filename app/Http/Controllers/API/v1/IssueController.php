@@ -51,7 +51,19 @@ class IssueController extends Controller
         }
 
         if ($filters['search']) {
-            $query->where('name', 'like', '%' . $filters['search'] . '%');
+            if (ctype_digit($filters['search'])) {
+                $query->where('id', (int) $filters['search']);
+            } else {
+                $query->where('name', 'like', '%' . $filters['search'] . '%');
+            }
+        }
+
+        if ($filters['id_from']) {
+            $query->where('id', '>=', $filters['id_from']);
+        }
+
+        if ($filters['id_to']) {
+            $query->where('id', '<=', $filters['id_to']);
         }
 
         $count = (clone $query)->count();

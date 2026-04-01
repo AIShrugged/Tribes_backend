@@ -28,6 +28,8 @@ class IssueRequest extends FormRequest
                 'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at'])],
                 'order' => ['nullable', Rule::in(['asc', 'desc'])],
                 'search' => ['nullable', 'string', 'max:255'],
+                'id_from' => ['nullable', 'integer', 'min:1'],
+                'id_to' => ['nullable', 'integer', 'min:1'],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -82,6 +84,8 @@ class IssueRequest extends FormRequest
             'sort' => filled($this->input('sort')) ? $this->input('sort') : 'updated_at',
             'order' => filled($this->input('order')) ? $this->input('order') : 'desc',
             'search' => $this->input('search'),
+            'id_from' => $this->integer('id_from') ?: null,
+            'id_to' => $this->integer('id_to') ?: null,
         ];
     }
 
