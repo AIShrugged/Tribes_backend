@@ -18,14 +18,42 @@ class UpcomingAgendaService
     {
         $event->loadMissing(
             'participants.profile.user',
+            'profiles.user',
+            'sources.user',
+            'creator',
             'meetingSummary',
             'issues',
         );
 
-        $resolvedUsers = $event->participants
-            ->filter(fn ($p) => $p->profile?->user_id)
-            ->map(fn ($p) => $p->profile->user)
-            ->unique('id');
+        $resolvedUsers = collect();
+
+        // From participants with linked profiles
+        $resolvedUsers = $resolvedUsers->merge(
+            $event->participants
+                ->filter(fn ($p) => $p->profile?->user_id)
+                ->map(fn ($p) => $p->profile->user)
+        );
+
+        // From calendar_event_profile (Google Calendar attendees with profiles)
+        $resolvedUsers = $resolvedUsers->merge(
+            $event->profiles
+                ->filter(fn ($p) => $p->user_id)
+                ->map(fn ($p) => $p->user)
+        );
+
+        // From calendar sources
+        $resolvedUsers = $resolvedUsers->merge(
+            $event->sources
+                ->filter(fn ($s) => $s->user_id)
+                ->map(fn ($s) => $s->user)
+        );
+
+        // From event creator
+        if ($event->creator_user_id && $event->creator) {
+            $resolvedUsers->push($event->creator);
+        }
+
+        $resolvedUsers = $resolvedUsers->filter()->unique('id');
 
         foreach ($resolvedUsers as $user) {
             $this->generateForUser($event, $user);
