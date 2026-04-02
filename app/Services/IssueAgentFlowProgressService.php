@@ -4,20 +4,27 @@ namespace App\Services;
 
 use App\Enums\AgentScheduleType;
 use App\Enums\AgentTaskExecutionMode;
+use App\Enums\ConversationChannelType;
 use App\Enums\IssueAgentFlowStatus;
 use App\Enums\IssueAgentFlowStepKind;
 use App\Enums\IssueAgentFlowStepStatus;
+use App\Models\AgentProfile;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\Issue;
 use App\Models\IssueAgentFlow;
 use App\Models\IssueAgentFlowStep;
+use App\Services\Channel\ChannelRuntimeService;
+use App\Services\Channel\UserChannelTargetResolver;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class IssueAgentFlowProgressService
 {
     public function __construct(
         private readonly AgentTaskSchedulerService $scheduler,
+        private readonly UserChannelTargetResolver $userChannelTargetResolver,
+        private readonly ChannelRuntimeService $channelRuntimeService,
     ) {}
 
     public function handleTaskCompleted(AgentTask $task, AgentTaskRun $run): void
@@ -28,8 +35,20 @@ class IssueAgentFlowProgressService
         }
 
         try {
+            if ($step->kind === IssueAgentFlowStepKind::VALIDATION) {
+                $this->completeValidationStep($step, $run);
+
+                return;
+            }
+
             if ($step->kind === IssueAgentFlowStepKind::PLANNING) {
                 $this->completePlanningStep($step, $run);
+
+                return;
+            }
+
+            if ($step->kind === IssueAgentFlowStepKind::REVIEW) {
+                $this->completeReviewStep($step, $run);
 
                 return;
             }
@@ -40,7 +59,16 @@ class IssueAgentFlowProgressService
 
             $this->completeExecutionStep($step, $run);
         } catch (\Throwable $e) {
-            $this->markWorkflowBlocked($step, $e->getMessage(), $run->output, markStepFailed: $step->kind === IssueAgentFlowStepKind::PLANNING);
+            $this->markWorkflowBlocked(
+                $step,
+                $e->getMessage(),
+                $run->output,
+                markStepFailed: in_array($step->kind, [
+                    IssueAgentFlowStepKind::PLANNING,
+                    IssueAgentFlowStepKind::VALIDATION,
+                    IssueAgentFlowStepKind::REVIEW,
+                ], true),
+            );
         }
     }
 
@@ -71,6 +99,135 @@ class IssueAgentFlowProgressService
         });
     }
 
+    private function completeValidationStep(IssueAgentFlowStep $validationStep, AgentTaskRun $run): void
+    {
+        $result = $this->decodeJsonOutput($run->output ?? '');
+
+        if ($result === null || ($result['valid'] ?? false) === true) {
+            // valid (or unparseable — fallback to valid per risk mitigation strategy)
+            if ($result === null) {
+                Log::warning('IssueAgentFlow: validation step returned non-JSON output, treating as valid.', [
+                    'step_id' => $validationStep->id,
+                    'output' => mb_substr($run->output ?? '', 0, 500),
+                ]);
+            }
+
+            DB::transaction(function () use ($validationStep, $run): void {
+                $flow = IssueAgentFlow::query()->lockForUpdate()->find($validationStep->issue_agent_flow_id);
+                if (! $flow) {
+                    return;
+                }
+
+                $validationStep->update([
+                    'status' => IssueAgentFlowStepStatus::SUCCEEDED->value,
+                    'output' => $run->output,
+                    'finished_at' => now(),
+                    'error_message' => null,
+                ]);
+            });
+
+            $this->dispatchPlanningStep($validationStep);
+
+            return;
+        }
+
+        // valid: false — questions need answering
+        $questions = $result['questions'] ?? [];
+
+        $flow = DB::transaction(function () use ($validationStep, $run): IssueAgentFlow {
+            $flow = IssueAgentFlow::query()->lockForUpdate()->find($validationStep->issue_agent_flow_id);
+            if (! $flow) {
+                throw new \RuntimeException('Issue agent flow not found.');
+            }
+
+            $validationStep->update([
+                'status' => IssueAgentFlowStepStatus::WAITING_FOR_USER->value,
+                'output' => $run->output,
+                'finished_at' => now(),
+            ]);
+
+            $flow->update([
+                'status' => IssueAgentFlowStatus::WAITING_FOR_USER->value,
+            ]);
+
+            return $flow;
+        });
+
+        // Notify OUTSIDE the transaction to avoid holding locks during HTTP calls
+        $issue = $flow->issue()->first();
+        if ($issue && $questions !== []) {
+            $this->notifyOwnerWithQuestions($flow, $issue, $questions);
+        }
+    }
+
+    private function dispatchPlanningStep(IssueAgentFlowStep $validationStep): void
+    {
+        $planningStep = IssueAgentFlowStep::query()
+            ->where('issue_agent_flow_id', $validationStep->issue_agent_flow_id)
+            ->where('kind', IssueAgentFlowStepKind::PLANNING->value)
+            ->where('status', IssueAgentFlowStepStatus::PENDING->value)
+            ->orderBy('position')
+            ->first();
+
+        if (! $planningStep || ! $planningStep->agent_task_id) {
+            return;
+        }
+
+        $planningStep->update(['status' => IssueAgentFlowStepStatus::QUEUED->value]);
+
+        $task = AgentTask::query()->find($planningStep->agent_task_id);
+        if (! $task) {
+            return;
+        }
+
+        $run = $this->scheduler->dispatchTaskNow($task);
+        if (! $run) {
+            $flow = IssueAgentFlow::query()->find($validationStep->issue_agent_flow_id);
+            if ($flow) {
+                $flow->update([
+                    'status' => IssueAgentFlowStatus::BLOCKED->value,
+                    'last_error' => 'Failed to dispatch planning task after validation.',
+                ]);
+            }
+        }
+    }
+
+    private function notifyOwnerWithQuestions(IssueAgentFlow $flow, Issue $issue, array $questions): void
+    {
+        try {
+            $owner = $flow->user()->first();
+            if (! $owner) {
+                return;
+            }
+
+            $questionList = implode("\n", array_map(
+                static fn (string $q, int $i) => ($i + 1) . '. ' . $q,
+                $questions,
+                array_keys($questions),
+            ));
+
+            $message = "[Wanda] Задача «{$issue->name}» требует уточнений перед запуском агента:\n\n{$questionList}\n\nПожалуйста, дополни описание задачи и повтори запуск.";
+
+            $conversation = $this->userChannelTargetResolver->resolve($owner, ConversationChannelType::TELEGRAM);
+            if ($conversation) {
+                $this->channelRuntimeService->deliverToConversation($conversation, $message);
+
+                return;
+            }
+
+            // Fallback to web chat
+            $conversation = $this->userChannelTargetResolver->resolve($owner, ConversationChannelType::WEB_CHAT);
+            if ($conversation) {
+                $this->channelRuntimeService->deliverToConversation($conversation, $message);
+            }
+        } catch (\Throwable $e) {
+            Log::error('IssueAgentFlow: failed to notify owner with validation questions.', [
+                'flow_id' => $flow->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function completePlanningStep(IssueAgentFlowStep $planningStep, AgentTaskRun $run): ?IssueAgentFlow
     {
         $flow = DB::transaction(function () use ($planningStep, $run) {
@@ -92,13 +249,42 @@ class IssueAgentFlowProgressService
                 throw new \RuntimeException('Planner did not return any execution steps.');
             }
 
+            // Delete any existing execution and review steps (handles retries)
             $flow->steps()
-                ->where('kind', IssueAgentFlowStepKind::EXECUTION->value)
+                ->whereIn('kind', [
+                    IssueAgentFlowStepKind::EXECUTION->value,
+                    IssueAgentFlowStepKind::REVIEW->value,
+                ])
+                ->where('position', '>', $planningStep->position)
                 ->delete();
+
+            $planCriticProfile = AgentProfile::query()->where('key', 'plan-critic')->first();
+
+            // Positions: planning=1, review(plan)=2 (if critic exists), execution=3+
+            $executionOffset = $planningStep->position + 1;
+            $reviewStep = null;
+
+            if ($planCriticProfile) {
+                $reviewTask = $this->createReviewTask($flow, $planCriticProfile, 'plan', $run->output, $planningStep->position + 1);
+
+                $reviewStep = $flow->steps()->create([
+                    'agent_task_id' => $reviewTask->id,
+                    'position' => $planningStep->position + 1,
+                    'kind' => IssueAgentFlowStepKind::REVIEW->value,
+                    'title' => 'Review plan',
+                    'prompt' => $reviewTask->prompt,
+                    'definition' => ['kind' => 'review', 'review_kind' => 'plan'],
+                    'input_payload' => $reviewTask->input_payload,
+                    'status' => IssueAgentFlowStepStatus::QUEUED->value,
+                    'depends_on_step_id' => $planningStep->id,
+                ]);
+
+                $executionOffset = $planningStep->position + 2;
+            }
 
             $previousStep = $planningStep;
             foreach (array_values($steps) as $index => $stepDefinition) {
-                $position = $index + 1;
+                $position = $executionOffset + $index;
 
                 $createdStep = $flow->steps()->create([
                     'position' => $position,
@@ -132,9 +318,11 @@ class IssueAgentFlowProgressService
                 'error_message' => null,
             ]);
 
+            $nextPosition = $reviewStep ? $reviewStep->position : $executionOffset;
+
             $flow->update([
                 'status' => IssueAgentFlowStatus::RUNNING->value,
-                'current_step_position' => 1,
+                'current_step_position' => $nextPosition,
                 'plan_output' => $run->output,
                 'last_error' => null,
             ]);
@@ -143,7 +331,7 @@ class IssueAgentFlowProgressService
         });
 
         if ($flow) {
-            $this->dispatchNextStep($flow, 1);
+            $this->dispatchNextStep($flow, $flow->current_step_position);
         }
 
         return $flow;
@@ -171,10 +359,38 @@ class IssueAgentFlowProgressService
                 ->orderBy('position')
                 ->first();
 
-            if (! $nextStep) {
+            if ($nextStep) {
                 $flow->update([
-                    'status' => IssueAgentFlowStatus::COMPLETED->value,
-                    'current_step_position' => null,
+                    'status' => IssueAgentFlowStatus::RUNNING->value,
+                    'current_step_position' => $nextStep->position,
+                    'last_error' => null,
+                ]);
+
+                return $flow;
+            }
+
+            // No more execution steps — insert result-critic REVIEW if profile exists
+            $resultCriticProfile = AgentProfile::query()->where('key', 'result-critic')->first();
+
+            if ($resultCriticProfile) {
+                $reviewPosition = $completedStep->position + 1;
+                $reviewTask = $this->createReviewTask($flow, $resultCriticProfile, 'result', $run->output, $reviewPosition);
+
+                $flow->steps()->create([
+                    'agent_task_id' => $reviewTask->id,
+                    'position' => $reviewPosition,
+                    'kind' => IssueAgentFlowStepKind::REVIEW->value,
+                    'title' => 'Review result',
+                    'prompt' => $reviewTask->prompt,
+                    'definition' => ['kind' => 'review', 'review_kind' => 'result'],
+                    'input_payload' => $reviewTask->input_payload,
+                    'status' => IssueAgentFlowStepStatus::QUEUED->value,
+                    'depends_on_step_id' => $completedStep->id,
+                ]);
+
+                $flow->update([
+                    'status' => IssueAgentFlowStatus::RUNNING->value,
+                    'current_step_position' => $reviewPosition,
                     'last_error' => null,
                 ]);
 
@@ -182,8 +398,8 @@ class IssueAgentFlowProgressService
             }
 
             $flow->update([
-                'status' => IssueAgentFlowStatus::RUNNING->value,
-                'current_step_position' => $nextStep->position,
+                'status' => IssueAgentFlowStatus::COMPLETED->value,
+                'current_step_position' => null,
                 'last_error' => null,
             ]);
 
@@ -193,12 +409,242 @@ class IssueAgentFlowProgressService
         $this->dispatchNextStep($flow, $flow->current_step_position);
     }
 
+    private function completeReviewStep(IssueAgentFlowStep $reviewStep, AgentTaskRun $run): void
+    {
+        $definition = is_array($reviewStep->definition) ? $reviewStep->definition : [];
+        $reviewKind = $definition['review_kind'] ?? 'plan';
+
+        if ($reviewKind === 'plan') {
+            $this->completePlanReviewStep($reviewStep, $run);
+        } else {
+            $this->completeResultReviewStep($reviewStep, $run);
+        }
+    }
+
+    private function completePlanReviewStep(IssueAgentFlowStep $reviewStep, AgentTaskRun $run): void
+    {
+        $result = $this->decodeJsonOutput($run->output ?? '');
+        $approved = $result === null || ($result['approved'] ?? false) === true;
+
+        if ($result === null) {
+            Log::warning('IssueAgentFlow: plan-critic returned non-JSON output, treating as approved.', [
+                'step_id' => $reviewStep->id,
+            ]);
+        }
+
+        if ($approved) {
+            $flow = DB::transaction(function () use ($reviewStep, $run): IssueAgentFlow {
+                $flow = IssueAgentFlow::query()->lockForUpdate()->find($reviewStep->issue_agent_flow_id);
+                if (! $flow) {
+                    throw new \RuntimeException('Issue agent flow not found.');
+                }
+
+                $reviewStep->update([
+                    'status' => IssueAgentFlowStepStatus::SUCCEEDED->value,
+                    'output' => $run->output,
+                    'finished_at' => now(),
+                    'error_message' => null,
+                ]);
+
+                $firstExecution = $flow->steps()
+                    ->where('kind', IssueAgentFlowStepKind::EXECUTION->value)
+                    ->where('status', IssueAgentFlowStepStatus::PENDING->value)
+                    ->orderBy('position')
+                    ->first();
+
+                $nextPosition = $firstExecution?->position;
+
+                $flow->update([
+                    'current_step_position' => $nextPosition,
+                    'last_error' => null,
+                ]);
+
+                return $flow;
+            });
+
+            $this->dispatchNextStep($flow, $flow->current_step_position);
+
+            return;
+        }
+
+        // Not approved — check attempt count
+        $gaps = $result['gaps'] ?? [];
+        $reason = $result['reason'] ?? 'Plan rejected by critic.';
+
+        /** @var array{flow: IssueAgentFlow, retry_task: ?AgentTask} */
+        $txResult = DB::transaction(function () use ($reviewStep, $run, $gaps, $reason): array {
+            $flow = IssueAgentFlow::query()->lockForUpdate()->find($reviewStep->issue_agent_flow_id);
+            if (! $flow) {
+                throw new \RuntimeException('Issue agent flow not found.');
+            }
+
+            $reviewStep->update([
+                'status' => IssueAgentFlowStepStatus::SUCCEEDED->value,
+                'output' => $run->output,
+                'finished_at' => now(),
+                'error_message' => null,
+            ]);
+
+            $metadata = is_array($flow->metadata) ? $flow->metadata : [];
+            $attempts = (int) ($metadata['plan_critic_attempts'] ?? 0) + 1;
+            $metadata['plan_critic_attempts'] = $attempts;
+            $flow->update(['metadata' => $metadata]);
+
+            if ($attempts >= 2) {
+                Log::info('IssueAgentFlow: plan-critic rejected plan but max attempts reached, proceeding.', [
+                    'flow_id' => $flow->id,
+                    'reason' => $reason,
+                    'gaps' => $gaps,
+                ]);
+
+                $firstExecution = $flow->steps()
+                    ->where('kind', IssueAgentFlowStepKind::EXECUTION->value)
+                    ->where('status', IssueAgentFlowStepStatus::PENDING->value)
+                    ->orderBy('position')
+                    ->first();
+
+                $flow->update(['current_step_position' => $firstExecution?->position]);
+
+                return ['flow' => $flow, 'retry_task' => null];
+            }
+
+            // Retrigger planning: delete execution and current review steps, re-queue planning
+            $planningStep = $flow->steps()
+                ->where('kind', IssueAgentFlowStepKind::PLANNING->value)
+                ->orderBy('position')
+                ->first();
+
+            if ($planningStep) {
+                $flow->steps()
+                    ->whereIn('kind', [
+                        IssueAgentFlowStepKind::EXECUTION->value,
+                        IssueAgentFlowStepKind::REVIEW->value,
+                    ])
+                    ->where('position', '>', $planningStep->position)
+                    ->delete();
+
+                // Update planning prompt to include gaps feedback
+                $gapsFeedback = $gaps !== [] ? "\n\n## Feedback from plan critic\n\nThe previous plan was rejected. Issues to fix:\n- " . implode("\n- ", $gaps) : '';
+                $newPrompt = $planningStep->prompt . $gapsFeedback;
+
+                $planningTask = AgentTask::query()->find($planningStep->agent_task_id);
+                if ($planningTask) {
+                    // Create a new task with updated prompt for retry
+                    $retryTask = AgentTask::create([
+                        'user_id' => $planningTask->user_id,
+                        'organization_id' => $planningTask->organization_id,
+                        'team_id' => $planningTask->team_id,
+                        'agent_profile_id' => $planningTask->agent_profile_id,
+                        'name' => $planningTask->name . ' (retry)',
+                        'prompt' => $newPrompt,
+                        'schedule_type' => AgentScheduleType::ONE_OFF->value,
+                        'execution_mode' => $planningTask->execution_mode,
+                        'agent_task_type' => 'background',
+                        'output_mode' => 'plain',
+                        'allowed_tools' => [],
+                        'allowed_outbound_hosts' => [],
+                        'enabled' => true,
+                        'max_attempts' => 3,
+                        'next_run_at' => now(),
+                        'input_payload' => $planningTask->input_payload,
+                        'metadata' => $planningTask->metadata,
+                    ]);
+
+                    $planningStep->update([
+                        'agent_task_id' => $retryTask->id,
+                        'status' => IssueAgentFlowStepStatus::QUEUED->value,
+                        'output' => null,
+                        'error_message' => null,
+                        'finished_at' => null,
+                        'prompt' => $newPrompt,
+                    ]);
+
+                    $flow->update([
+                        'status' => IssueAgentFlowStatus::PLANNING->value,
+                        'current_step_position' => $planningStep->position,
+                        'plan_output' => null,
+                    ]);
+
+                    return ['flow' => $flow, 'retry_task' => $retryTask];
+                }
+            }
+
+            // Fallback: proceed to execution
+            $firstExecution = $flow->steps()
+                ->where('kind', IssueAgentFlowStepKind::EXECUTION->value)
+                ->where('status', IssueAgentFlowStepStatus::PENDING->value)
+                ->orderBy('position')
+                ->first();
+
+            $flow->update(['current_step_position' => $firstExecution?->position]);
+
+            return ['flow' => $flow, 'retry_task' => null];
+        });
+
+        $flow = $txResult['flow'];
+        $retryTask = $txResult['retry_task'];
+
+        if ($retryTask) {
+            // Dispatch the replanning task directly — dispatchNextStep cannot handle PLANNING steps
+            $this->scheduler->dispatchTaskNow($retryTask);
+        } else {
+            $this->dispatchNextStep($flow, $flow->current_step_position);
+        }
+    }
+
+    private function completeResultReviewStep(IssueAgentFlowStep $reviewStep, AgentTaskRun $run): void
+    {
+        DB::transaction(function () use ($reviewStep, $run): void {
+            $flow = IssueAgentFlow::query()->lockForUpdate()->find($reviewStep->issue_agent_flow_id);
+            if (! $flow) {
+                return;
+            }
+
+            $reviewStep->update([
+                'status' => IssueAgentFlowStepStatus::SUCCEEDED->value,
+                'output' => $run->output,
+                'finished_at' => now(),
+                'error_message' => null,
+            ]);
+
+            $flow->update([
+                'status' => IssueAgentFlowStatus::COMPLETED->value,
+                'current_step_position' => null,
+                'last_error' => null,
+            ]);
+        });
+        // result-critic notifies the owner via send_user_message tool in its own execution
+    }
+
     private function dispatchNextStep(IssueAgentFlow $flow, ?int $position): void
     {
         if ($position === null) {
             return;
         }
 
+        // First check for a REVIEW step at this position
+        $reviewStep = $flow->steps()
+            ->where('position', $position)
+            ->where('kind', IssueAgentFlowStepKind::REVIEW->value)
+            ->where('status', IssueAgentFlowStepStatus::QUEUED->value)
+            ->first();
+
+        if ($reviewStep && $reviewStep->agent_task_id) {
+            $task = AgentTask::query()->find($reviewStep->agent_task_id);
+            if ($task) {
+                $run = $this->scheduler->dispatchTaskNow($task);
+                if (! $run) {
+                    $flow->update([
+                        'status' => IssueAgentFlowStatus::BLOCKED->value,
+                        'last_error' => 'Failed to dispatch review task.',
+                    ]);
+                }
+            }
+
+            return;
+        }
+
+        // Otherwise look for an EXECUTION step
         $step = $flow->steps()
             ->where('position', $position)
             ->where('kind', IssueAgentFlowStepKind::EXECUTION->value)
@@ -232,6 +678,142 @@ class IssueAgentFlowProgressService
 
             return;
         }
+    }
+
+    private function createReviewTask(IssueAgentFlow $flow, AgentProfile $profile, string $reviewKind, ?string $subjectOutput, int $position): AgentTask
+    {
+        $issue = $flow->issue()->first();
+        if (! $issue) {
+            throw new \RuntimeException('Issue not found for flow.');
+        }
+
+        $prompt = $reviewKind === 'plan'
+            ? $this->buildPlanReviewPrompt($issue, $subjectOutput)
+            : $this->buildResultReviewPrompt($issue, $subjectOutput);
+
+        return AgentTask::create([
+            'user_id' => $flow->user_id,
+            'organization_id' => $flow->organization_id,
+            'team_id' => $flow->team_id,
+            'agent_profile_id' => $profile->id,
+            'name' => "Issue #{$issue->id} review ({$reviewKind}) at step {$position}",
+            'prompt' => $prompt,
+            'schedule_type' => AgentScheduleType::ONE_OFF->value,
+            'agent_task_type' => 'background',
+            'output_mode' => 'plain',
+            'allowed_tools' => [],
+            'allowed_outbound_hosts' => [],
+            'enabled' => true,
+            'max_attempts' => 2,
+            'next_run_at' => now(),
+            'input_payload' => [
+                'flow' => [
+                    'issue_agent_flow_id' => $flow->id,
+                    'issue_id' => $flow->issue_id,
+                ],
+                'issue' => [
+                    'id' => $issue->id,
+                    'name' => $issue->name,
+                    'description' => $issue->description,
+                ],
+                'review_kind' => $reviewKind,
+                'subject_output' => $subjectOutput,
+            ],
+            'metadata' => [
+                'issue_agent_flow_id' => $flow->id,
+                'issue_id' => $issue->id,
+                'flow_kind' => 'review',
+                'review_kind' => $reviewKind,
+                'flow_step_position' => $position,
+            ],
+        ]);
+    }
+
+    private function buildPlanReviewPrompt(Issue $issue, ?string $planOutput): string
+    {
+        $description = $issue->description ? "\n\nОписание:\n{$issue->description}" : '';
+        $plan = $planOutput ?? '(нет)';
+
+        return <<<PROMPT
+Ты строгий критик планов (пессимист). Твоя задача — найти дыры в плане до того, как он уйдёт в исполнение.
+
+## Исходная задача
+
+- ID: {$issue->id}
+- Название: {$issue->name}{$description}
+
+## Сгенерированный план
+
+{$plan}
+
+## Что проверить
+
+1. Все ли шаги ведут к цели задачи?
+2. Нет ли пропущенных шагов (например, забытые тесты, проверки, уведомления)?
+3. Есть ли у каждого шага чёткие критерии завершения?
+4. Логичен ли порядок шагов?
+
+## Вывод
+
+Верни ТОЛЬКО JSON без пояснений:
+
+Если план приемлем:
+{"approved": true}
+
+Если есть проблемы:
+{"approved": false, "reason": "Краткое резюме проблемы", "gaps": ["Конкретная проблема 1", "Конкретная проблема 2"]}
+
+Правила:
+- Не добавляй markdown, пояснений или других ключей вне JSON.
+- Максимум 3 пункта в gaps.
+- Будь конкретным.
+PROMPT;
+    }
+
+    private function buildResultReviewPrompt(Issue $issue, ?string $executionOutput): string
+    {
+        $description = $issue->description ? "\n\nОписание:\n{$issue->description}" : '';
+        $result = $executionOutput ?? '(нет)';
+
+        return <<<PROMPT
+Ты строгий приёмщик результатов. Сравни что было сделано с тем, что требовалось.
+
+## Исходная задача
+
+- ID: {$issue->id}
+- Название: {$issue->name}{$description}
+
+## Результат исполнения
+
+{$result}
+
+## Что проверить
+
+1. Соответствует ли результат требованиям задачи?
+2. Есть ли недоделанные части?
+3. Есть ли ссылки на PR, артефакты или другие подтверждения выполнения?
+
+## Действие
+
+После оценки — отправь постановщику задачи сообщение через send_user_message (канал: telegram) с итогом.
+
+Формат сообщения:
+- Если done: «[Wanda] Задача «{название}» выполнена. {краткое резюме}»
+- Если partial: «[Wanda] Задача «{название}» выполнена частично. Не закрыто: {список}»
+- Если failed: «[Wanda] Задача «{название}» не выполнена. {причина}»
+
+## Вывод
+
+После отправки сообщения верни ТОЛЬКО JSON:
+{"verdict": "done", "summary": "..."}
+// или
+{"verdict": "partial", "summary": "...", "gaps": ["..."]}
+// или
+{"verdict": "failed", "summary": "...", "gaps": ["..."]}
+
+Правила:
+- Не добавляй markdown, пояснений или других ключей вне JSON.
+PROMPT;
     }
 
     private function createExecutionTask(IssueAgentFlow $flow, IssueAgentFlowStep $step, ?string $previousOutput): AgentTask
@@ -378,6 +960,11 @@ PROMPT;
             'goal' => trim((string) ($decoded['goal'] ?? '')),
             'steps' => $normalizedSteps,
         ];
+    }
+
+    private function decodeJsonOutput(string $output): ?array
+    {
+        return $this->decodePlannerOutput($output);
     }
 
     private function decodePlannerOutput(string $output): ?array
