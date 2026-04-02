@@ -134,10 +134,10 @@ class IssueAgentFlowProgressService
         // valid: false — questions need answering
         $questions = $result['questions'] ?? [];
 
-        DB::transaction(function () use ($validationStep, $run, $questions): void {
+        $flow = DB::transaction(function () use ($validationStep, $run): IssueAgentFlow {
             $flow = IssueAgentFlow::query()->lockForUpdate()->find($validationStep->issue_agent_flow_id);
             if (! $flow) {
-                return;
+                throw new \RuntimeException('Issue agent flow not found.');
             }
 
             $validationStep->update([
@@ -150,12 +150,14 @@ class IssueAgentFlowProgressService
                 'status' => IssueAgentFlowStatus::WAITING_FOR_USER->value,
             ]);
 
-            // Notify issue owner via Telegram
-            $issue = $flow->issue()->first();
-            if ($issue && $questions !== []) {
-                $this->notifyOwnerWithQuestions($flow, $issue, $questions);
-            }
+            return $flow;
         });
+
+        // Notify OUTSIDE the transaction to avoid holding locks during HTTP calls
+        $issue = $flow->issue()->first();
+        if ($issue && $questions !== []) {
+            $this->notifyOwnerWithQuestions($flow, $issue, $questions);
+        }
     }
 
     private function dispatchPlanningStep(IssueAgentFlowStep $validationStep): void
@@ -469,7 +471,8 @@ class IssueAgentFlowProgressService
         $gaps = $result['gaps'] ?? [];
         $reason = $result['reason'] ?? 'Plan rejected by critic.';
 
-        $flow = DB::transaction(function () use ($reviewStep, $run, $gaps, $reason): IssueAgentFlow {
+        /** @var array{flow: IssueAgentFlow, retry_task: ?AgentTask} */
+        $txResult = DB::transaction(function () use ($reviewStep, $run, $gaps, $reason): array {
             $flow = IssueAgentFlow::query()->lockForUpdate()->find($reviewStep->issue_agent_flow_id);
             if (! $flow) {
                 throw new \RuntimeException('Issue agent flow not found.');
@@ -502,7 +505,7 @@ class IssueAgentFlowProgressService
 
                 $flow->update(['current_step_position' => $firstExecution?->position]);
 
-                return $flow;
+                return ['flow' => $flow, 'retry_task' => null];
             }
 
             // Retrigger planning: delete execution and current review steps, re-queue planning
@@ -562,7 +565,7 @@ class IssueAgentFlowProgressService
                         'plan_output' => null,
                     ]);
 
-                    return $flow;
+                    return ['flow' => $flow, 'retry_task' => $retryTask];
                 }
             }
 
@@ -575,10 +578,18 @@ class IssueAgentFlowProgressService
 
             $flow->update(['current_step_position' => $firstExecution?->position]);
 
-            return $flow;
+            return ['flow' => $flow, 'retry_task' => null];
         });
 
-        $this->dispatchNextStep($flow, $flow->current_step_position);
+        $flow = $txResult['flow'];
+        $retryTask = $txResult['retry_task'];
+
+        if ($retryTask) {
+            // Dispatch the replanning task directly — dispatchNextStep cannot handle PLANNING steps
+            $this->scheduler->dispatchTaskNow($retryTask);
+        } else {
+            $this->dispatchNextStep($flow, $flow->current_step_position);
+        }
     }
 
     private function completeResultReviewStep(IssueAgentFlowStep $reviewStep, AgentTaskRun $run): void

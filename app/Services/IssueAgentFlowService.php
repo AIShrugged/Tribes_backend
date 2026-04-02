@@ -258,13 +258,47 @@ PROMPT;
             );
         }
 
-        $planningStep->update(['status' => IssueAgentFlowStepStatus::QUEUED->value]);
+        // Rebuild planning prompt and payload with updated issue description
+        $issue->refresh();
+        $newPrompt = $this->buildPlanningPrompt($issue);
+        $newPayload = $this->buildPlanningInputPayload($issue, $flow);
+
+        $planningStep->update([
+            'status' => IssueAgentFlowStepStatus::QUEUED->value,
+            'prompt' => $newPrompt,
+            'input_payload' => $newPayload,
+        ]);
+
         $flow->update(['status' => IssueAgentFlowStatus::PLANNING->value]);
 
-        $task = AgentTask::query()->find($planningStep->agent_task_id);
-        if ($task) {
-            $this->scheduler->dispatchTaskNow($task);
+        // Create a fresh planning task with updated prompt (old task has stale description)
+        $oldTask = AgentTask::query()->find($planningStep->agent_task_id);
+        if (! $oldTask) {
+            return;
         }
+
+        $freshTask = AgentTask::create([
+            'user_id' => $oldTask->user_id,
+            'organization_id' => $oldTask->organization_id,
+            'team_id' => $oldTask->team_id,
+            'agent_profile_id' => $oldTask->agent_profile_id,
+            'name' => $oldTask->name,
+            'prompt' => $newPrompt,
+            'schedule_type' => AgentScheduleType::ONE_OFF->value,
+            'execution_mode' => $oldTask->execution_mode,
+            'agent_task_type' => 'background',
+            'output_mode' => 'plain',
+            'allowed_tools' => [],
+            'allowed_outbound_hosts' => [],
+            'enabled' => true,
+            'max_attempts' => 3,
+            'next_run_at' => now(),
+            'input_payload' => $newPayload,
+            'metadata' => $oldTask->metadata,
+        ]);
+
+        $planningStep->update(['agent_task_id' => $freshTask->id]);
+        $this->scheduler->dispatchTaskNow($freshTask);
     }
 
     public function buildValidationPrompt(Issue $issue): string
