@@ -35,6 +35,7 @@ use App\Http\Controllers\API\v1\MeetingReviewController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
 use App\Http\Controllers\API\v1\InsightController;
 use App\Http\Controllers\API\v1\IssueAttachmentController;
+use App\Http\Controllers\API\v1\IssueAgentFlowController;
 use App\Http\Controllers\API\v1\IssueController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
 use App\Http\Controllers\API\v1\DashboardController;
@@ -173,6 +174,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::patch('issues/{issue}', [IssueController::class, 'update'])->name('issues.update');
         Route::delete('issues/{issue}', [IssueController::class, 'destroy'])->name('issues.destroy');
         Route::post('issues/{issue}/dispatch', [IssueController::class, 'dispatch'])->name('issues.dispatch');
+        Route::post('issues/{issue}/agent-flow/answer', [IssueAgentFlowController::class, 'answer'])->name('issues.agent-flow.answer');
         Route::post('issues/{issue}/attachments', [IssueAttachmentController::class, 'store'])->name('issues.attachments.store');
         Route::get('issues/{issue}/attachments', [IssueAttachmentController::class, 'index'])->name('issues.attachments.index');
         Route::delete('attachments/{attachment}', [IssueAttachmentController::class, 'destroy'])->name('attachments.destroy');
