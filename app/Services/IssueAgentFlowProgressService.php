@@ -701,7 +701,7 @@ class IssueAgentFlowProgressService
             'schedule_type' => AgentScheduleType::ONE_OFF->value,
             'agent_task_type' => 'background',
             'output_mode' => 'plain',
-            'allowed_tools' => is_array($profile->allowed_tools) ? $profile->allowed_tools : [],
+            'allowed_tools' => [],
             'allowed_outbound_hosts' => [],
             'enabled' => true,
             'max_attempts' => 2,
