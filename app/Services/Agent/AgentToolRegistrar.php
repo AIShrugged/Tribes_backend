@@ -35,6 +35,7 @@ use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
 use App\Services\Agent\Tools\GetMeetingSummaryTool;
 use App\Services\Agent\Tools\GetMeetingTasksTool;
 use App\Services\Agent\Tools\GetRelationshipInsightTool;
+use App\Services\Agent\Tools\GetOpenIssuesTool;
 use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetUserInfoTool;
@@ -131,6 +132,7 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetUserInsightsTool);
         $toolRegistry->register(new GetInsightProfileHistoryTool);
         $toolRegistry->register(new GetTeamMembersTool);
+        $toolRegistry->register(new GetOpenIssuesTool);
         $toolRegistry->register(new GetRelationshipInsightTool);
         $toolRegistry->register(new GetUserShortTermMemoryTool);
         $toolRegistry->register(new GetTranscriptTool);
