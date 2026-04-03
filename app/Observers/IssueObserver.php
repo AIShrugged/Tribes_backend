@@ -37,11 +37,20 @@ class IssueObserver
             return;
         }
 
-        if ($issue->status !== MeetingTaskStatus::REOPEN->value) {
-            return;
-        }
+        $oldStatus = $issue->getOriginal('status');
+        $newStatus = $issue->status;
 
-        $this->handleReopen($issue);
+        // Universal status-change log: covers every transition, including 'reviewed'.
+        Log::info('Issue status changed', [
+            'issue_id'   => $issue->id,
+            'old_status' => $oldStatus,
+            'new_status' => $newStatus,
+            'changed_at' => now()->toIso8601String(),
+        ]);
+
+        if ($issue->status === MeetingTaskStatus::REOPEN->value) {
+            $this->handleReopen($issue);
+        }
     }
 
     private function handleReopen(Issue $issue): void
