@@ -18,6 +18,24 @@ from runtime_state import SandboxRuntimeState
 
 STATE = SandboxRuntimeState()
 
+# Workspace-related tool names that indicate local_tools should be available
+_WORKSPACE_TOOL_INDICATORS = {
+    "read_workspace_file", "search_workspace_files", "list_workspace_files",
+    "write_workspace_file", "delete_workspace_file", "copy_workspace_file",
+    "move_workspace_file", "create_workspace_directory",
+    "workspace_run_command", "workspace_run_tests", "workspace_detect_project",
+}
+
+
+def should_include_local_tools(payload: dict[str, Any]) -> bool:
+    """Check if local workspace tools should be available based on allowed_tools."""
+    allowed = (payload.get("task", {}) or {}).get("allowed_tools")
+    if allowed is None:
+        return True  # no restriction — include everything
+    if not isinstance(allowed, list):
+        return True
+    return bool(_WORKSPACE_TOOL_INDICATORS & set(allowed))
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -135,6 +153,33 @@ def install_network_guard(network_policy: dict[str, Any]) -> None:
     socket.create_connection = guarded_create_connection
 
 
+def _build_local_tools_section(payload: dict[str, Any], workspaces: list) -> str:
+    if not should_include_local_tools(payload):
+        return ""
+    return (
+        "Local sandbox tools available to you:\n"
+        "```json\n"
+        f"{json.dumps(local_tools(), ensure_ascii=False, indent=2)}\n"
+        "```\n\n"
+        "Materialized workspaces available locally inside the sandbox:\n"
+        "```json\n"
+        f"{json.dumps(workspaces, ensure_ascii=False, indent=2)}\n"
+        "```"
+    )
+
+
+def _build_workspace_rules(payload: dict[str, Any]) -> str:
+    if not should_include_local_tools(payload):
+        return ""
+    return (
+        "- Prefer `workspace_detect_project` before choosing install/test commands.\n"
+        "- Prefer `workspace_run_tests` over ad-hoc shell commands when your goal is to execute a project's test suite.\n"
+        "- Acquire the source material you need before local execution in `/workspace`.\n"
+        "- Materialized user workspaces are mounted under `/workspace/synced-workspaces/<workspace_id>`.\n"
+        "- If you edit files locally inside a materialized workspace, those changes will be synchronized back after the run for writable workspaces."
+    )
+
+
 def build_agent_system_prompt(payload: dict[str, Any]) -> str:
     profile = payload.get("agent_profile", {}) or {}
     task = payload.get("task", {}) or {}
@@ -173,15 +218,7 @@ Tools available through the host gateway:
 {json.dumps(payload.get("tools", []), ensure_ascii=False, indent=2)}
 ```
 
-Local sandbox tools available to you:
-```json
-{json.dumps(local_tools(), ensure_ascii=False, indent=2)}
-```
-
-Materialized workspaces available locally inside the sandbox:
-```json
-{json.dumps(workspaces, ensure_ascii=False, indent=2)}
-```
+{_build_local_tools_section(payload, workspaces)}
 
 Follow-up task policy:
 ```json
@@ -190,11 +227,7 @@ Follow-up task policy:
 
 Rules:
 - Use tools when needed to inspect data and verify facts.
-- Prefer `workspace_detect_project` before choosing install/test commands.
-- Prefer `workspace_run_tests` over ad-hoc shell commands when your goal is to execute a project's test suite.
-- Acquire the source material you need before local execution in `/workspace`.
-- Materialized user workspaces are mounted under `/workspace/synced-workspaces/<workspace_id>`.
-- If you edit files locally inside a materialized workspace, those changes will be synchronized back after the run for writable workspaces.
+{_build_workspace_rules(payload)}
 - Keep each run focused on one bounded deliverable with minimal context growth.
 - If the next step is logically separate, delayed, requires user notification, needs PR creation, or would make this run sprawl, create a small follow-up task instead of overloading the current run.
 - When creating a follow-up task, pass a concise `context_summary` so the next run can continue without rereading everything.
@@ -366,7 +399,9 @@ def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[st
         for function in [tool.get("function", {}) or {}]
         if isinstance(function.get("name"), str)
     ]
-    tool_names.extend(list(local_tool_names()))
+    include_local = should_include_local_tools(payload)
+    if include_local:
+        tool_names.extend(list(local_tool_names()))
     prompt_text = str(task.get("prompt") or "")
     requires_tests = "test" in prompt_text.lower()
     last_assistant_content: str | None = None
@@ -376,7 +411,7 @@ def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[st
         STATE.add_finding("Task requested tests, but no obvious test-execution capability is available.")
 
     for _ in range(max_iterations):
-        assistant_message = call_llm(gateway, messages, system_prompt, extra_tools=local_tools())
+        assistant_message = call_llm(gateway, messages, system_prompt, extra_tools=local_tools() if include_local else [])
         messages.append(assistant_message)
         tool_calls = assistant_message.get("tool_calls") or []
         if isinstance(tool_calls, list) and tool_calls:
@@ -391,7 +426,7 @@ def run_agent_mode(payload: dict[str, Any], args: argparse.Namespace) -> dict[st
                 except Exception:
                     arguments = {}
                 try:
-                    tool_result = execute_local_tool(STATE, tool_name, arguments) if isinstance(tool_name, str) and tool_name in local_tool_names() else execute_host_tool(gateway, tool_name, arguments)
+                    tool_result = execute_local_tool(STATE, tool_name, arguments) if (include_local and isinstance(tool_name, str) and tool_name in local_tool_names()) else execute_host_tool(gateway, tool_name, arguments)
                 except Exception as exc:
                     STATE.log(f"Tool '{tool_name}' failed with error: {exc}")
                     STATE.record_action(

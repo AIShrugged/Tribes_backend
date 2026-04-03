@@ -975,6 +975,24 @@ PROMPT;
         if ($trimmed !== '') {
             $candidates[] = $this->stripJsonCodeFence($trimmed);
             $candidates[] = $this->extractJsonObject($trimmed);
+
+            // Handle sandbox runner prefix: "Agent returned a non-standard final response: {json}\nCompleted..."
+            // Strip known prefixes first, then extract JSON with balanced-brace matching.
+            $prefixes = [
+                'Agent returned a non-standard final response: ',
+                'Agent returned a non-normalizable final response: ',
+            ];
+            foreach ($prefixes as $prefix) {
+                if (str_starts_with($trimmed, $prefix)) {
+                    $afterPrefix = substr($trimmed, strlen($prefix));
+                    $candidates[] = trim($afterPrefix);
+                    $candidates[] = $this->extractJsonObject($afterPrefix);
+                    $candidates[] = $this->extractBalancedJson($afterPrefix);
+                }
+            }
+
+            // Also try balanced extraction on the full output (handles nested JSON better)
+            $candidates[] = $this->extractBalancedJson($trimmed);
         }
 
         foreach ($candidates as $candidate) {
@@ -1009,6 +1027,63 @@ PROMPT;
         }
 
         return substr($output, $start, $end - $start + 1);
+    }
+
+    /**
+     * Extract a top-level JSON object by tracking balanced braces.
+     *
+     * Unlike extractJsonObject (which takes first '{' to last '}'),
+     * this finds the first '{' and walks forward counting braces,
+     * handling strings with escaped characters correctly.
+     */
+    private function extractBalancedJson(string $output): ?string
+    {
+        $start = strpos($output, '{');
+        if ($start === false) {
+            return null;
+        }
+
+        $depth = 0;
+        $inString = false;
+        $escape = false;
+        $len = strlen($output);
+
+        for ($i = $start; $i < $len; $i++) {
+            $char = $output[$i];
+
+            if ($escape) {
+                $escape = false;
+
+                continue;
+            }
+
+            if ($char === '\\') {
+                $escape = true;
+
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = ! $inString;
+
+                continue;
+            }
+
+            if ($inString) {
+                continue;
+            }
+
+            if ($char === '{') {
+                $depth++;
+            } elseif ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($output, $start, $i - $start + 1);
+                }
+            }
+        }
+
+        return null;
     }
 
     private function markWorkflowBlocked(IssueAgentFlowStep $step, string $errorMessage, ?string $output = null, bool $markStepFailed = false): void
