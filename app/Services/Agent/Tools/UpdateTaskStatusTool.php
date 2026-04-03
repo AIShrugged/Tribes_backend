@@ -4,6 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Enums\MeetingTaskStatus;
 use App\Models\Issue;
+use InvalidArgumentException;
 
 /**
  * Updates the status of an existing task.
@@ -11,7 +12,7 @@ use App\Models\Issue;
  * Example questions this tool answers:
  * - "Отметь задачу #5 как выполненную"
  * - "Mark the PR review task as done"
- * - "Переведи задачу в статус in_progress"
+ * - "Переведи задачу в статус reviewed"
  * - "Pause task #12"
  */
 class UpdateTaskStatusTool extends AbstractAgentTool
@@ -23,7 +24,7 @@ class UpdateTaskStatusTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Update the status of an existing task. Use when the user wants to mark a task as open, in_progress, paused, review, reopen, or done. Requires the task ID. Set "review" when work is complete and awaiting user review. Set "reopen" when a reviewed task needs rework.';
+        return 'Update the status of an existing task. Use when the user wants to mark a task as open, reviewed, in_progress, paused, review, reopen, or done. Requires the task ID. Set "reviewed" after a team-lead approves the task before work begins. Set "review" when work is complete and awaiting user review. Set "reopen" when a reviewed task needs rework.';
     }
 
     public function getParameters(): array
@@ -66,7 +67,14 @@ class UpdateTaskStatusTool extends AbstractAgentTool
             return ['success' => false, 'error' => "Invalid status: {$status}. Valid values: " . implode(', ', $validStatuses)];
         }
 
+        // Enforce the transition map: open→in_progress is blocked; must go open→reviewed→in_progress.
         $oldStatus = $issue->status;
+        try {
+            MeetingTaskStatus::assertCanTransitionTo($oldStatus, $status);
+        } catch (InvalidArgumentException $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+
         $issue->update(['status' => $status]);
 
         return [
