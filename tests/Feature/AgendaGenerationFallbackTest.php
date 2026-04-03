@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
+use App\Models\Issue;
+use App\Models\Methodology;
 use App\Models\MeetingAgenda;
 use App\Models\Organization;
 use App\Models\Source;
@@ -77,18 +79,85 @@ class AgendaGenerationFallbackTest extends TestCase
 
         $this->assertSame(AgendaStatus::DONE, $agenda->status);
         $this->assertSame([
-            'google/gemini-3-pro-preview',
+            'google/gemini-3.1-pro-preview',
             $fallbackModel,
         ], $modelsCalled);
         $this->assertNotEmpty($agenda->raw_json);
         $this->assertNotEmpty($agenda->content);
     }
 
+    #[Test]
+    public function agenda_generation_excludes_soft_deleted_team_tasks_from_prompt(): void
+    {
+        $prompts = [];
+
+        Http::fake(function (Request $request) use (&$prompts) {
+            $messages = $request->data()['messages'] ?? [];
+            $prompts[] = collect($messages)
+                ->pluck('content')
+                ->filter()
+                ->implode("\n\n");
+
+            return Http::response([
+                'choices' => [[
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => json_encode([
+                            'previous_meeting_recap' => null,
+                            'topics_to_discuss' => ['Topic 1'],
+                            'team_tasks_overview' => 'Mocked overview',
+                        ], JSON_UNESCAPED_UNICODE),
+                    ],
+                    'finish_reason' => 'stop',
+                ]],
+            ], 200);
+        });
+
+        [$user, $event, $organization, $team] = $this->makeEventWithTeam();
+
+        $activeIssue = Issue::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Visible agenda task',
+            'type' => 'organization',
+            'status' => 'open',
+        ]);
+
+        $deletedIssue = Issue::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'name' => 'Deleted agenda task',
+            'type' => 'organization',
+            'status' => 'open',
+        ]);
+        $deletedIssue->delete();
+
+        $service = $this->app->make(AgendaService::class);
+        $service->generateForEvent($event);
+
+        $prompt = collect($prompts)->first();
+
+        $this->assertNotNull($prompt);
+        $this->assertStringContainsString('Visible agenda task', $prompt);
+        $this->assertStringNotContainsString('Deleted agenda task', $prompt);
+        $this->assertSoftDeleted('issues', ['id' => $deletedIssue->id]);
+    }
+
     /**
-     * @return array{0: User, 1: CalendarEvent}
+     * @return array{0: User, 1: CalendarEvent, 2: Organization, 3: Team}
      */
     private function makeEventWithTeam(): array
     {
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create([
+                'name' => 'Default Methodology',
+                'text' => 'Default methodology text',
+                'scheme' => '{}',
+                'is_default' => true,
+            ]);
+
         $organization = Organization::create([
             'name' => 'Test Organization',
             'slug' => 'test-org',
@@ -101,6 +170,7 @@ class AgendaGenerationFallbackTest extends TestCase
             'name' => 'Test Team',
             'slug' => 'test-team',
             'organization_id' => $organization->id,
+            'methodology_id' => $methodology->id,
         ]);
         $team->users()->attach($user);
 
@@ -123,6 +193,6 @@ class AgendaGenerationFallbackTest extends TestCase
             'required_bot' => false,
         ]);
 
-        return [$user, $event];
+        return [$user, $event, $organization, $team];
     }
 }

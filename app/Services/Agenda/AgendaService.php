@@ -30,7 +30,7 @@ class AgendaService
 
         $teamIds = $event->source->user->teams->pluck('id');
         $issues = $teamIds->isNotEmpty()
-            ? Issue::whereIn('team_id', $teamIds)->get()
+            ? Issue::query()->withoutTrashed()->whereIn('team_id', $teamIds)->get()
             : collect();
 
         $this->generateGeneralAgenda($event, $previousEvent, $previousSummary, $issues);

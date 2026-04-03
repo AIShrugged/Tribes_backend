@@ -74,6 +74,7 @@ class UpcomingAgendaService
 
         try {
             $userIssues = Issue::query()
+                ->withoutTrashed()
                 ->where('assignee_id', $user->id)
                 ->whereIn('status', ['open', 'in_progress'])
                 ->orderBy('due_date')

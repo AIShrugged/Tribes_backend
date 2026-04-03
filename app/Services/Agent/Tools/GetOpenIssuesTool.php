@@ -77,7 +77,7 @@ class GetOpenIssuesTool extends AbstractAgentTool
         $statusesRaw = $parameters['statuses'] ?? 'open,in_progress';
         $statuses    = array_filter(array_map('trim', explode(',', $statusesRaw)));
 
-        $query = Issue::query()->whereNull('deleted_at');
+        $query = Issue::query()->withoutTrashed();
 
         $query->whereIn('status', $statuses);
 
