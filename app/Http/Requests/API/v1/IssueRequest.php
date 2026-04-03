@@ -12,7 +12,7 @@ class IssueRequest extends FormRequest
 {
     use PaginatedRequestTrait;
 
-    private const VALID_STATUSES = ['open', 'in_progress', 'paused', 'review', 'reopen', 'done'];
+    private const VALID_STATUSES = ['open', 'reviewed', 'in_progress', 'paused', 'review', 'reopen', 'done'];
 
     public function rules(): array
     {
