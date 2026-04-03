@@ -440,6 +440,7 @@ class PreMeetingBriefService
     private function findUnresolvedDecisions(MeetingSummary $summary, CalendarEvent $previousEvent, int $teamId): Collection
     {
         $activeTasks = Issue::query()
+            ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->where('sourceable_id', $previousEvent->id)
             ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
@@ -447,6 +448,7 @@ class PreMeetingBriefService
             ->count();
 
         $totalTasks = Issue::query()
+            ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->where('sourceable_id', $previousEvent->id)
             ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
@@ -486,6 +488,7 @@ class PreMeetingBriefService
         }
 
         return Issue::query()
+            ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->whereIn('sourceable_id', $eventIds)
             ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
@@ -507,6 +510,7 @@ class PreMeetingBriefService
         }
 
         return Issue::query()
+            ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->whereIn('sourceable_id', $eventIds)
             ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))

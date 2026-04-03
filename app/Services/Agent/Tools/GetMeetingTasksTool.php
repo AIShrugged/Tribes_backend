@@ -75,7 +75,7 @@ class GetMeetingTasksTool extends AbstractAgentTool
         $dueBefore    = $parameters['due_before'] ?? null;
         $dueAfter     = $parameters['due_after'] ?? null;
 
-        $query = Issue::query();
+        $query = Issue::query()->withoutTrashed();
 
         if ($eventId) {
             $query->where('sourceable_type', CalendarEvent::class)
