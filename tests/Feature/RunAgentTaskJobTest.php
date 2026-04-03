@@ -21,7 +21,7 @@ class RunAgentTaskJobTest extends TestCase
         $job = new RunAgentTaskJob(1, 2, 3);
 
         $this->assertSame('agent-tasks', $job->queue);
-        $this->assertSame(1800, $job->timeout);
+        $this->assertSame(3900, $job->timeout);
     }
 
     #[Test]
@@ -60,6 +60,45 @@ class RunAgentTaskJobTest extends TestCase
         $this->assertNull($task->next_run_at);
         $this->assertNull($task->locked_at);
         $this->assertNotNull($task->last_completed_at);
+    }
+
+    #[Test]
+    public function it_does_not_execute_disabled_interval_agent_task(): void
+    {
+        $user = User::factory()->create();
+        $task = AgentTask::create([
+            'user_id' => $user->id,
+            'name' => 'Disabled recurring task',
+            'prompt' => 'Generate a status check.',
+            'schedule_type' => 'interval',
+            'interval_seconds' => 600,
+            'next_run_at' => now()->subMinute(),
+            'enabled' => false,
+            'locked_at' => now(),
+            'agent_task_type' => 'background',
+            'output_mode' => 'plain',
+            'max_attempts' => 1,
+        ]);
+
+        $run = AgentTaskRun::create([
+            'agent_task_id' => $task->id,
+            'status' => 'queued',
+            'scheduled_for' => now()->subMinute(),
+        ]);
+
+        $job = new RunAgentTaskJob($task->id, $run->id, 1);
+        $this->app->call([$job, 'handle']);
+
+        $task = $task->fresh();
+        $run = $run->fresh();
+
+        $this->assertSame('failed', $run->status->value);
+        $this->assertSame('Task was disabled before execution.', $run->error_message);
+        $this->assertNull($run->output);
+        $this->assertFalse($task->enabled);
+        $this->assertNull($task->locked_at);
+        $this->assertNull($task->last_run_at);
+        $this->assertNull($task->last_completed_at);
     }
 
     #[Test]

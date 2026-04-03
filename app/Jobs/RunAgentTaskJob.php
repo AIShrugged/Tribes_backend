@@ -55,7 +55,18 @@ class RunAgentTaskJob implements ShouldQueue
             return;
         }
 
-        if (! $task->enabled && $task->isOneOff()) {
+        if (! $task->enabled) {
+            $run->update([
+                'status' => AgentTaskRunStatus::FAILED->value,
+                'finished_at' => now(),
+                'error_message' => 'Task was disabled before execution.',
+            ]);
+
+            $task->update([
+                'locked_at' => null,
+                'last_error' => null,
+            ]);
+
             return;
         }
 
