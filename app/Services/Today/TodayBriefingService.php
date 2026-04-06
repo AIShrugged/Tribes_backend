@@ -38,7 +38,19 @@ class TodayBriefingService
         $events = $this->loadEvents($user, $date);
 
         if ($events->isEmpty()) {
-            return $this->emptyBriefing($date, 'empty');
+            // Calendar connected but no events today — still show waiting/stale tasks
+            $waitingDTOs = $this->buildWaitingOnYou($user);
+            $nudge = $this->nudgeService->getCached($user->id, $date);
+
+            return new TodayBriefingDTO(
+                state: 'active',
+                date: $date->format('Y-m-d'),
+                events: [],
+                carried_tasks: [],
+                waiting_on_you: $waitingDTOs,
+                stale: [],
+                nudge: $nudge,
+            );
         }
 
         $hasReadyMeeting = $events->contains(
