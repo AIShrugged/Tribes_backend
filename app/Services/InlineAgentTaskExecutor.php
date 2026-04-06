@@ -34,6 +34,18 @@ class InlineAgentTaskExecutor
                 taskType: AgentTaskType::from($task->agent_task_type),
                 conversationKey: 'agent-task:'.$task->id,
                 systemPromptExtension: $context['system_prompt_extension'],
+                progressCallback: function (string $stage, array $context = []) use ($run) {
+                    if ($stage === 'before_tool' && isset($context['tool'])) {
+                        $run->updateQuietly([
+                            'metadata' => [
+                                ...($run->metadata ?? []),
+                                'current_tool' => $context['tool'],
+                                'current_tool_description' => $context['description'] ?? null,
+                                'current_iteration' => $context['iteration'] ?? null,
+                            ],
+                        ]);
+                    }
+                },
             )
         );
     }

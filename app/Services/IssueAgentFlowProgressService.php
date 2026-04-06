@@ -403,6 +403,8 @@ class IssueAgentFlowProgressService
                 'last_error' => null,
             ]);
 
+            $flow->issue()->update(['status' => 'done']);
+
             return $flow;
         });
 
@@ -612,6 +614,8 @@ class IssueAgentFlowProgressService
                 'current_step_position' => null,
                 'last_error' => null,
             ]);
+
+            $flow->issue()->update(['status' => 'done']);
         });
         // result-critic notifies the owner via send_user_message tool in its own execution
     }

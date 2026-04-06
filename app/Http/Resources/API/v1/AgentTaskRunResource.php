@@ -24,6 +24,8 @@ class AgentTaskRunResource extends JsonResource
                 'sandbox' => data_get($this->metadata, 'sandbox'),
                 'tool_calls' => data_get($this->metadata, 'tool_calls', []),
                 'llm_calls' => data_get($this->metadata, 'llm_calls', []),
+                'current_tool' => data_get($this->metadata, 'current_tool'),
+                'current_tool_description' => data_get($this->metadata, 'current_tool_description'),
             ],
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

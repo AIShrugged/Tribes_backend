@@ -102,7 +102,7 @@ class IssueController extends Controller
     {
         $task = $this->findVisibleIssue($request->user(), $issue);
 
-        return ApiResponse::success(data: IssueResource::make($task->load('assignee')));
+        return ApiResponse::success(data: IssueResource::make($task->load(['assignee', 'agentTask.latestRun'])));
     }
 
     public function update(IssueRequest $request, int $issue): ApiResponse
