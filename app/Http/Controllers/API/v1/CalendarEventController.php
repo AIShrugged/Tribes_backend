@@ -23,7 +23,7 @@ class CalendarEventController extends Controller
      *
      * @subgroup Events
      * @authenticated
-     *
+     * @queryParam date string Filter events by a single day in YYYY-MM-DD format. Example: 2026-04-06
      *
      * @response 200 scenario="OK" {
      *   "success": true,
@@ -50,6 +50,13 @@ class CalendarEventController extends Controller
     public function index(CalendarEventRequest $request): ApiResponse
     {
         $calendarEvents = CalendarEvent::owned(Auth::id());
+
+        if ($request->getDate()) {
+            $calendarEvents->whereBetween('starts_at', [
+                $request->getDate()->copy()->startOfDay(),
+                $request->getDate()->copy()->endOfDay(),
+            ]);
+        }
 
         $count = $calendarEvents->count();
 
