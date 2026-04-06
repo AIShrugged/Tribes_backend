@@ -141,6 +141,7 @@ class IssueAgentFlowService
                 $issue->update([
                     'agent_task_id' => $validatorTask->id,
                     'issue_agent_flow_id' => $flow->id,
+                    'status' => 'in_progress',
                 ]);
 
                 return [$flow, $validatorTask, $validationStep];
@@ -152,6 +153,7 @@ class IssueAgentFlowService
             $issue->update([
                 'agent_task_id' => $plannerTask->id,
                 'issue_agent_flow_id' => $flow->id,
+                'status' => 'in_progress',
             ]);
 
             return [$flow, $plannerTask, $planningStep];

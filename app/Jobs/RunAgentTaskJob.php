@@ -3,8 +3,12 @@
 namespace App\Jobs;
 
 use App\Enums\AgentTaskRunStatus;
+use App\Enums\ConversationChannelType;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Models\ChannelConversation;
+use App\Models\Issue;
+use App\Services\Channel\ChannelRuntimeService;
 use App\Services\IssueAgentFlowProgressService;
 use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
@@ -119,6 +123,7 @@ class RunAgentTaskJob implements ShouldQueue
                 ]);
             }
             $this->sendTelegramNotification($task, $run, 'completed');
+            $this->deliverOutputToIssueOwner($task, $run);
             $sandboxRunWorkspaceService->cleanup($run);
         } catch (\Throwable $e) {
             $terminal = $attempt >= $this->tries();
@@ -289,6 +294,59 @@ class RunAgentTaskJob implements ShouldQueue
             Log::warning('Failed to send AgentTask Telegram notification', [
                 'agent_task_id' => $task->id,
                 'chat_id' => $task->notification_telegram_chat_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function deliverOutputToIssueOwner(AgentTask $task, AgentTaskRun $run): void
+    {
+        $output = trim((string) ($run->output ?? ''));
+        if ($output === '') {
+            return;
+        }
+
+        $issue = Issue::where('agent_task_id', $task->id)->first();
+        if (! $issue) {
+            return;
+        }
+
+        $issue->update(['status' => 'done']);
+
+        $user = $issue->user()->first();
+        if (! $user) {
+            return;
+        }
+
+        try {
+            $conversation = ChannelConversation::query()
+                ->where('channel_type', ConversationChannelType::TELEGRAM->value)
+                ->where('telegram_chat_id', '>', 0)
+                ->whereHas('identities', fn ($q) => $q->where('channel_identities.user_id', $user->id))
+                ->orderByDesc('latest_message_at')
+                ->first();
+
+            if (! $conversation) {
+                Log::info('No personal Telegram conversation for issue owner, skipping delivery', [
+                    'issue_id' => $issue->id,
+                    'user_id' => $user->id,
+                ]);
+
+                return;
+            }
+
+            $message = "📋 *Задача #{$issue->id}: {$issue->name}*\n\n{$output}";
+
+            app(ChannelRuntimeService::class)->deliverToConversation(
+                $conversation,
+                Str::limit($message, 4000),
+                null,
+                ['metadata' => ['source' => 'issue_task_completion', 'issue_id' => $issue->id]],
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Failed to deliver issue task output to owner', [
+                'issue_id' => $issue->id,
+                'user_id' => $user->id,
                 'error' => $e->getMessage(),
             ]);
         }

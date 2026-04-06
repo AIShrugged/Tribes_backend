@@ -24,9 +24,24 @@ class IssueAgentService
             return $this->flowService->start($issue, $user, $agentProfileId);
         }
 
+        if ($issue->agent_task_id) {
+            $activeRun = AgentTaskRun::query()
+                ->where('agent_task_id', $issue->agent_task_id)
+                ->whereIn('status', ['queued', 'processing'])
+                ->exists();
+
+            if ($activeRun) {
+                throw new \App\Exceptions\AppException(
+                    'Agent task is already running for this issue.',
+                    'ISSUE_AGENT_TASK_ALREADY_RUNNING',
+                    409,
+                );
+            }
+        }
+
         $task = $this->createTask($issue, $user, $agentProfileId);
 
-        $issue->update(['agent_task_id' => $task->id]);
+        $issue->update(['agent_task_id' => $task->id, 'status' => 'in_progress']);
 
         $run = $this->scheduler->dispatchTaskNow($task);
 

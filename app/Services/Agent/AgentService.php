@@ -260,9 +260,12 @@ class AgentService
                             'tool' => $toolName,
                             'args' => $toolArgs,
                         ]);
-                        $this->reportProgress($options, 'before_tool');
-
                         $tool = $this->toolRegistry->get($toolName);
+                        $this->reportProgress($options, 'before_tool', [
+                            'tool' => $toolName,
+                            'description' => $tool?->getDescription(),
+                            'iteration' => $iteration,
+                        ]);
 
                         if (! $tool) {
                             $toolResult = [
@@ -362,7 +365,7 @@ class AgentService
         return $finalAnswer;
     }
 
-    private function reportProgress(AgentRunOptions $options, string $stage): void
+    private function reportProgress(AgentRunOptions $options, string $stage, array $context = []): void
     {
         $callback = $options->progressCallback;
 
@@ -370,7 +373,7 @@ class AgentService
             return;
         }
 
-        $callback($stage);
+        $callback($stage, $context);
     }
 
     private function registerDefaultTools(User $user, ?string $channel): void

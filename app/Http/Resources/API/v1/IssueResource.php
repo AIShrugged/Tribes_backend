@@ -28,6 +28,16 @@ class IssueResource extends JsonResource
             'sourceable_type' => $this->sourceable_type,
             'sourceable_id' => $this->sourceable_id,
             'agent_task_id' => $this->agent_task_id,
+            'agent_task_run' => $this->when($this->relationLoaded('agentTask') && $this->agentTask, function () {
+                $run = $this->agentTask->relationLoaded('latestRun') ? $this->agentTask->latestRun : null;
+
+                return $run ? [
+                    'id' => $run->id,
+                    'status' => $run->status?->value ?? $run->status,
+                    'current_tool' => data_get($run->metadata, 'current_tool'),
+                    'current_tool_description' => data_get($run->metadata, 'current_tool_description'),
+                ] : null;
+            }),
             'agent_flow_id' => $this->issue_agent_flow_id,
             'agent_flow' => $this->whenLoaded('agentFlow', fn () => IssueAgentFlowResource::make($this->agentFlow)),
             'assignee_id' => $this->assignee_id,
