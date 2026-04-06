@@ -39,17 +39,14 @@ class TodayBriefingService
 
         if ($events->isEmpty()) {
             // Calendar connected but no events today — still show waiting/stale tasks
-            $waitingDTOs = $this->buildWaitingOnYou($user);
-            $nudge = $this->nudgeService->getCached($user->id, $date);
-
             return new TodayBriefingDTO(
                 state: 'active',
                 date: $date->format('Y-m-d'),
                 events: [],
                 carried_tasks: [],
-                waiting_on_you: $waitingDTOs,
-                stale: [],
-                nudge: $nudge,
+                waiting_on_you: $this->buildWaitingOnYou($user),
+                stale: $this->buildStaleForUser($user),
+                nudge: $this->nudgeService->getCached($user->id, $date),
             );
         }
 
@@ -230,6 +227,43 @@ class TodayBriefingService
                 source_meeting_title: $sourceEvent instanceof CalendarEvent ? ($sourceEvent->title ?? null) : null,
             );
         })->values()->all();
+    }
+
+    private function buildStaleForUser(User $user): array
+    {
+        $userEventIds = CalendarEvent::owned($user->id)->pluck('id');
+
+        if ($userEventIds->isEmpty()) {
+            return [];
+        }
+
+        $openIssues = Issue::query()
+            ->withoutTrashed()
+            ->where('sourceable_type', CalendarEvent::class)
+            ->whereIn('sourceable_id', $userEventIds)
+            ->whereNotIn('status', ['done', 'cancelled'])
+            ->with(['assignee', 'sourceable'])
+            ->limit(30)
+            ->get();
+
+        if ($openIssues->isEmpty()) {
+            return [];
+        }
+
+        $syncsCounts = $this->meetingContext->batchCountSyncsSinceCreated($openIssues);
+
+        return $openIssues
+            ->filter(fn(Issue $i) => ($syncsCounts[$i->id] ?? 0) >= 2)
+            ->map(fn(Issue $i) => new TodayStaleTaskDTO(
+                id: $i->id,
+                name: $i->name,
+                assignee_name: $i->assignee?->name ?? $i->assignee_name,
+                description: $i->description,
+                syncs_since_created: $syncsCounts[$i->id] ?? 0,
+            ))
+            ->sortByDesc('syncs_since_created')
+            ->values()
+            ->all();
     }
 
     private function emptyBriefing(Carbon $date, string $state): TodayBriefingDTO
