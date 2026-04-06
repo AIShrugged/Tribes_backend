@@ -3,9 +3,11 @@
 namespace App\Services\Insight;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\InsightRelationship;
 use App\Models\Profile;
+use App\Models\User;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -46,14 +48,14 @@ class InsightRelationshipService
                 continue;
             }
 
-            $this->evolvePair($profileA, $profileB, $transcript, $event);
+            $this->evolvePair($profileA, $profileB, $transcript, $event, $event->source?->user);
         }
     }
 
     /**
      * Evolve the relationship record for a specific pair.
      */
-    public function evolvePair(Profile $profileA, Profile $profileB, string $transcript, CalendarEvent $event): void
+    public function evolvePair(Profile $profileA, Profile $profileB, string $transcript, CalendarEvent $event, ?User $user = null): void
     {
         [$idA, $idB] = InsightRelationship::sortIds($profileA->id, $profileB->id);
 
@@ -86,6 +88,19 @@ class InsightRelationshipService
                 'last_interaction_at' => now(),
             ],
         );
+
+        if ($user) {
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'insight_relationship_updated',
+                toolResult: [
+                    'profile_id_a' => $profileA->id,
+                    'profile_id_b' => $profileB->id,
+                    'category' => 'relationship',
+                    'count' => 1,
+                ],
+            );
+        }
     }
 
     /**

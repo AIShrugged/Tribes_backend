@@ -16,7 +16,7 @@ class AgentActivityLogController extends Controller
     /**
      * List agent activity globally for the authenticated user
      *
-     * Returns a list of tool actions the agent performed across all chats
+     * Returns a list of agent actions the agent performed across all chats
      * owned by the authenticated user, ordered by most recent first.
      *
      * @authenticated

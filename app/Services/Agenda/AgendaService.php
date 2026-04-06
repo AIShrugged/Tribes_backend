@@ -5,6 +5,7 @@ namespace App\Services\Agenda;
 use Carbon\Carbon;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\AgendaStatus;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
@@ -103,6 +104,16 @@ class AgendaService
                 'raw_json' => array_merge($llmData, $structuredData),
                 'content' => $this->renderGeneralContent($llmData),
             ]);
+
+            if ($event->source?->user) {
+                AgentActivityLog::recordActivity(
+                    user: $event->source->user,
+                    toolName: 'agenda_generated_general',
+                    toolResult: [
+                        'calendar_event_id' => $event->id,
+                    ],
+                );
+            }
         } catch (\Throwable $e) {
             $agenda->update(['status' => AgendaStatus::FAILED]);
             Log::error('General agenda generation failed', [
@@ -171,6 +182,15 @@ class AgendaService
                 'raw_json' => json_decode($json, true),
                 'content' => $this->renderPersonalContent(json_decode($json, true), $user),
             ]);
+
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'agenda_generated_personal',
+                toolResult: [
+                    'calendar_event_id' => $event->id,
+                    'user_id' => $user->id,
+                ],
+            );
         } catch (\Throwable $e) {
             $agenda->update(['status' => AgendaStatus::FAILED]);
             Log::error('Personal agenda generation failed', [

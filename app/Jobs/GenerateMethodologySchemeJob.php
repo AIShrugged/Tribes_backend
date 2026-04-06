@@ -3,7 +3,9 @@
 namespace App\Jobs;
 
 use App\Enums\MethodologySchemeVersion;
+use App\Models\AgentActivityLog;
 use App\Models\Methodology;
+use App\Models\User;
 use App\Services\MethodologySchemeGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -36,5 +38,19 @@ class GenerateMethodologySchemeJob implements ShouldQueue
             'scheme'         => $scheme,
             'scheme_version' => $version,
         ]);
+
+        if ($this->methodology->user_id) {
+            $user = User::find($this->methodology->user_id);
+            if ($user) {
+                AgentActivityLog::recordActivity(
+                    user: $user,
+                    toolName: 'methodology_scheme_generated',
+                    toolResult: [
+                        'methodology_id' => $this->methodology->id,
+                        'version' => $version,
+                    ],
+                );
+            }
+        }
     }
 }

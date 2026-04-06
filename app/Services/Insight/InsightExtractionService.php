@@ -5,6 +5,7 @@ namespace App\Services\Insight;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Domain\DTO\Insight\InsightExtractedDataDTO;
 use App\Models\CalendarEvent;
+use App\Models\AgentActivityLog;
 use App\Models\Channel;
 use App\Models\InsightSource;
 use App\Models\Participant;
@@ -57,7 +58,20 @@ class InsightExtractionService
             return [];
         }
 
-        return $this->persist($event, $extractedData, $profileMap);
+        $sources = $this->persist($event, $extractedData, $profileMap);
+
+        if ($sources !== [] && $event->source?->user) {
+            AgentActivityLog::recordActivity(
+                user: $event->source->user,
+                toolName: 'insight_extracted',
+                toolResult: [
+                    'count' => count($sources),
+                    'calendar_event_id' => $event->id,
+                ],
+            );
+        }
+
+        return $sources;
     }
 
     /**

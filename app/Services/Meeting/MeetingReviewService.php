@@ -5,6 +5,7 @@ namespace App\Services\Meeting;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\FollowupStatus;
 use App\Events\MeetingReviewGenerated;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\MeetingReview;
 use App\Models\Setting;
@@ -66,6 +67,17 @@ class MeetingReviewService
             ]);
 
             MeetingReviewGenerated::dispatch($review->fresh());
+
+            if ($event->source?->user) {
+                AgentActivityLog::recordActivity(
+                    user: $event->source->user,
+                    toolName: 'meeting_review_generated',
+                    toolResult: [
+                        'score' => $review->score,
+                        'event_id' => $event->id,
+                    ],
+                );
+            }
         } catch (\Throwable $e) {
             Log::error('MeetingReviewService: generation failed', [
                 'event_id' => $event->id,

@@ -5,6 +5,7 @@ namespace App\Services\Followup;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\FollowupStatus;
 use App\Services\Artifact\ArtifactSchema;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Followup;
 use App\Models\Methodology;
@@ -41,7 +42,7 @@ class FollowupService
                 'text'              => '',
             ]);
 
-            $this->generateContent($followup, $methodology);
+            $this->generateContent($followup, $methodology, $user);
 
             return $followup;
         });
@@ -67,13 +68,13 @@ class FollowupService
                 'text'              => '',
             ]);
 
-            $this->generateContent($newFollowup, $methodology);
+            $this->generateContent($newFollowup, $methodology, $user);
 
             return $newFollowup;
         });
     }
 
-    private function generateContent(Followup $followup, Methodology $methodology): void
+    private function generateContent(Followup $followup, Methodology $methodology, User $user): void
     {
         try {
             $event = $followup->calendarEvent;
@@ -106,6 +107,15 @@ class FollowupService
                 'status' => FollowupStatus::DONE->value,
                 'text'   => $json,
             ]);
+
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'followup_generated',
+                toolResult: [
+                    'followup_id' => $followup->id,
+                    'calendar_event_id' => $event->id,
+                ],
+            );
         } catch (\Throwable $e) {
             $followup->update([
                 'status' => FollowupStatus::FAILED->value,

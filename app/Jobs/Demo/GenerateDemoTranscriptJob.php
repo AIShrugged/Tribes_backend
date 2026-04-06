@@ -3,6 +3,7 @@
 namespace App\Jobs\Demo;
 
 use App\Models\CalendarEvent;
+use App\Models\AgentActivityLog;
 use App\Models\DemoGeneration;
 use App\Models\Participant;
 use App\Models\TranscriptEntry;
@@ -96,6 +97,18 @@ class GenerateDemoTranscriptJob implements ShouldQueue
                 'event_id' => $eventId,
                 'lines'    => count($transcriptLines),
             ]);
+
+            if ($generation->user) {
+                AgentActivityLog::recordActivity(
+                    user: $generation->user,
+                    toolName: 'demo_transcript_generated',
+                    toolResult: [
+                        'count' => count($transcriptLines),
+                        'demo_generation_id' => $generation->id,
+                        'event_id' => $eventId,
+                    ],
+                );
+            }
 
             // Dispatch pipeline processing for this event
             ProcessDemoEventJob::dispatch($this->generationId, $eventId);

@@ -4,10 +4,12 @@ namespace App\Services\Insight;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\InsightCategory;
+use App\Models\AgentActivityLog;
 use App\Models\InsightItem;
 use App\Models\InsightProfile;
 use App\Models\InsightProfileHistory;
 use App\Models\InsightSource;
+use App\Models\Profile;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
@@ -34,9 +36,10 @@ class InsightEvolutionService
         }
 
         $byCategory = $newItems->groupBy(fn($item) => $item->category->value);
+        $user = Profile::find($source->profile_id)?->user;
 
         foreach ($byCategory as $category => $items) {
-            $this->evolveCategory($source->profile_id, $category, $items->pluck('fact')->toArray());
+            $this->evolveCategory($source->profile_id, $category, $items->pluck('fact')->toArray(), $user);
         }
     }
 
@@ -45,7 +48,7 @@ class InsightEvolutionService
      *
      * @param  string[]  $newFacts
      */
-    public function evolveCategory(int $profileId, string $category, array $newFacts): void
+    public function evolveCategory(int $profileId, string $category, array $newFacts, ?\App\Models\User $user = null): void
     {
         if (empty($newFacts)) {
             return;
@@ -80,6 +83,18 @@ class InsightEvolutionService
             'source_count'    => $profile->source_count + 1,
             'last_updated_at' => now(),
         ]);
+
+        if ($user) {
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'insight_evolved',
+                toolResult: [
+                    'profile_id' => $profileId,
+                    'category' => $category,
+                    'count' => count($newFacts),
+                ],
+            );
+        }
     }
 
     /**

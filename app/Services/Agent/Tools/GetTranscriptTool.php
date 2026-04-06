@@ -2,6 +2,7 @@
 
 namespace App\Services\Agent\Tools;
 
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
@@ -71,7 +72,7 @@ class GetTranscriptTool extends AbstractAgentTool
             ];
         }
 
-        $event = CalendarEvent::with(['participants.profile', 'transcriptEntries.participant.profile'])->find($calendarEventId);
+        $event = CalendarEvent::with(['source.user', 'participants.profile', 'transcriptEntries.participant.profile'])->find($calendarEventId);
 
         if (! $event) {
             return [
@@ -168,6 +169,18 @@ PROMPT;
                 model: self::SUB_AGENT_MODEL,
                 maxTokens: 4096,
             );
+
+            if ($event->source?->user) {
+                AgentActivityLog::recordActivity(
+                    user: $event->source->user,
+                    toolName: 'transcript_analyzed',
+                    toolResult: [
+                        'count' => $entriesCount,
+                        'event_id' => $eventMeta['id'],
+                        'question_length' => mb_strlen($actualQuestion),
+                    ],
+                );
+            }
 
             return [
                 'success' => true,

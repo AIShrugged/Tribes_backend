@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\AgentTaskType;
+use App\Models\AgentActivityLog;
 use App\Models\AgentTaskRun;
 use App\Services\Agent\AgentModelRouter;
 use Illuminate\Support\Arr;
@@ -75,6 +76,17 @@ class SandboxLlmGatewayService
                 'llm_calls' => $llmCalls,
             ],
         ]);
+
+        AgentActivityLog::recordActivity(
+            user: $user,
+            toolName: 'sandbox_llm_completion',
+            toolResult: [
+                'count' => count($messages),
+                'model' => $model,
+                'tools_count' => count($tools),
+                'finish_reason' => $response['choices'][0]['finish_reason'] ?? null,
+            ],
+        );
 
         return [
             'success' => true,

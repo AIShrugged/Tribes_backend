@@ -4,6 +4,7 @@ namespace App\Services\Agenda;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\AgendaStatus;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\Setting;
@@ -100,6 +101,15 @@ class UpcomingAgendaService
                 'raw_json' => $data,
                 'content' => $this->renderContent($data, $event),
             ]);
+
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'upcoming_agenda_generated',
+                toolResult: [
+                    'calendar_event_id' => $event->id,
+                    'user_id' => $user->id,
+                ],
+            );
         } catch (\Throwable $e) {
             $agenda->update(['status' => AgendaStatus::FAILED->value]);
             Log::error('Upcoming agenda generation failed', [

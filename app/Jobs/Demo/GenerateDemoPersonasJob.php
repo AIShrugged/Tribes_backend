@@ -3,6 +3,7 @@
 namespace App\Jobs\Demo;
 
 use App\Models\DemoGeneration;
+use App\Models\AgentActivityLog;
 use App\Models\User;
 use App\Services\Demo\DemoPersonaGeneratorService;
 use Illuminate\Bus\Queueable;
@@ -65,6 +66,18 @@ class GenerateDemoPersonasJob implements ShouldQueue
             unset($teamData);
 
             $generation->update(['data' => $data]);
+
+            if ($generation->user) {
+                $totalPersonas = collect($data['teams'] ?? [])->sum(fn ($teamData) => count($teamData['personas'] ?? []));
+                AgentActivityLog::recordActivity(
+                    user: $generation->user,
+                    toolName: 'demo_personas_generated',
+                    toolResult: [
+                        'count' => $totalPersonas,
+                        'demo_generation_id' => $generation->id,
+                    ],
+                );
+            }
 
             // Collect all event IDs in order across all teams
             $allEvents = [];

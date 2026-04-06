@@ -5,6 +5,7 @@ namespace App\Services\Meeting;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\FollowupStatus;
 use App\Events\MeetingSummaryGenerated;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\MeetingSummary;
 use App\Services\Followup\TranscriptBuilderService;
@@ -51,6 +52,17 @@ class MeetingSummaryService
             ]);
 
             MeetingSummaryGenerated::dispatch($summary->fresh());
+
+            if ($event->source?->user) {
+                AgentActivityLog::recordActivity(
+                    user: $event->source->user,
+                    toolName: 'meeting_summary_generated',
+                    toolResult: [
+                        'title' => $summary->title,
+                        'event_id' => $event->id,
+                    ],
+                );
+            }
         } catch (\Throwable $e) {
             Log::error('MeetingSummaryService: generation failed', ['error' => $e->getMessage()]);
             $summary->update(['status' => FollowupStatus::FAILED->value]);
