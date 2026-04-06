@@ -1,0 +1,185 @@
+<?php
+
+namespace App\Services\Today;
+
+use App\Domain\DTO\AI\MessageDTO;
+use App\Models\CalendarEvent;
+use App\Models\Issue;
+use App\Models\Source;
+use App\Models\User;
+use App\Services\Meeting\MeetingContextService;
+use App\Services\OpenRouterClient;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+
+class DailyNudgeService
+{
+    private const CACHE_PREFIX = 'today_nudge';
+
+    public function __construct(
+        private readonly MeetingContextService $meetingContext,
+    ) {}
+
+    /**
+     * Generate nudge text for a user on a given date.
+     * Called from artisan command, NOT from HTTP request.
+     */
+    public function generate(User $user, Carbon $date): ?string
+    {
+        try {
+            $context = $this->buildContext($user, $date);
+
+            if (empty($context)) {
+                return null;
+            }
+
+            $prompt = $this->buildPrompt($context);
+
+            $response = OpenRouterClient::chat(
+                messages: [new MessageDTO('user', $prompt)],
+                model: config('ai.providers.openrouter.models.today_nudge', 'google/gemini-3.1-pro-preview'),
+                maxTokens: 256,
+            );
+
+            $nudge = trim($response);
+
+            // Remove surrounding quotes if present
+            $nudge = trim($nudge, '"\'');
+
+            if (empty($nudge) || mb_strlen($nudge) > 500) {
+                return null;
+            }
+
+            $this->putCache($user->id, $date, $nudge);
+
+            return $nudge;
+        } catch (\Throwable $e) {
+            Log::warning('DailyNudgeService: failed to generate nudge', [
+                'user_id' => $user->id,
+                'date' => $date->format('Y-m-d'),
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Read cached nudge. Called from endpoint.
+     */
+    public function getCached(int $userId, Carbon $date): ?string
+    {
+        return Cache::get($this->cacheKey($userId, $date));
+    }
+
+    private function putCache(int $userId, Carbon $date, string $nudge): void
+    {
+        $ttl = $date->copy()->endOfDay()->diffInSeconds(Carbon::now());
+        $ttl = max($ttl, 60); // at least 1 minute
+
+        Cache::put($this->cacheKey($userId, $date), $nudge, $ttl);
+    }
+
+    private function cacheKey(int $userId, Carbon $date): string
+    {
+        return self::CACHE_PREFIX . ":{$userId}:{$date->format('Y-m-d')}";
+    }
+
+    private function buildContext(User $user, Carbon $date): array
+    {
+        $context = [];
+
+        // Today's events
+        $startOfDay = $date->copy()->startOfDay()->utc();
+        $endOfDay = $date->copy()->endOfDay()->utc();
+
+        $events = CalendarEvent::owned($user->id)
+            ->whereBetween('starts_at', [$startOfDay, $endOfDay])
+            ->orderBy('starts_at')
+            ->get();
+
+        if ($events->isNotEmpty()) {
+            $context['events'] = $events->map(fn(CalendarEvent $e) => $e->title)->implode(', ');
+        }
+
+        // Overdue tasks assigned to user
+        $overdue = Issue::query()
+            ->withoutTrashed()
+            ->where('assignee_id', $user->id)
+            ->whereNotIn('status', ['done', 'cancelled'])
+            ->whereNotNull('due_date')
+            ->where('due_date', '<', Carbon::today())
+            ->limit(10)
+            ->get();
+
+        if ($overdue->isNotEmpty()) {
+            $context['overdue_tasks'] = $overdue->map(function (Issue $i) {
+                $days = (int) Carbon::parse($i->due_date)->diffInDays(Carbon::today());
+                return "{$i->name} ({$days}d overdue)";
+            })->implode('; ');
+        }
+
+        // Stale tasks (from all user's events, syncs >= 2)
+        $allOpen = Issue::query()
+            ->withoutTrashed()
+            ->where('sourceable_type', CalendarEvent::class)
+            ->whereNotIn('status', ['done', 'cancelled'])
+            ->whereHas('sourceable', fn($q) => $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id)))
+            ->with('sourceable')
+            ->limit(20)
+            ->get();
+
+        $staleTasks = collect();
+        foreach ($allOpen as $issue) {
+            $syncs = $this->meetingContext->countSyncsSinceCreated($issue);
+            if ($syncs >= 2) {
+                $staleTasks->push("{$issue->name} ({$syncs} syncs without progress)");
+            }
+        }
+
+        if ($staleTasks->isNotEmpty()) {
+            $context['stale_tasks'] = $staleTasks->implode('; ');
+        }
+
+        // Waiting on user
+        $waiting = Issue::query()
+            ->withoutTrashed()
+            ->where('assignee_id', $user->id)
+            ->whereNotIn('status', ['done', 'cancelled'])
+            ->limit(10)
+            ->get();
+
+        if ($waiting->isNotEmpty()) {
+            $context['waiting_on_you'] = $waiting->count() . ' tasks assigned to you';
+        }
+
+        return $context;
+    }
+
+    private function buildPrompt(array $context): string
+    {
+        $data = '';
+
+        if (isset($context['events'])) {
+            $data .= "- Сегодняшние встречи: {$context['events']}\n";
+        }
+        if (isset($context['overdue_tasks'])) {
+            $data .= "- Просроченные задачи: {$context['overdue_tasks']}\n";
+        }
+        if (isset($context['stale_tasks'])) {
+            $data .= "- Застрявшие задачи (без прогресса >2 синков): {$context['stale_tasks']}\n";
+        }
+        if (isset($context['waiting_on_you'])) {
+            $data .= "- Задачи, ожидающие тебя: {$context['waiting_on_you']}\n";
+        }
+
+        return <<<PROMPT
+Ты — AI-ассистент руководителя. Проанализируй данные и напиши ОДНО предложение — самое важное наблюдение или совет на сегодня. Максимум 200 символов. На русском языке.
+
+Данные:
+{$data}
+Ответь только текстом предупреждения, без кавычек и форматирования.
+PROMPT;
+    }
+}

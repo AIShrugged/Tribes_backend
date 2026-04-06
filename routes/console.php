@@ -70,3 +70,9 @@ Schedule::command('agenda:send')
     ->everyFiveMinutes()
     ->name('agenda:send')
     ->withoutOverlapping();
+
+// Daily AI nudge generation for Today briefing page
+Schedule::command('today:generate-nudges')
+    ->dailyAt('06:00')
+    ->name('today:generate-nudges')
+    ->withoutOverlapping();
