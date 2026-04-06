@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\TodayBriefingRequest;
 use App\Http\Responses\ApiResponse;
+use App\Services\Today\DailyNudgeService;
 use App\Services\Today\TodayBriefingService;
 use Dedoc\Scramble\Attributes\Endpoint;
 use Dedoc\Scramble\Attributes\Group;
@@ -24,5 +25,23 @@ class TodayBriefingController extends Controller
         $briefing = $this->service->getBriefing(Auth::user(), $date);
 
         return ApiResponse::success(data: $briefing);
+    }
+
+    #[Endpoint(title: 'Generate AI nudge', description: 'Generates AI nudge for today if not cached. Returns cached nudge if available. Synchronous LLM call — may take 10-15s.')]
+    public function nudge(TodayBriefingRequest $request, DailyNudgeService $nudgeService): ApiResponse
+    {
+        $user = Auth::user();
+        $date = $request->getDate();
+
+        // Return cached if available
+        $cached = $nudgeService->getCached($user->id, $date);
+        if ($cached) {
+            return ApiResponse::success(data: ['nudge' => $cached]);
+        }
+
+        // Generate synchronously
+        $nudge = $nudgeService->generate($user, $date);
+
+        return ApiResponse::success(data: ['nudge' => $nudge]);
     }
 }

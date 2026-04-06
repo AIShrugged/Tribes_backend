@@ -10,11 +10,14 @@ use App\Domain\DTO\Today\TodayMeetingSummaryDTO;
 use App\Domain\DTO\Today\TodayMeetingTaskDTO;
 use App\Domain\DTO\Today\TodayStaleTaskDTO;
 use App\Domain\DTO\Today\TodayWaitingTaskDTO;
+use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\MeetingAgenda;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
 use App\Models\Source;
+use App\Models\UpcomingAgenda;
 use App\Models\User;
 use App\Services\Meeting\MeetingContextService;
 use Carbon\Carbon;
@@ -55,7 +58,7 @@ class TodayBriefingService
         );
         $state = $hasReadyMeeting ? 'active' : 'waiting';
 
-        $eventDTOs = $events->map(fn(CalendarEvent $e) => $this->buildEventDTO($e))->values()->all();
+        $eventDTOs = $events->map(fn(CalendarEvent $e) => $this->buildEventDTO($e, $user))->values()->all();
 
         // Collect all carried tasks across all meetings
         $allCarried = collect();
@@ -105,13 +108,22 @@ class TodayBriefingService
     {
         $startOfDay = $date->copy()->startOfDay()->utc();
         $endOfDay = $date->copy()->endOfDay()->utc();
+        $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
 
-        return CalendarEvent::owned($user->id)
+        return CalendarEvent::query()
+            ->where(function ($q) use ($user, $sourceIds) {
+                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+                if ($sourceIds->isNotEmpty()) {
+                    $q->orWhereIn('source_id', $sourceIds);
+                }
+            })
             ->whereBetween('starts_at', [$startOfDay, $endOfDay])
             ->with([
                 'meetingSummary',
                 'meetingReview',
-                'issues' => fn($q) => $q->withoutTrashed()->whereNotIn('status', ['done', 'cancelled']),
+                'issues' => fn($q) => $q->withoutTrashed()
+                    ->whereNotIn('status', ['done', 'cancelled'])
+                    ->where('assignee_id', $user->id),
                 'issues.assignee',
                 'participants',
             ])
@@ -119,7 +131,7 @@ class TodayBriefingService
             ->get();
     }
 
-    private function buildEventDTO(CalendarEvent $event): TodayEventDTO
+    private function buildEventDTO(CalendarEvent $event, User $user): TodayEventDTO
     {
         $summary = $event->meetingSummary;
         $review = $event->meetingReview;
@@ -131,6 +143,22 @@ class TodayBriefingService
             $meetingState = 'waiting';
         }
 
+        // Total/done counts for readiness bar (all user's tasks, not just open)
+        $totalTasks = Issue::withoutTrashed()
+            ->where('sourceable_type', CalendarEvent::class)
+            ->where('sourceable_id', $event->id)
+            ->where('assignee_id', $user->id)
+            ->count();
+        $doneTasks = Issue::withoutTrashed()
+            ->where('sourceable_type', CalendarEvent::class)
+            ->where('sourceable_id', $event->id)
+            ->where('assignee_id', $user->id)
+            ->where('status', 'done')
+            ->count();
+
+        // Agenda content: personal upcoming agenda for user, or general meeting agenda
+        $agendaContent = $this->loadAgendaContent($event, $user);
+
         return new TodayEventDTO(
             id: $event->id,
             title: $event->title ?? '',
@@ -138,10 +166,14 @@ class TodayBriefingService
             ends_at: $event->ends_at?->toIso8601String() ?? $event->starts_at->addHour()->toIso8601String(),
             participants_count: $event->participants->count(),
             platform: $event->platform,
+            meeting_url: $event->url,
             meeting_state: $meetingState,
             summary: $this->buildSummaryDTO($summary),
             review: $this->buildReviewDTO($review),
             tasks: $event->issues->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
+            total_tasks_count: $totalTasks,
+            done_tasks_count: $doneTasks,
+            agenda_content: $agendaContent,
         );
     }
 
@@ -171,6 +203,35 @@ class TodayBriefingService
         );
     }
 
+    private function loadAgendaContent(CalendarEvent $event, User $user): ?string
+    {
+        // 1. Try general meeting agenda (directly linked to this event)
+        $general = MeetingAgenda::query()
+            ->where('calendar_event_id', $event->id)
+            ->where('type', 'general')
+            ->where('status', AgendaStatus::DONE)
+            ->first();
+
+        if ($general && $general->content) {
+            return $general->content;
+        }
+
+        // 2. Try personal upcoming agenda — the latest one for this user.
+        //    Upcoming agenda is "preparation for next meeting" generated from a previous meeting.
+        //    Show it on the next unprocessed meeting of the day.
+        $upcoming = UpcomingAgenda::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'done')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if ($upcoming && $upcoming->content) {
+            return $upcoming->content;
+        }
+
+        return null;
+    }
+
     private function buildMeetingTaskDTO(Issue $issue): TodayMeetingTaskDTO
     {
         $isOverdue = $issue->due_date && Carbon::parse($issue->due_date)->lt(Carbon::today());
@@ -195,6 +256,7 @@ class TodayBriefingService
             id: $issue->id,
             name: $issue->name,
             status: $issue->status,
+            assignee_id: $issue->assignee_id,
             assignee_name: $issue->assignee?->name ?? $issue->assignee_name,
             source_meeting_title: $sourceEvent instanceof CalendarEvent ? ($sourceEvent->title ?? '') : '',
             source_meeting_date: $sourceEvent instanceof CalendarEvent ? $sourceEvent->starts_at->format('Y-m-d') : '',
@@ -231,7 +293,17 @@ class TodayBriefingService
 
     private function buildStaleForUser(User $user): array
     {
-        $userEventIds = CalendarEvent::owned($user->id)->pluck('id');
+        $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
+
+        // Support both pivot-based (calendar_event_source) and direct source_id linkage
+        $userEventIds = CalendarEvent::query()
+            ->where(function ($q) use ($user, $sourceIds) {
+                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+                if ($sourceIds->isNotEmpty()) {
+                    $q->orWhereIn('source_id', $sourceIds);
+                }
+            })
+            ->pluck('id');
 
         if ($userEventIds->isEmpty()) {
             return [];

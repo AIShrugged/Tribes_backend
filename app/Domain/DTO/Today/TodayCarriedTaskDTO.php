@@ -10,6 +10,7 @@ class TodayCarriedTaskDTO extends BaseDTO
         public readonly int $id,
         public readonly string $name,
         public readonly string $status,
+        public readonly ?int $assignee_id,
         public readonly ?string $assignee_name,
         public readonly string $source_meeting_title,
         public readonly string $source_meeting_date,

@@ -4,29 +4,54 @@ namespace App\Services\Today;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Models\CalendarEvent;
+use App\Models\DailyNudge;
 use App\Models\Issue;
 use App\Models\Source;
 use App\Models\User;
 use App\Services\Meeting\MeetingContextService;
 use App\Services\OpenRouterClient;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class DailyNudgeService
 {
-    private const CACHE_PREFIX = 'today_nudge';
-
     public function __construct(
         private readonly MeetingContextService $meetingContext,
     ) {}
 
     /**
+     * Get nudge for user+date. Returns from DB if fresh, null otherwise.
+     */
+    public function getCached(int $userId, Carbon $date): ?string
+    {
+        $nudge = DailyNudge::query()
+            ->where('user_id', $userId)
+            ->where('date', $date->format('Y-m-d'))
+            ->first();
+
+        if (! $nudge || $nudge->isExpired()) {
+            return null;
+        }
+
+        return $nudge->text;
+    }
+
+    /**
      * Generate nudge text for a user on a given date.
-     * Called from artisan command, NOT from HTTP request.
+     * Saves to DB. Returns cached if fresh.
      */
     public function generate(User $user, Carbon $date): ?string
     {
+        // Check DB first
+        $existing = DailyNudge::query()
+            ->where('user_id', $user->id)
+            ->where('date', $date->format('Y-m-d'))
+            ->first();
+
+        if ($existing && ! $existing->isExpired()) {
+            return $existing->text;
+        }
+
         try {
             $context = $this->buildContext($user, $date);
 
@@ -43,15 +68,13 @@ class DailyNudgeService
             );
 
             $nudge = trim($response);
-
-            // Remove surrounding quotes if present
             $nudge = trim($nudge, '"\'');
 
             if (empty($nudge) || mb_strlen($nudge) > 500) {
                 return null;
             }
 
-            $this->putCache($user->id, $date, $nudge);
+            $this->save($user->id, $date, $nudge);
 
             return $nudge;
         } catch (\Throwable $e) {
@@ -65,36 +88,33 @@ class DailyNudgeService
         }
     }
 
-    /**
-     * Read cached nudge. Called from endpoint.
-     */
-    public function getCached(int $userId, Carbon $date): ?string
+    private function save(int $userId, Carbon $date, string $text): void
     {
-        return Cache::get($this->cacheKey($userId, $date));
-    }
-
-    private function putCache(int $userId, Carbon $date, string $nudge): void
-    {
-        $ttl = $date->copy()->endOfDay()->diffInSeconds(Carbon::now());
-        $ttl = max($ttl, 60); // at least 1 minute
-
-        Cache::put($this->cacheKey($userId, $date), $nudge, $ttl);
-    }
-
-    private function cacheKey(int $userId, Carbon $date): string
-    {
-        return self::CACHE_PREFIX . ":{$userId}:{$date->format('Y-m-d')}";
+        DailyNudge::updateOrCreate(
+            ['user_id' => $userId, 'date' => $date->format('Y-m-d')],
+            [
+                'text' => $text,
+                'expires_at' => $date->copy()->endOfDay(),
+            ],
+        );
     }
 
     private function buildContext(User $user, Carbon $date): array
     {
         $context = [];
 
-        // Today's events
         $startOfDay = $date->copy()->startOfDay()->utc();
         $endOfDay = $date->copy()->endOfDay()->utc();
 
-        $events = CalendarEvent::owned($user->id)
+        $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
+
+        $events = CalendarEvent::query()
+            ->where(function ($q) use ($user, $sourceIds) {
+                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+                if ($sourceIds->isNotEmpty()) {
+                    $q->orWhereIn('source_id', $sourceIds);
+                }
+            })
             ->whereBetween('starts_at', [$startOfDay, $endOfDay])
             ->orderBy('starts_at')
             ->get();
@@ -103,7 +123,6 @@ class DailyNudgeService
             $context['events'] = $events->map(fn(CalendarEvent $e) => $e->title)->implode(', ');
         }
 
-        // Overdue tasks assigned to user
         $overdue = Issue::query()
             ->withoutTrashed()
             ->where('assignee_id', $user->id)
@@ -120,8 +139,15 @@ class DailyNudgeService
             })->implode('; ');
         }
 
-        // Stale tasks (from all user's events, syncs >= 2)
-        $userEventIds = CalendarEvent::owned($user->id)->pluck('id');
+        $userEventIds = CalendarEvent::query()
+            ->where(function ($q) use ($user, $sourceIds) {
+                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+                if ($sourceIds->isNotEmpty()) {
+                    $q->orWhereIn('source_id', $sourceIds);
+                }
+            })
+            ->pluck('id');
+
         $allOpen = $userEventIds->isEmpty() ? collect() : Issue::query()
             ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
@@ -143,7 +169,6 @@ class DailyNudgeService
             $context['stale_tasks'] = $staleTasks->implode('; ');
         }
 
-        // Waiting on user
         $waiting = Issue::query()
             ->withoutTrashed()
             ->where('assignee_id', $user->id)
