@@ -40,29 +40,68 @@ class MeetingContextService
     }
 
     /**
-     * Get open tasks (carried) from previous events in the same series.
-     * Statuses: everything except 'done' and 'cancelled'.
-     * Pattern from PreMeetingBriefService::findAllOpenTasks().
+     * Get IDs of previous events in the same series.
      */
-    public function getCarriedTasks(CalendarEvent $event): Collection
+    public function getSeriesEventIds(CalendarEvent $event): Collection
     {
-        $eventIds = CalendarEvent::query()
+        return CalendarEvent::query()
             ->where('title', $event->title)
             ->where('url', $event->url)
             ->where('starts_at', '<', $event->starts_at)
             ->pluck('id');
+    }
+
+    /**
+     * Get open tasks (carried) from previous events in the same series.
+     * Statuses: everything except 'done' and 'cancelled'.
+     * Optional teamId filter for team-scoped queries.
+     */
+    public function getCarriedTasks(CalendarEvent $event, ?int $teamId = null): Collection
+    {
+        $eventIds = $this->getSeriesEventIds($event);
 
         if ($eventIds->isEmpty()) {
             return collect();
         }
 
-        return Issue::query()
+        $query = Issue::query()
             ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->whereIn('sourceable_id', $eventIds)
             ->whereNotIn('status', ['done', 'cancelled'])
-            ->with(['assignee', 'sourceable'])
-            ->get();
+            ->with(['assignee', 'sourceable']);
+
+        if ($teamId !== null) {
+            $query->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'));
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Get tasks completed between two events in the same series.
+     */
+    public function getCompletedTasksBetween(CalendarEvent $event, CalendarEvent $previousEvent, ?int $teamId = null): Collection
+    {
+        $eventIds = $this->getSeriesEventIds($event);
+
+        if ($eventIds->isEmpty()) {
+            return collect();
+        }
+
+        $query = Issue::query()
+            ->withoutTrashed()
+            ->where('sourceable_type', CalendarEvent::class)
+            ->whereIn('sourceable_id', $eventIds)
+            ->where('status', 'done')
+            ->where('updated_at', '>=', $previousEvent->starts_at)
+            ->with('assignee');
+
+        if ($teamId !== null) {
+            $query->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'));
+        }
+
+        return $query->get();
     }
 
     /**

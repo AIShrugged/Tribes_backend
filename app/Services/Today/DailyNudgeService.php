@@ -39,7 +39,7 @@ class DailyNudgeService
             $response = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: config('ai.providers.openrouter.models.today_nudge', 'google/gemini-3.1-pro-preview'),
-                maxTokens: 256,
+                maxTokens: 1024,
             );
 
             $nudge = trim($response);
@@ -121,11 +121,12 @@ class DailyNudgeService
         }
 
         // Stale tasks (from all user's events, syncs >= 2)
-        $allOpen = Issue::query()
+        $userEventIds = CalendarEvent::owned($user->id)->pluck('id');
+        $allOpen = $userEventIds->isEmpty() ? collect() : Issue::query()
             ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
+            ->whereIn('sourceable_id', $userEventIds)
             ->whereNotIn('status', ['done', 'cancelled'])
-            ->whereHas('sourceable', fn($q) => $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id)))
             ->with('sourceable')
             ->limit(20)
             ->get();
