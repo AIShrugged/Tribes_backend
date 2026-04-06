@@ -27,6 +27,7 @@ use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SandboxToolGatewayController;
 use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
+use App\Http\Controllers\API\v1\TeamDashboardController;
 use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
@@ -185,6 +186,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
         Route::apiResource('teams', TeamController::class)
             ->except(['index']);
+        Route::get('teams/{team}/dashboard', [TeamDashboardController::class, 'show'])
+            ->name('teams.dashboard');
         Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
         Route::post('methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
 
