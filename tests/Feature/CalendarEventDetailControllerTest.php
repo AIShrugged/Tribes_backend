@@ -107,6 +107,23 @@ class CalendarEventDetailControllerTest extends TestCase
             'content' => 'Discuss architecture and DoD.',
         ]);
 
+        $anotherUser = User::factory()->create();
+        MeetingAgenda::create([
+            'calendar_event_id' => $calendarEvent->id,
+            'user_id' => $user->id,
+            'type' => 'personal',
+            'status' => 'done',
+            'content' => 'Focus on architecture decision points.',
+        ]);
+
+        MeetingAgenda::create([
+            'calendar_event_id' => $calendarEvent->id,
+            'user_id' => $anotherUser->id,
+            'type' => 'personal',
+            'status' => 'done',
+            'content' => 'This agenda should stay hidden on detail page.',
+        ]);
+
         MeetingSummary::create([
             'calendar_event_id' => $calendarEvent->id,
             'status' => 'done',
@@ -152,7 +169,10 @@ class CalendarEventDetailControllerTest extends TestCase
             ->assertJsonPath('data.review.key_insight', 'The team needs clearer role separation.')
             ->assertJsonPath('data.previous_meeting.id', $previousEvent->id)
             ->assertJsonPath('data.participants.0.name', 'Ivan')
+            ->assertJsonCount(2, 'data.agendas')
             ->assertJsonPath('data.agendas.0.type', 'general')
+            ->assertJsonPath('data.agendas.1.type', 'personal')
+            ->assertJsonPath('data.agendas.1.user_id', $user->id)
             ->assertJsonPath('data.key_takeaways.0.read_more.section', 'meeting_summary')
             ->assertJsonMissingPath('data.followup')
             ->assertJsonMissingPath('data.counts');
