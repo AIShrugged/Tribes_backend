@@ -6,8 +6,10 @@ use App\Enums\AgentScheduleType;
 use App\Enums\AgentTaskExecutionMode;
 use App\Enums\MeetingTaskStatus;
 use App\Models\AgentTask;
+use App\Models\DailyNudge;
 use App\Models\Issue;
 use App\Services\AgentTaskSchedulerService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class IssueObserver
@@ -35,6 +37,14 @@ class IssueObserver
     {
         if (! $issue->isDirty('status')) {
             return;
+        }
+
+        // Invalidate nudge when task status changes — data is now stale
+        if ($issue->assignee_id) {
+            DailyNudge::query()
+                ->where('user_id', $issue->assignee_id)
+                ->where('date', Carbon::today()->format('Y-m-d'))
+                ->delete();
         }
 
         if ($issue->status !== MeetingTaskStatus::REOPEN->value) {

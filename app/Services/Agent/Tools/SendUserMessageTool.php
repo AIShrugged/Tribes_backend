@@ -72,12 +72,17 @@ class SendUserMessageTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'Message content must not be empty.'];
         }
 
+        // Treat 0 and empty values as null — LLMs often fill optional IDs with 0/1 instead of omitting
+        $chatId = ! empty($parameters['chat_id']) ? (int) $parameters['chat_id'] : null;
+        $telegramChatId = ! empty($parameters['telegram_chat_id']) ? (int) $parameters['telegram_chat_id'] : null;
+        $messageThreadId = ! empty($parameters['message_thread_id']) ? (int) $parameters['message_thread_id'] : null;
+
         $conversation = $this->targetResolver->resolve(
             $this->user,
             $channel,
-            isset($parameters['chat_id']) ? (int) $parameters['chat_id'] : null,
-            isset($parameters['telegram_chat_id']) ? (int) $parameters['telegram_chat_id'] : null,
-            isset($parameters['message_thread_id']) ? (int) $parameters['message_thread_id'] : null,
+            $chatId,
+            $telegramChatId,
+            $messageThreadId,
         );
 
         if ($conversation === null) {

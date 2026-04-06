@@ -10,6 +10,7 @@ use App\Models\MeetingSummary;
 use App\Models\Team;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use App\Services\Meeting\MeetingContextService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -18,6 +19,9 @@ use Telegram\Bot\Api;
 
 class PreMeetingBriefService
 {
+    public function __construct(
+        private readonly MeetingContextService $meetingContext,
+    ) {}
     private const MAX_TASKS_SHOWN = 10;
     private const MAX_DESCRIPTION_LENGTH = 300;
     private const TELEGRAM_MAX_LENGTH = 4096;
@@ -465,58 +469,16 @@ class PreMeetingBriefService
 
     private function findPreviousEvent(CalendarEvent $event): ?CalendarEvent
     {
-        return CalendarEvent::query()
-            ->where('title', $event->title)
-            ->where('url', $event->url)
-            ->where('starts_at', '<', $event->starts_at)
-            ->whereHas('meetingSummary', fn($q) => $q->where('status', 'done'))
-            ->orderByDesc('starts_at')
-            ->with('meetingSummary')
-            ->first();
+        return $this->meetingContext->findPreviousEventWithSummary($event);
     }
 
     private function findAllOpenTasks(CalendarEvent $event, int $teamId): Collection
     {
-        $eventIds = CalendarEvent::query()
-            ->where('title', $event->title)
-            ->where('url', $event->url)
-            ->where('starts_at', '<', $event->starts_at)
-            ->pluck('id');
-
-        if ($eventIds->isEmpty()) {
-            return collect();
-        }
-
-        return Issue::query()
-            ->withoutTrashed()
-            ->where('sourceable_type', CalendarEvent::class)
-            ->whereIn('sourceable_id', $eventIds)
-            ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
-            ->whereNotIn('status', ['done', 'cancelled'])
-            ->with('assignee')
-            ->get();
+        return $this->meetingContext->getCarriedTasks($event, $teamId);
     }
 
     private function findTasksCompletedBetween(CalendarEvent $currentEvent, CalendarEvent $previousEvent, int $teamId): Collection
     {
-        $eventIds = CalendarEvent::query()
-            ->where('title', $currentEvent->title)
-            ->where('url', $currentEvent->url)
-            ->where('starts_at', '<', $currentEvent->starts_at)
-            ->pluck('id');
-
-        if ($eventIds->isEmpty()) {
-            return collect();
-        }
-
-        return Issue::query()
-            ->withoutTrashed()
-            ->where('sourceable_type', CalendarEvent::class)
-            ->whereIn('sourceable_id', $eventIds)
-            ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
-            ->where('status', 'done')
-            ->where('updated_at', '>=', $previousEvent->starts_at)
-            ->with('assignee')
-            ->get();
+        return $this->meetingContext->getCompletedTasksBetween($currentEvent, $previousEvent, $teamId);
     }
 }

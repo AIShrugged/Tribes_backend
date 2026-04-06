@@ -15,6 +15,7 @@ return [
                 'insight'         => 'google/gemini-3.1-pro-preview',
                 'demo'            => 'google/gemini-3.1-pro-preview',
                 'agenda'          => 'google/gemini-3.1-pro-preview',
+                'today_nudge'     => 'google/gemini-3.1-pro-preview',
             ],
             'fallback_models' => [
                 'anthropic/claude-3.5-sonnet',

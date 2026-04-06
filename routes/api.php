@@ -32,6 +32,8 @@ use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
+use App\Http\Controllers\API\v1\TodayBriefingController;
+use App\Http\Controllers\API\v1\TodayMessageController;
 use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
 use App\Http\Controllers\API\v1\MeetingReviewController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
@@ -170,6 +172,12 @@ Route::group(['prefix' => 'v1'], function () {
             ->name('me.upcoming-agenda');
         Route::get('me/latest-tasks', [UpcomingAgendaController::class, 'latestTasks'])
             ->name('me.latest-tasks');
+        Route::get('me/today', [TodayBriefingController::class, 'show'])
+            ->name('me.today');
+        Route::post('me/today/nudge', [TodayBriefingController::class, 'nudge'])
+            ->name('me.today.nudge');
+        Route::post('me/today/send-message', [TodayMessageController::class, 'send'])
+            ->name('me.today.send-message');
 
         Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
