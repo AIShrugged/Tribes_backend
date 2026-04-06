@@ -165,6 +165,14 @@ class ChatMessageController extends Controller
      *     "max_attempts": 3,
      *     "completed_at": null,
      *     "next_retry_at": null,
+     *     "metadata": {
+     *       "page_context": {
+     *         "title": "Dashboard",
+     *         "url": "https://app.example.com/dashboard",
+     *         "html": "<html>...</html>",
+     *         "text": "Dashboard Open issues"
+     *       }
+     *     },
      *     "created_at": "2026-02-10T20:01:00.000000Z"
      *   },
      *   "message": "Success",
@@ -182,6 +190,9 @@ class ChatMessageController extends Controller
     #[Endpoint(title: 'Send chat message', description: 'Send a user message to Wanda and return the queued assistant message placeholder.')]
     #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
     #[BodyParameter('content', 'Message text to send to the bot.', required: true, type: 'string', example: 'Summarise the key points from last week\'s meetings.')]
+    #[BodyParameter('page_html', 'Optional raw HTML of the current page to add to the model context.', required: false, type: 'string', example: '<html><body><h1>Dashboard</h1></body></html>')]
+    #[BodyParameter('page_title', 'Optional page title.', required: false, type: 'string', example: 'Dashboard')]
+    #[BodyParameter('page_url', 'Optional page URL.', required: false, type: 'string', example: 'https://app.example.com/dashboard')]
     #[Response(
         200,
         'Queued assistant message envelope.',
@@ -196,7 +207,8 @@ class ChatMessageController extends Controller
         $response = $this->wandaBotService->processMessage(
             Auth::user(),
             $chat,
-            $request->getMessageContent()
+            $request->getMessageContent(),
+            $request->getPageContext(),
         );
 
         return ApiResponse::success(data: ChatMessageResource::make($response));

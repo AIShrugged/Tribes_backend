@@ -13,8 +13,8 @@ class WandaBotService
         private readonly ChannelRuntimeService $runtimeService,
     ) {}
 
-    public function processMessage(User $user, Chat $chat, string $content): ChannelMessage
+    public function processMessage(User $user, Chat $chat, string $content, array $pageContext = []): ChannelMessage
     {
-        return $this->runtimeService->queueWebChatRun($user, $chat, $content);
+        return $this->runtimeService->queueWebChatRun($user, $chat, $content, $pageContext);
     }
 }

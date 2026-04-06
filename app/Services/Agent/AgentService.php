@@ -8,6 +8,7 @@ use App\Models\AgentActivityLog;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Chat\PageContextFormatter;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\OpenRouterClient;
@@ -46,6 +47,7 @@ class AgentService
     private AgentModelRouter $modelRouter;
 
     private ConversationCompactionService $compactionService;
+    private PageContextFormatter $pageContextFormatter;
 
     public function __construct(
         ToolRegistry $toolRegistry,
@@ -55,6 +57,7 @@ class AgentService
         DatabaseSchemaService $databaseSchemaService,
         AgentModelRouter $modelRouter,
         ConversationCompactionService $compactionService,
+        PageContextFormatter $pageContextFormatter,
     ) {
         $this->toolRegistry = $toolRegistry;
         $this->toolRegistrar = $toolRegistrar;
@@ -63,6 +66,7 @@ class AgentService
         $this->databaseSchemaService = $databaseSchemaService;
         $this->modelRouter = $modelRouter;
         $this->compactionService = $compactionService;
+        $this->pageContextFormatter = $pageContextFormatter;
     }
 
     /**
@@ -126,7 +130,7 @@ class AgentService
         );
     }
 
-    public function run(User $user, Collection $history, string $content, AgentRunOptions $options): string
+    public function run(User $user, Collection $history, string $content, AgentRunOptions $options, array $messageContext = []): string
     {
         $this->clearStopFlag($user->id);
         $this->reportProgress($options, 'started');
@@ -163,6 +167,9 @@ class AgentService
             ? "[Sender: {$userName} (user_id={$userId}, profile_id={$profileId})]"
             : '';
 
+        $pageContextSection = $this->pageContextFormatter->buildPromptSection($messageContext);
+        $pageContextPrefix = $pageContextSection ? "\n\n{$pageContextSection}" : '';
+
         // Build messages from history + current message
         $messages = [];
         foreach ($compactedHistory->messages as $msg) {
@@ -173,7 +180,7 @@ class AgentService
         }
         $messages[] = [
             'role' => 'user',
-            'content' => trim("{$datePrefix} {$userPrefix}")."\n\n{$content}",
+            'content' => trim("{$datePrefix} {$userPrefix}").$pageContextPrefix."\n\n{$content}",
         ];
 
         // Get available tools

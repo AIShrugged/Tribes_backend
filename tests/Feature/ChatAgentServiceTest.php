@@ -329,6 +329,47 @@ class ChatAgentServiceTest extends TestCase
         $this->assertNotEmpty($result);
     }
 
+    #[Test]
+    public function it_appends_page_context_to_the_current_message_only(): void
+    {
+        $capturedMessages = null;
+
+        Http::fake(function ($request) use (&$capturedMessages) {
+            $capturedMessages = $request->data()['messages'] ?? null;
+
+            return Http::response($this->makeTextResponse('OK'), 200);
+        });
+
+        $result = $this->makeService()->run(
+            $this->user,
+            new Collection([
+                $this->makeHistoryMessage('user', 'Предыдущий вопрос'),
+                $this->makeHistoryMessage('assistant', 'Предыдущий ответ'),
+            ]),
+            'Текущий вопрос',
+            new \App\Services\Agent\AgentRunOptions(
+                taskType: \App\Enums\AgentTaskType::INTERACTIVE,
+            ),
+            [
+                'page_context' => [
+                    'title' => 'Dashboard',
+                    'url' => 'https://app.example.com/dashboard',
+                    'html' => '<html><body><h1>Dashboard</h1><p>Open issues</p></body></html>',
+                    'text' => 'Dashboard Open issues',
+                ],
+            ]
+        );
+
+        $this->assertSame('OK', $result);
+        $this->assertNotNull($capturedMessages);
+        $this->assertCount(3, $capturedMessages);
+        $this->assertSame('Предыдущий вопрос', $capturedMessages[0]['content']);
+        $this->assertSame('Предыдущий ответ', $capturedMessages[1]['content']);
+        $this->assertStringContainsString('Текущий вопрос', $capturedMessages[2]['content']);
+        $this->assertStringContainsString('Page title: Dashboard', $capturedMessages[2]['content']);
+        $this->assertStringContainsString('Open issues', $capturedMessages[2]['content']);
+    }
+
     // --- Вспомогательные методы ---
 
     private function makeService(): AgentService

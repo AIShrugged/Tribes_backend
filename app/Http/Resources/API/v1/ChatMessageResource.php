@@ -23,6 +23,7 @@ class ChatMessageResource extends JsonResource
             'max_attempts' => $this->max_attempts,
             'completed_at' => $this->completed_at,
             'next_retry_at' => $this->next_retry_at,
+            'metadata' => $this->metadata,
             'created_at' => $this->created_at,
         ];
     }

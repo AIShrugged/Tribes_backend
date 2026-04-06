@@ -91,12 +91,13 @@ class ChannelBus
             ->first();
     }
 
-    public function createChatUserMessage(Chat $chat, string $content): ChannelMessage
+    public function createChatUserMessage(Chat $chat, string $content, array $attributes = []): ChannelMessage
     {
         return $this->createMessage(
             $this->forChat($chat),
             'user',
             $content,
+            $attributes,
         );
     }
 

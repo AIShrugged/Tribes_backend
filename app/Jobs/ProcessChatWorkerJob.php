@@ -92,7 +92,8 @@ class ProcessChatWorkerJob implements ShouldQueue
                     conversationKey: 'chat:'.$chat->id,
                     chatId: $chat->id,
                     agentRunUuid: $runUuid,
-                )
+                ),
+                is_array($userMessage->metadata) ? $userMessage->metadata : [],
             );
 
             $runtimeService->deliverToWebChat($assistantMessage, $responseText);
