@@ -19,6 +19,7 @@ use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\FollowupExportController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
 use App\Http\Controllers\API\v1\MethodologyController;
+use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\OrganizationController;
@@ -104,6 +105,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::group(['prefix' => 'calendar-events'], function () {
             Route::get('/', [CalendarEventController::class, 'index'])->name('calendar-events.index');
             Route::get('/{calendar_event_id}', [CalendarEventController::class, 'show'])->name('calendar-events.show');
+            Route::get('/{calendar_event_id}/detail', [CalendarEventDetailController::class, 'show'])
+                ->name('calendar-events.detail');
 
             Route::post('/{calendar_event_id}/bot/require', [BotController::class, 'require']);
 
