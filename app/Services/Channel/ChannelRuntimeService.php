@@ -13,6 +13,7 @@ use App\Models\Chat;
 use App\Models\TelegramUser;
 use App\Models\User;
 use App\Services\Agent\TelegramMessageCoalescer;
+use App\Services\Chat\PageContextFormatter;
 use App\Services\Channel\Delivery\ChannelDeliveryRegistry;
 use App\Services\Channel\Delivery\ChannelDeliveryRequest;
 
@@ -22,11 +23,23 @@ class ChannelRuntimeService
         private readonly ChannelBus $channelBus,
         private readonly TelegramMessageCoalescer $telegramCoalescer,
         private readonly ChannelDeliveryRegistry $deliveryRegistry,
+        private readonly PageContextFormatter $pageContextFormatter,
     ) {}
 
-    public function queueWebChatRun(User $user, Chat $chat, string $content): ChannelMessage
+    public function queueWebChatRun(User $user, Chat $chat, string $content, array $pageContext = []): ChannelMessage
     {
-        $userMessage = $this->channelBus->createChatUserMessage($chat, $content);
+        $userMessageAttributes = [];
+        $metadata = $this->pageContextFormatter->buildMetadata(
+            is_string($pageContext['html'] ?? null) ? $pageContext['html'] : null,
+            is_string($pageContext['title'] ?? null) ? $pageContext['title'] : null,
+            is_string($pageContext['url'] ?? null) ? $pageContext['url'] : null,
+        );
+
+        if ($metadata !== null) {
+            $userMessageAttributes['metadata'] = $metadata;
+        }
+
+        $userMessage = $this->channelBus->createChatUserMessage($chat, $content, $userMessageAttributes);
         $assistantMessage = $this->channelBus->createQueuedChatAssistantMessage($chat);
 
         $this->dispatchChatBranch($chat, $user, $userMessage, $assistantMessage);

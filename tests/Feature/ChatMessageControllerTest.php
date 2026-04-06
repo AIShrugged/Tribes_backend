@@ -176,6 +176,40 @@ class ChatMessageControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_persists_page_context_metadata_with_the_user_message(): void
+    {
+        Queue::fake();
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/v1/chats/{$this->chat->id}/messages", [
+                'content' => 'Что здесь важно?',
+                'page_title' => 'Dashboard',
+                'page_url' => 'https://app.example.com/dashboard',
+                'page_html' => '<html><body><h1>Dashboard</h1><p>Open issues</p></body></html>',
+            ]);
+
+        $response->assertStatus(200);
+
+        $conversationId = $this->channelBus->forChat($this->chat)->id;
+
+        $this->assertDatabaseHas('channel_messages', [
+            'conversation_id' => $conversationId,
+            'role' => 'user',
+            'content' => 'Что здесь важно?',
+        ]);
+
+        $message = ChannelMessage::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'user')
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame('Dashboard', data_get($message->metadata, 'page_context.title'));
+        $this->assertSame('https://app.example.com/dashboard', data_get($message->metadata, 'page_context.url'));
+        $this->assertStringContainsString('Dashboard', (string) data_get($message->metadata, 'page_context.text'));
+    }
+
+    #[Test]
     public function it_returns_run_status_for_own_chat(): void
     {
         $runUuid = '11111111-1111-4111-8111-111111111111';
