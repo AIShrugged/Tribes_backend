@@ -4,6 +4,7 @@ namespace App\Services\Meeting;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Models\CalendarEvent;
+use App\Models\AgentActivityLog;
 use App\Models\Channel;
 use App\Models\Profile;
 use App\Models\Setting;
@@ -49,6 +50,8 @@ class ParticipantProfileMatchingService
                 return;
             }
 
+            $matchedCount = 0;
+
             foreach ($matches as $match) {
                 $participantId = $match['participant_id'] ?? null;
                 $profileId     = $match['profile_id'] ?? null;
@@ -69,6 +72,21 @@ class ParticipantProfileMatchingService
                     'profile_confidence'  => $profileId ? $confidence : null,
                     'profile_matched_by'  => $profileId ? 'ai' : null,
                 ]);
+
+                if ($profileId) {
+                    $matchedCount++;
+                }
+            }
+
+            if ($event->source?->user) {
+                AgentActivityLog::recordActivity(
+                    user: $event->source->user,
+                    toolName: 'participant_profiles_matched',
+                    toolResult: [
+                        'count' => $matchedCount,
+                        'calendar_event_id' => $event->id,
+                    ],
+                );
             }
         } catch (\Throwable $e) {
             Log::error('ParticipantProfileMatchingService: matching failed', [

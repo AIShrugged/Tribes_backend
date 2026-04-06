@@ -3,9 +3,11 @@
 namespace App\Services\Insight;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Models\AgentActivityLog;
 use App\Models\InsightProfile;
 use App\Models\InsightRelationship;
 use App\Models\InsightShortTerm;
+use App\Models\Profile;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
@@ -39,16 +41,34 @@ class InsightRetrievalService
             return '';
         }
 
-        $profiles = InsightProfile::where('profile_id', $profileId)
-            ->whereIn('category', $relevantCategories)
-            ->get()
-            ->keyBy(fn($p) => $p->category->value);
+        $context = $this->formatContext(
+            $profiles = InsightProfile::where('profile_id', $profileId)
+                ->whereIn('category', $relevantCategories)
+                ->get()
+                ->keyBy(fn($p) => $p->category->value),
+            $shortTerm = InsightShortTerm::where('profile_id', $profileId)
+                ->active()
+                ->get()
+        );
 
-        $shortTerm = InsightShortTerm::where('profile_id', $profileId)
-            ->active()
-            ->get();
+        if ($context !== '') {
+            $user = Profile::find($profileId)?->user;
+            if ($user) {
+                AgentActivityLog::recordActivity(
+                    user: $user,
+                    toolName: 'insight_context_selected',
+                    toolResult: [
+                        'count' => count($relevantCategories),
+                        'profile_id' => $profileId,
+                    ],
+                    toolArgs: [
+                        'query_length' => mb_strlen($query),
+                    ],
+                );
+            }
+        }
 
-        return $this->formatContext($profiles, $shortTerm);
+        return $context;
     }
 
     /**

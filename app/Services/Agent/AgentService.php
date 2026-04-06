@@ -134,6 +134,7 @@ class AgentService
     {
         $this->clearStopFlag($user->id);
         $this->reportProgress($options, 'started');
+        $this->logAgentRunStarted($user, $options, $content, $messageContext);
 
         $channel = $options->channel;
         $mode = $options->outputMode;
@@ -369,6 +370,8 @@ class AgentService
             'final_answer_length' => strlen($finalAnswer),
         ]);
 
+        $this->logAgentRunCompleted($user, $options, $finalAnswer, $iteration);
+
         return $finalAnswer;
     }
 
@@ -393,19 +396,58 @@ class AgentService
         try {
             $success = is_array($toolResult) && ($toolResult['success'] ?? true);
 
-            AgentActivityLog::create([
-                'user_id'        => $user->id,
-                'chat_id'        => $options->chatId,
-                'agent_run_uuid' => $options->agentRunUuid,
-                'tool_name'      => $toolName,
-                'description'    => AgentActivityLog::descriptionFor($toolName, $toolResult),
-                'success'        => $success,
-                'tool_args'      => $toolArgs,
-                'tool_result'    => is_array($toolResult) ? array_slice($toolResult, 0, 10) : ['raw' => mb_substr((string) $toolResult, 0, 500)],
-                'created_at'     => now(),
-            ]);
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: $toolName,
+                toolResult: $toolResult,
+                toolArgs: $toolArgs,
+                chatId: $options->chatId,
+                agentRunUuid: $options->agentRunUuid,
+                success: $success,
+            );
         } catch (\Throwable $e) {
             Log::warning('Failed to log agent activity', ['tool' => $toolName, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function logAgentRunStarted(User $user, AgentRunOptions $options, string $content, array $messageContext): void
+    {
+        try {
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'agent_run_started',
+                toolResult: [
+                    'message_length' => mb_strlen($content),
+                    'channel' => $options->channel,
+                    'context_keys' => array_keys($messageContext),
+                ],
+                toolArgs: [
+                    'task_type' => $options->taskType->value,
+                    'output_mode' => $options->outputMode->value,
+                ],
+                chatId: $options->chatId,
+                agentRunUuid: $options->agentRunUuid,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Failed to log agent run start', ['error' => $e->getMessage()]);
+        }
+    }
+
+    private function logAgentRunCompleted(User $user, AgentRunOptions $options, string $finalAnswer, int $iterations): void
+    {
+        try {
+            AgentActivityLog::recordActivity(
+                user: $user,
+                toolName: 'agent_run_completed',
+                toolResult: [
+                    'final_answer_length' => mb_strlen($finalAnswer),
+                    'iterations' => $iterations,
+                ],
+                chatId: $options->chatId,
+                agentRunUuid: $options->agentRunUuid,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Failed to log agent run completion', ['error' => $e->getMessage()]);
         }
     }
 

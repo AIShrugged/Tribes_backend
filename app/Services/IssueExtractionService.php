@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\MeetingTaskStatus;
+use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\Setting;
@@ -94,6 +95,20 @@ class IssueExtractionService
             'team_id' => $team->id,
             'count' => $issues->count(),
         ]);
+
+        AgentActivityLog::recordActivity(
+            user: $user,
+            toolName: 'issues_extracted',
+            toolResult: [
+                'count' => $issues->count(),
+                'calendar_event_id' => $event->id,
+                'team_id' => $team->id,
+            ],
+            toolArgs: [
+                'calendar_event_id' => $event->id,
+                'team_id' => $team->id,
+            ],
+        );
 
         return $issues;
     }

@@ -5,6 +5,7 @@ namespace App\Services\Insight;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Domain\DTO\Insight\InsightExtractedDataDTO;
 use App\Enums\ConversationChannelType;
+use App\Models\AgentActivityLog;
 use App\Models\Channel;
 use App\Models\ChannelMessage;
 use App\Models\InsightSource;
@@ -155,6 +156,20 @@ class InsightTelegramService
 
         $lastId = $newMessages->max('id');
         $this->persist($profile, $lastId, $extractedData);
+
+        if ($profile->user) {
+            $participant = $extractedData->participants[0] ?? null;
+            AgentActivityLog::recordActivity(
+                user: $profile->user,
+                toolName: 'telegram_insights_extracted',
+                toolResult: [
+                    'count' => $participant ? count($participant->items) : 0,
+                    'items_count' => $participant ? count($participant->items) : 0,
+                    'short_term_count' => $participant ? count($participant->shortTerm) : 0,
+                    'telegram_user_id' => $telegramUser->telegram_user_id,
+                ],
+            );
+        }
 
         return true;
     }

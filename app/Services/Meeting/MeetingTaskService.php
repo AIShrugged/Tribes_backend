@@ -3,6 +3,7 @@
 namespace App\Services\Meeting;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Models\AgentActivityLog;
 use App\Enums\MeetingTaskStatus;
 use App\Events\MeetingTasksExtracted;
 use App\Models\CalendarEvent;
@@ -68,6 +69,18 @@ class MeetingTaskService
             $issues = $event->issues()->get();
             if ($issues->isNotEmpty()) {
                 MeetingTasksExtracted::dispatch($event, $issues);
+            }
+
+            if ($event->source?->user) {
+                AgentActivityLog::recordActivity(
+                    user: $event->source->user,
+                    toolName: 'meeting_tasks_extracted',
+                    toolResult: [
+                        'count' => $issues->count(),
+                        'event_id' => $event->id,
+                        'calendar_event_id' => $event->id,
+                    ],
+                );
             }
         } catch (\Throwable $e) {
             Log::error('MeetingTaskService: extraction failed', ['error' => $e->getMessage()]);

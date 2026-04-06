@@ -8,8 +8,8 @@ use App\Models\Methodology;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Followup\FollowupArtifactStateService;
+use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 
 class FollowupArtifactStateServiceTest extends TestCase
 {

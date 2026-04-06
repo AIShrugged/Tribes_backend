@@ -5,6 +5,7 @@ namespace App\Services\Task;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\ConversationChannelType;
 use App\Enums\MeetingTaskStatus;
+use App\Models\AgentActivityLog;
 use App\Models\ChannelConversation;
 use App\Models\ChannelMessage;
 use App\Models\Issue;
@@ -98,6 +99,8 @@ class TelegramTaskService
         }
 
         $changed = false;
+        $createdTasks = 0;
+        $updatedTasks = 0;
 
         foreach ($result['new_tasks'] ?? [] as $taskData) {
             $name = trim($taskData['title'] ?? '');
@@ -122,6 +125,7 @@ class TelegramTaskService
             ]);
 
             $changed = true;
+            $createdTasks++;
 
             Log::info('TelegramTaskService: task created', [
                 'conversation_id' => $conversationId,
@@ -145,11 +149,25 @@ class TelegramTaskService
 
             $task->update(['status' => $newStatus]);
             $changed = true;
+            $updatedTasks++;
 
             Log::info('TelegramTaskService: task status updated', [
                 'task_id' => $task->id,
                 'new_status' => $newStatus,
             ]);
+        }
+
+        if ($changed && $conversation->user) {
+            AgentActivityLog::recordActivity(
+                user: $conversation->user,
+                toolName: 'telegram_tasks_processed',
+                toolResult: [
+                    'count' => $createdTasks + $updatedTasks,
+                    'created_tasks' => $createdTasks,
+                    'updated_tasks' => $updatedTasks,
+                    'conversation_id' => $conversationId,
+                ],
+            );
         }
 
         return $changed;
