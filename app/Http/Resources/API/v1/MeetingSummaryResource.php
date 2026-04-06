@@ -17,6 +17,8 @@ class MeetingSummaryResource extends JsonResource
             'summary'           => $this->summary,
             'key_points'        => $this->key_points ?? [],
             'decisions'         => $this->decisions ?? [],
+            'tracker_url'       => $this->tracker_url,
+            'tasks'             => MeetingTaskResource::collection($this->whenLoaded('calendarEventIssues')),
             'created_at'        => $this->created_at,
             'updated_at'        => $this->updated_at,
         ];
