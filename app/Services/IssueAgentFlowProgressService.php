@@ -914,6 +914,15 @@ All execution steps for this issue **must use a single shared branch**: `feature
 - If the branch already exists, switch to it: `git checkout feature/issue-{$issue->id} && git pull`
 - Commit and push your changes to `feature/issue-{$issue->id}` — never to a different branch.
 
+## Repository Exploration
+
+Read files selectively to stay within context limits:
+
+- Start with structure (`ls`, `find`) — do not read files you haven't identified as relevant.
+- Never read `vendor/`, `node_modules/`, `storage/`, `bootstrap/cache/`.
+- Read only the specific classes, methods, or sections you need — not entire files when one method suffices.
+- If a file is large, grep for the relevant function/class first, then read only that range.
+
 ## Requirements
 
 - Treat the previous step output as the input for this step.

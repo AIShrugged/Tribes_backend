@@ -70,7 +70,7 @@ return [
         'interactive' => 'anthropic/claude-sonnet-4.6',
         'summarization' => 'anthropic/claude-sonnet-4.6',
         'extraction' => 'openai/gpt-4.1-mini',
-        'background' => 'openai/gpt-4.1-mini',
+        'background' => 'anthropic/claude-sonnet-4.6',
     ],
 
     /*
