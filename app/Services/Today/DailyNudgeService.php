@@ -70,8 +70,18 @@ class DailyNudgeService
             $nudge = trim($response);
             $nudge = trim($nudge, '"\'');
 
-            if (empty($nudge) || mb_strlen($nudge) > 500) {
+            if (empty($nudge)) {
                 return null;
+            }
+
+            // If response doesn't end with sentence-terminating punctuation, trim to last complete sentence
+            if (!preg_match('/[.!?]$/', $nudge)) {
+                if (preg_match('/^(.*[.!?])/su', $nudge, $m)) {
+                    $nudge = trim($m[1]);
+                } else {
+                    // No complete sentence found — discard
+                    return null;
+                }
             }
 
             $this->save($user->id, $date, $nudge);
