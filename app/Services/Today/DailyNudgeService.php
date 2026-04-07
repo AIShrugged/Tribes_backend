@@ -48,9 +48,12 @@ class DailyNudgeService
             ->where('date', $date->format('Y-m-d'))
             ->first();
 
-        if ($existing && ! $existing->isExpired()) {
+        if ($existing && ! $existing->isExpired() && preg_match('/[.!?]$/u', $existing->text ?? '')) {
             return $existing->text;
         }
+
+        // Delete incomplete or expired nudge before regenerating
+        $existing?->delete();
 
         try {
             $context = $this->buildContext($user, $date);
@@ -64,7 +67,7 @@ class DailyNudgeService
             $response = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: config('ai.providers.openrouter.models.today_nudge', 'google/gemini-3.1-pro-preview'),
-                maxTokens: 1024,
+                maxTokens: 4096,
             );
 
             $nudge = trim($response);
