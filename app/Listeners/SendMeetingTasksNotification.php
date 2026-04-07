@@ -54,9 +54,10 @@ class SendMeetingTasksNotification
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
-                'chat_id'    => $registration->telegram_chat_id,
-                'text'       => $text,
-                'parse_mode' => 'HTML',
+                'chat_id'                  => $registration->telegram_chat_id,
+                'text'                     => $text,
+                'parse_mode'               => 'HTML',
+                'disable_web_page_preview' => true,
             ];
 
             if ($registration->message_thread_id) {
