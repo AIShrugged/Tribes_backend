@@ -28,7 +28,15 @@ class CalendarEventDetailController extends Controller
                 'meetingSummary',
                 'meetingReview',
                 'tasks.assignee',
-                'agendas.user',
+                'agendas' => function (Builder $agendas): void {
+                    $agendas->where(function (Builder $agendaQuery): void {
+                        $agendaQuery->where('type', 'general')
+                            ->orWhere(function (Builder $personalAgendaQuery): void {
+                                $personalAgendaQuery->where('type', 'personal')
+                                    ->where('user_id', Auth::id());
+                            });
+                    })->with('user');
+                },
             ])
             ->firstOrFail();
 
