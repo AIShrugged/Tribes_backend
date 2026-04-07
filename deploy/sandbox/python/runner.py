@@ -176,7 +176,14 @@ def _build_workspace_rules(payload: dict[str, Any]) -> str:
         "- Prefer `workspace_run_tests` over ad-hoc shell commands when your goal is to execute a project's test suite.\n"
         "- Acquire the source material you need before local execution in `/workspace`.\n"
         "- Materialized user workspaces are mounted under `/workspace/synced-workspaces/<workspace_id>`.\n"
-        "- If you edit files locally inside a materialized workspace, those changes will be synchronized back after the run for writable workspaces."
+        "- If you edit files locally inside a materialized workspace, those changes will be synchronized back after the run for writable workspaces.\n"
+        "- File reading rules (CRITICAL for context efficiency):\n"
+        "  - NEVER use `cat` on a file without first checking its size with `wc -l <file>`.\n"
+        "  - To find a class, function, or symbol: use `grep_file` first — it returns only matching lines with context.\n"
+        "  - To read a specific section of a file: use `read_file_lines` with `start_line`/`end_line`, not `cat`.\n"
+        "  - To understand a file structure: read the first 30 lines with `read_file_lines`, then `grep_file` for specific symbols.\n"
+        "  - Read no more than 150 lines at a time unless there is a specific reason to read more.\n"
+        "  - Prefer `grep_file` + `read_file_lines` over `workspace_run_command` with `cat`, `head`, `tail`, or `sed` for reading files."
     )
 
 

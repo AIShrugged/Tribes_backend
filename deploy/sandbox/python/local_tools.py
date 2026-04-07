@@ -18,6 +18,73 @@ def local_tools() -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "read_file_lines",
+                "description": (
+                    "Read specific lines from a file inside the sandbox workspace. "
+                    "Use this instead of `cat` to avoid flooding the context with large files. "
+                    "Supports reading a line range (start_line..end_line) or the first N lines (max_lines)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Absolute path to the file, or relative path inside /workspace.",
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "1-based line number to start reading from. Defaults to 1.",
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "1-based line number to stop reading at (inclusive). If omitted, reads up to max_lines lines from start_line.",
+                        },
+                        "max_lines": {
+                            "type": "integer",
+                            "description": "Maximum number of lines to return when end_line is not specified. Defaults to 100.",
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "grep_file",
+                "description": (
+                    "Search for a string or regex pattern inside a file or recursively inside a directory. "
+                    "Returns matching lines with surrounding context. "
+                    "Use this to locate a class, function, or symbol before reading it with read_file_lines — "
+                    "much cheaper than reading whole files."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Absolute path to a file or directory to search. If a directory, searches recursively.",
+                        },
+                        "pattern": {
+                            "type": "string",
+                            "description": "String or Python regex pattern to search for.",
+                        },
+                        "context_lines": {
+                            "type": "integer",
+                            "description": "Number of lines of context to include before and after each match. Defaults to 3.",
+                        },
+                        "max_matches": {
+                            "type": "integer",
+                            "description": "Maximum number of matches to return. Defaults to 20.",
+                        },
+                    },
+                    "required": ["path", "pattern"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "workspace_detect_project",
                 "description": "Inspect the sandbox workspace and infer project type, likely root directory, dependency manifests, and candidate install/test commands.",
                 "parameters": {
@@ -211,7 +278,13 @@ def detect_project(state: SandboxRuntimeState, cwd: pathlib.Path) -> dict[str, A
 
 
 def trim_command_output(text: str) -> str:
-    return text if len(text) <= MAX_COMMAND_OUTPUT_CHARS else text[:MAX_COMMAND_OUTPUT_CHARS] + "\n...[truncated]"
+    if len(text) <= MAX_COMMAND_OUTPUT_CHARS:
+        return text
+    warning = (
+        f"[WARNING: output truncated from {len(text)} to {MAX_COMMAND_OUTPUT_CHARS} chars. "
+        "Use read_file_lines or grep_file tools for targeted file reading instead of cat.]\n"
+    )
+    return warning + text[:MAX_COMMAND_OUTPUT_CHARS] + "\n...[truncated]"
 
 
 def command_kind(command: str) -> str:
@@ -349,8 +422,145 @@ def _execute_workspace_command(state: SandboxRuntimeState, command: str, cwd: pa
     return {"success": completed.returncode == 0, "cwd": str(cwd), "command": command, "timed_out": False, "exit_code": completed.returncode, "stdout": stdout, "stderr": stderr}
 
 
+def _resolve_file_path(state: SandboxRuntimeState, raw_path: str) -> pathlib.Path:
+    path = pathlib.Path(raw_path)
+    if not path.is_absolute():
+        path = state.workspace_root / raw_path
+    resolved = path.resolve()
+    if not str(resolved).startswith(str(state.workspace_root)):
+        raise RuntimeError("Requested path escapes /workspace")
+    return resolved
+
+
+def execute_read_file_lines(state: SandboxRuntimeState, arguments: dict[str, Any]) -> dict[str, Any]:
+    raw_path = str(arguments.get("path") or "").strip()
+    if not raw_path:
+        return {"success": False, "error": "path is required"}
+    file_path = _resolve_file_path(state, raw_path)
+    if not file_path.exists():
+        return {"success": False, "error": f"File not found: {file_path}"}
+    if not file_path.is_file():
+        return {"success": False, "error": f"Path is not a file: {file_path}"}
+
+    start_line = max(1, int(arguments.get("start_line") or 1))
+    end_line = arguments.get("end_line")
+    max_lines = max(1, int(arguments.get("max_lines") or 100))
+    if end_line is not None:
+        end_line = int(end_line)
+        limit = end_line - start_line + 1
+    else:
+        limit = max_lines
+
+    collected: list[str] = []
+    total_lines = 0
+    try:
+        with file_path.open("r", encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh, start=1):
+                total_lines += 1
+                if i < start_line:
+                    continue
+                if len(collected) < limit:
+                    collected.append(line.rstrip("\n"))
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+    actual_end = start_line + len(collected) - 1
+    truncated = (end_line is None and total_lines > start_line + limit - 1) or (end_line is not None and end_line > total_lines)
+    return {
+        "success": True,
+        "path": str(state.workspace_relative(file_path)),
+        "total_lines": total_lines,
+        "start_line": start_line,
+        "end_line": actual_end,
+        "lines": collected,
+        "truncated": truncated,
+    }
+
+
+def execute_grep_file(state: SandboxRuntimeState, arguments: dict[str, Any]) -> dict[str, Any]:
+    raw_path = str(arguments.get("path") or "").strip()
+    pattern = str(arguments.get("pattern") or "").strip()
+    if not raw_path:
+        return {"success": False, "error": "path is required"}
+    if not pattern:
+        return {"success": False, "error": "pattern is required"}
+
+    search_path = _resolve_file_path(state, raw_path)
+    if not search_path.exists():
+        return {"success": False, "error": f"Path not found: {search_path}"}
+
+    context_lines = max(0, int(arguments.get("context_lines") or 3))
+    max_matches = max(1, int(arguments.get("max_matches") or 20))
+
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        return {"success": False, "error": f"Invalid regex pattern: {exc}"}
+
+    def is_binary(path: pathlib.Path) -> bool:
+        try:
+            chunk = path.read_bytes()[:1024]
+            return b"\x00" in chunk
+        except Exception:
+            return True
+
+    def grep_single_file(path: pathlib.Path) -> list[dict[str, Any]]:
+        if is_binary(path):
+            return []
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            return []
+        results = []
+        for i, line in enumerate(lines):
+            if compiled.search(line):
+                before = lines[max(0, i - context_lines):i]
+                after = lines[i + 1:i + 1 + context_lines]
+                results.append({
+                    "file": str(state.workspace_relative(path)),
+                    "line_number": i + 1,
+                    "content": line,
+                    "context_before": before,
+                    "context_after": after,
+                })
+        return results
+
+    matches: list[dict[str, Any]] = []
+    truncated = False
+    if search_path.is_file():
+        matches = grep_single_file(search_path)
+        if len(matches) > max_matches:
+            matches = matches[:max_matches]
+            truncated = True
+    else:
+        for file_path in sorted(search_path.rglob("*")):
+            if not file_path.is_file():
+                continue
+            for match in grep_single_file(file_path):
+                matches.append(match)
+                if len(matches) >= max_matches:
+                    truncated = True
+                    break
+            if truncated:
+                break
+
+    return {
+        "success": True,
+        "pattern": pattern,
+        "total_matches": len(matches),
+        "truncated": truncated,
+        "matches": matches,
+    }
+
+
 def execute_local_tool(state: SandboxRuntimeState, tool_name: str, arguments: dict[str, Any] | None = None) -> Any:
     arguments = arguments or {}
+    if tool_name == "read_file_lines":
+        return execute_read_file_lines(state, arguments)
+
+    if tool_name == "grep_file":
+        return execute_grep_file(state, arguments)
+
     if tool_name == "workspace_detect_project":
         cwd = resolve_workspace_path(state, arguments.get("cwd") if isinstance(arguments.get("cwd"), str) else None)
         return detect_project(state, cwd)
