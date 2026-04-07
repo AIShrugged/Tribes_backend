@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\OpenRouterBalanceService;
+use App\Services\RecallBalanceService;
 use Illuminate\Console\Command;
 use Telegram\Bot\Api;
 
@@ -10,63 +11,100 @@ class CheckOpenRouterBalance extends Command
 {
     protected $signature = 'openrouter:check-balance {--morning : Always send full report}';
 
-    protected $description = 'Check OpenRouter balance and notify via Telegram';
+    protected $description = 'Check OpenRouter & Recall.ai balances and notify via Telegram';
 
-    public function handle(OpenRouterBalanceService $service): int
+    public function handle(OpenRouterBalanceService $openRouterService, RecallBalanceService $recallService): int
     {
         $chatId    = config('ai.monitoring.telegram_chat_id');
         $threadId  = config('ai.monitoring.telegram_message_thread_id');
         $threshold = config('ai.monitoring.balance_threshold');
         $telegram  = new Api(config('telegram.bot_token'));
 
+        // Fetch OpenRouter
+        $openRouterData = null;
+        $openRouterError = null;
         try {
-            $data = $service->fetch();
+            $openRouterData = $openRouterService->fetch();
         } catch (\Throwable $e) {
-            $this->sendMessage($telegram, $chatId, $threadId,
-                "❌ *OpenRouter: ошибка проверки баланса*\n`{$e->getMessage()}`"
-            );
-            $this->error('Failed to fetch balance: ' . $e->getMessage());
+            $openRouterError = $e->getMessage();
+            $this->error('Failed to fetch OpenRouter balance: ' . $openRouterError);
+        }
 
-            return self::FAILURE;
+        // Fetch Recall
+        $recallData = null;
+        $recallError = null;
+        try {
+            $recallData = $recallService->fetch();
+        } catch (\Throwable $e) {
+            $recallError = $e->getMessage();
+            $this->error('Failed to fetch Recall usage: ' . $recallError);
         }
 
         if ($this->option('morning')) {
-            $this->sendMessage($telegram, $chatId, $threadId, $this->morningReport($data, $threshold));
-            $this->info('Morning report sent. Balance: $' . $data['balance']);
+            $message = $this->morningReport($openRouterData, $openRouterError, $recallData, $recallError, $threshold);
+            $this->sendMessage($telegram, $chatId, $threadId, $message);
+            $this->info('Morning report sent.');
 
             return self::SUCCESS;
         }
 
-        if ($data['balance'] < $threshold) {
-            $this->sendMessage($telegram, $chatId, $threadId, $this->lowBalanceAlert($data));
-            $this->info('Low balance alert sent. Balance: $' . $data['balance']);
+        // Intraday — only alert on low OpenRouter balance
+        if ($openRouterData && $openRouterData['balance'] < $threshold) {
+            $this->sendMessage($telegram, $chatId, $threadId, $this->lowBalanceAlert($openRouterData));
+            $this->info('Low balance alert sent. Balance: $' . $openRouterData['balance']);
+        } elseif ($openRouterError) {
+            $this->sendMessage($telegram, $chatId, $threadId,
+                "❌ *OpenRouter: ошибка проверки баланса*\n`{$openRouterError}`"
+            );
         } else {
-            $this->info('Balance OK: $' . $data['balance']);
+            $this->info('Balance OK: $' . $openRouterData['balance']);
         }
 
         return self::SUCCESS;
     }
 
-    private function morningReport(array $data, float $threshold): string
+    private function morningReport(?array $orData, ?string $orError, ?array $recallData, ?string $recallError, float $threshold): string
     {
-        $balance = number_format($data['balance'], 2);
-        $daily   = number_format($data['usage_daily'], 2);
-        $weekly  = number_format($data['usage_weekly'], 2);
-        $monthly = number_format($data['usage_monthly'], 2);
+        $lines = [];
 
-        $header = $data['balance'] < $threshold
-            ? '⚠️ *OpenRouter баланс* _(низкий!)_'
-            : '💰 *OpenRouter баланс*';
+        // OpenRouter section
+        if ($orError) {
+            $lines[] = '❌ *OpenRouter: ошибка*';
+            $lines[] = "`{$orError}`";
+        } else {
+            $balance = number_format($orData['balance'], 2);
+            $daily   = number_format($orData['usage_daily'], 2);
+            $weekly  = number_format($orData['usage_weekly'], 2);
+            $monthly = number_format($orData['usage_monthly'], 2);
 
-        return implode("\n", [
-            $header,
-            '━━━━━━━━━━━━━━━━━━',
-            "Остаток:   *\${$balance}*",
-            '━━━━━━━━━━━━━━━━━━',
-            "За сутки:  \${$daily}",
-            "За неделю: \${$weekly}",
-            "За месяц:  \${$monthly}",
-        ]);
+            $header = $orData['balance'] < $threshold
+                ? '⚠️ *OpenRouter* _(низкий баланс!)_'
+                : '💰 *OpenRouter*';
+
+            $lines[] = $header;
+            $lines[] = "Остаток:   *\${$balance}*";
+            $lines[] = "За сутки:  \${$daily}";
+            $lines[] = "За неделю: \${$weekly}";
+            $lines[] = "За месяц:  \${$monthly}";
+        }
+
+        $lines[] = '';
+        $lines[] = '━━━━━━━━━━━━━━━━━━';
+        $lines[] = '';
+
+        // Recall section
+        if ($recallError) {
+            $lines[] = '❌ *Recall.ai: ошибка*';
+            $lines[] = "`{$recallError}`";
+        } else {
+            $minutes = number_format($recallData['bot_total_minutes'], 1);
+            $hours   = number_format($recallData['bot_total_hours'], 1);
+
+            $lines[] = '🎙 *Recall.ai*';
+            $lines[] = "Использовано: *{$hours} ч* ({$minutes} мин)";
+        }
+
+        return implode("\n", $lines);
     }
 
     private function lowBalanceAlert(array $data): string
