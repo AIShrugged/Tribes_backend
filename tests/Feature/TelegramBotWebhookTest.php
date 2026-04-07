@@ -22,7 +22,7 @@ class TelegramBotWebhookTest extends TestCase
     #[Test]
     public function bot_added_and_attach_code_command_bind_the_chat(): void
     {
-        config()->set('telegram.bot_username', 'wanda_test_bot');
+        config()->set('telegram.bot_username', 'tribes_test_bot');
 
         $manager = User::factory()->create();
         [$organization, $team] = $this->createTenantContextFor($manager);
@@ -108,8 +108,8 @@ class TelegramBotWebhookTest extends TestCase
                     'user' => [
                         'id' => 777000,
                         'is_bot' => true,
-                        'username' => 'wanda_test_bot',
-                        'first_name' => 'Wanda',
+                        'username' => 'tribes_test_bot',
+                        'first_name' => 'Tribes',
                     ],
                 ],
                 'new_chat_member' => [
@@ -117,8 +117,8 @@ class TelegramBotWebhookTest extends TestCase
                     'user' => [
                         'id' => 777000,
                         'is_bot' => true,
-                        'username' => 'wanda_test_bot',
-                        'first_name' => 'Wanda',
+                        'username' => 'tribes_test_bot',
+                        'first_name' => 'Tribes',
                     ],
                 ],
             ],

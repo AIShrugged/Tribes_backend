@@ -20,7 +20,7 @@ return new class extends Migration
         DB::table('settings')->insert([
             ['key' => 'model.followup',        'value' => 'google/gemini-3-pro-preview',   'created_at' => $now, 'updated_at' => $now],
             ['key' => 'model.scheme',           'value' => 'google/gemini-3-pro-preview',   'created_at' => $now, 'updated_at' => $now],
-            ['key' => 'model.wanda',            'value' => 'google/gemini-3-pro-preview',   'created_at' => $now, 'updated_at' => $now],
+            ['key' => 'model.tribes',           'value' => 'google/gemini-3-pro-preview',   'created_at' => $now, 'updated_at' => $now],
             ['key' => 'model.telegram_agent',   'value' => 'anthropic/claude-sonnet-4.6',   'created_at' => $now, 'updated_at' => $now],
             ['key' => 'model.meeting_summary',  'value' => 'google/gemini-3-pro-preview',   'created_at' => $now, 'updated_at' => $now],
             ['key' => 'model.meeting_tasks',    'value' => 'google/gemini-3-pro-preview',   'created_at' => $now, 'updated_at' => $now],

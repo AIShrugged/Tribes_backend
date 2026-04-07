@@ -43,8 +43,8 @@ class TeamDashboardControllerTest extends TestCase
         $team = Team::create([
             'organization_id' => $organization->id,
             'methodology_id' => $methodology->id,
-            'name' => 'Wanda Team',
-            'slug' => 'wanda-team',
+            'name' => 'Tribes Team',
+            'slug' => 'tribes-team',
         ]);
 
         $viewer = User::factory()->create();
@@ -65,8 +65,8 @@ class TeamDashboardControllerTest extends TestCase
             'source_id' => $source->id,
             'external_id' => 'event-prev',
             'platform' => 'google_meet',
-            'title' => 'Wanda: Tech Sync',
-            'url' => 'https://meet.google.com/wanda-prev',
+            'title' => 'Tribes: Tech Sync',
+            'url' => 'https://meet.google.com/tribes-prev',
             'description' => 'Previous meeting',
             'starts_at' => '2026-03-30 10:00:00',
             'ends_at' => '2026-03-30 11:00:00',
@@ -79,7 +79,7 @@ class TeamDashboardControllerTest extends TestCase
         MeetingSummary::create([
             'calendar_event_id' => $previousEvent->id,
             'status' => 'done',
-            'title' => 'Wanda: Tech Sync #11',
+            'title' => 'Tribes: Tech Sync #11',
             'summary' => 'Previous meeting recap.',
             'key_points' => ['Previous point'],
             'decisions' => ['Decide on orchestrator pattern'],
@@ -89,8 +89,8 @@ class TeamDashboardControllerTest extends TestCase
             'source_id' => $source->id,
             'external_id' => 'event-current',
             'platform' => 'google_meet',
-            'title' => 'Wanda: Tech Sync',
-            'url' => 'https://meet.google.com/wanda-current',
+            'title' => 'Tribes: Tech Sync',
+            'url' => 'https://meet.google.com/tribes-current',
             'description' => 'Current meeting',
             'starts_at' => '2026-04-06 10:00:00',
             'ends_at' => '2026-04-06 11:00:00',
@@ -107,7 +107,7 @@ class TeamDashboardControllerTest extends TestCase
         MeetingSummary::create([
             'calendar_event_id' => $currentMeeting->id,
             'status' => 'done',
-            'title' => 'Wanda: Tech Sync #12',
+            'title' => 'Tribes: Tech Sync #12',
             'summary' => 'Current meeting recap.',
             'key_points' => ['Current setup: 2 agents'],
             'decisions' => ['Move toward orchestrator pattern with role-based agents'],
@@ -127,8 +127,8 @@ class TeamDashboardControllerTest extends TestCase
             'source_id' => $source->id,
             'external_id' => 'event-upcoming',
             'platform' => 'google_meet',
-            'title' => 'Wanda: Tech Sync',
-            'url' => 'https://meet.google.com/wanda-upcoming',
+            'title' => 'Tribes: Tech Sync',
+            'url' => 'https://meet.google.com/tribes-upcoming',
             'description' => 'Upcoming meeting',
             'starts_at' => '2026-04-07 10:00:00',
             'ends_at' => '2026-04-07 11:00:00',

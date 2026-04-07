@@ -2,7 +2,7 @@
 
 ## Overview
 
-Wanda chat message processing is asynchronous.
+Tribes chat message processing is asynchronous.
 
 When a client sends a message, the API:
 
@@ -72,7 +72,7 @@ Important fields:
 Current web chat pipeline:
 
 ```text
-WandaBotService
+TribesBotService
   -> ChannelBus
   -> ProcessChatBranchJob
     -> ProcessChatWorkerJob

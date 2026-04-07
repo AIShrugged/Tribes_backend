@@ -7,7 +7,7 @@ use App\Models\Chat;
 use App\Models\User;
 use App\Services\Channel\ChannelRuntimeService;
 
-class WandaBotService
+class TribesBotService
 {
     public function __construct(
         private readonly ChannelRuntimeService $runtimeService,

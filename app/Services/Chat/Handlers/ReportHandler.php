@@ -4,14 +4,14 @@ namespace App\Services\Chat\Handlers;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Domain\DTO\Chat\ChartConfigDTO;
-use App\Domain\DTO\Chat\WandaResponseDTO;
+use App\Domain\DTO\Chat\TribesResponseDTO;
 use App\Services\Chat\ChatMessageService;
 use App\Services\Chat\FollowupAccessService;
 use App\Services\Chat\FollowupHtmlRenderer;
 use App\Services\Chat\SqlQueryExecutor;
 use App\Services\Chat\Visualization\SvgChartRenderer;
-use App\Services\Chat\WandaPromptBuilder;
-use App\Services\Chat\WandaResponseParser;
+use App\Services\Chat\TribesPromptBuilder;
+use App\Services\Chat\TribesResponseParser;
 use App\Models\Chat;
 use App\Models\ChannelMessage;
 use App\Models\Setting;
@@ -26,8 +26,8 @@ class ReportHandler
 
     public function __construct(
         private readonly ChatMessageService $messageService,
-        private readonly WandaPromptBuilder $promptBuilder,
-        private readonly WandaResponseParser $responseParser,
+        private readonly TribesPromptBuilder $promptBuilder,
+        private readonly TribesResponseParser $responseParser,
         private readonly FollowupAccessService $accessService,
         private readonly FollowupHtmlRenderer $htmlRenderer,
         private readonly SqlQueryExecutor $sqlExecutor,
@@ -58,7 +58,7 @@ class ReportHandler
 
         // SQL execution failed
         if (!$queryResult->success) {
-            Log::warning('Wanda SQL failed', ['error' => $queryResult->error]);
+            Log::warning('Tribes SQL failed', ['error' => $queryResult->error]);
 
             return $this->messageService->createAssistantMessage(
                 $chat,
@@ -95,7 +95,7 @@ class ReportHandler
         );
     }
 
-    private function interpretResults(array $originalMessages, string $step1Response, array $data): WandaResponseDTO
+    private function interpretResults(array $originalMessages, string $step1Response, array $data): TribesResponseDTO
     {
         $dataJson = json_encode($data, JSON_UNESCAPED_UNICODE);
 
@@ -198,15 +198,15 @@ PROMPT);
                 'Content-Type'  => 'application/json',
             ])
             ->post(self::OPENROUTER_URL, [
-                'model'      => Setting::get('model.wanda', config('ai.providers.openrouter.models.wanda')),
+                'model'      => Setting::get('model.tribes', config('ai.providers.openrouter.models.tribes')),
                 'messages'   => $payloadMessages,
                 'max_tokens' => 4096,
             ]);
 
-        Log::info('Wanda LLM response', ['status' => $response->status()]);
+        Log::info('Tribes LLM response', ['status' => $response->status()]);
 
         if (!$response->successful()) {
-            Log::error('Wanda LLM error', ['body' => $response->body()]);
+            Log::error('Tribes LLM error', ['body' => $response->body()]);
             throw new \Exception('LLM request failed: ' . $response->status());
         }
 

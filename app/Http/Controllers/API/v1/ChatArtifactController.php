@@ -9,7 +9,7 @@ use App\Services\Artifact\ArtifactStateService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 /**
- * @group Wanda Chat
+ * @group Tribes Chat
  */
 class ChatArtifactController extends Controller
 {

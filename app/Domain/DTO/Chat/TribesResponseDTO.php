@@ -4,7 +4,7 @@ namespace App\Domain\DTO\Chat;
 
 use App\Domain\DTO\BaseDTO;
 
-class WandaResponseDTO extends BaseDTO
+class TribesResponseDTO extends BaseDTO
 {
     public function __construct(
         public string $message,

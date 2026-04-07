@@ -3,31 +3,31 @@
 namespace App\Services\Chat;
 
 use App\Domain\DTO\Chat\ChartConfigDTO;
-use App\Domain\DTO\Chat\WandaResponseDTO;
+use App\Domain\DTO\Chat\TribesResponseDTO;
 
-class WandaResponseParser
+class TribesResponseParser
 {
-    public function parse(string $response): WandaResponseDTO
+    public function parse(string $response): TribesResponseDTO
     {
         $cleanedResponse = $this->cleanJsonResponse($response);
 
         $data = json_decode($cleanedResponse, true);
 
         if (!is_array($data)) {
-            return new WandaResponseDTO(message: $response);
+            return new TribesResponseDTO(message: $response);
         }
 
         return $this->parseSqlFormat($data);
     }
 
-    public function parseInterpretation(string $response): WandaResponseDTO
+    public function parseInterpretation(string $response): TribesResponseDTO
     {
         $cleanedResponse = $this->cleanJsonResponse($response);
 
         $data = json_decode($cleanedResponse, true);
 
         if (!is_array($data)) {
-            return new WandaResponseDTO(message: $response);
+            return new TribesResponseDTO(message: $response);
         }
 
         $visualization = null;
@@ -35,13 +35,13 @@ class WandaResponseParser
             $visualization = ChartConfigDTO::fromArray($data['visualization']);
         }
 
-        return new WandaResponseDTO(
+        return new TribesResponseDTO(
             message: $data['message'] ?? $response,
             visualization: $visualization,
         );
     }
 
-    private function parseSqlFormat(array $data): WandaResponseDTO
+    private function parseSqlFormat(array $data): TribesResponseDTO
     {
         $visualization = null;
 
@@ -49,7 +49,7 @@ class WandaResponseParser
             $visualization = ChartConfigDTO::fromArray($data['visualization']);
         }
 
-        return new WandaResponseDTO(
+        return new TribesResponseDTO(
             message: $data['message'] ?? '',
             sql: $data['sql'] ?? null,
             visualization: $visualization,

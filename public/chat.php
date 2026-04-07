@@ -191,7 +191,7 @@ $apiBase = '/api/v1';
 <body>
     <div class="sidebar">
         <div class="sidebar-header">
-            <h2>Wanda</h2>
+            <h2>Tribes</h2>
             <button class="new-chat-btn" onclick="createChat()">+ Новый чат</button>
         </div>
         <div class="chat-list" id="chatList"></div>
@@ -294,7 +294,7 @@ $apiBase = '/api/v1';
             const div = document.createElement('div');
             div.className = `message ${msg.role}`;
 
-            let html = `<div class="role">${msg.role === 'user' ? 'Вы' : 'Wanda'}</div>`;
+            let html = `<div class="role">${msg.role === 'user' ? 'Вы' : 'Tribes'}</div>`;
             html += `<div class="content">${escapeHtml(msg.content)}</div>`;
 
             if (msg.followup_data && msg.followup_data.html) {

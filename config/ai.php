@@ -7,7 +7,7 @@ return [
             'models'    => [
                 'followup'        => 'google/gemini-3.1-pro-preview',
                 'scheme'          => 'google/gemini-3.1-pro-preview',
-                'wanda'           => 'google/gemini-3.1-pro-preview',
+                'tribes'          => 'google/gemini-3.1-pro-preview',
                 'telegram_agent'  => 'anthropic/claude-3.5-sonnet',
                 'meeting_summary' => 'google/gemini-3.1-pro-preview',
                 'meeting_review'  => 'google/gemini-3.1-pro-preview',

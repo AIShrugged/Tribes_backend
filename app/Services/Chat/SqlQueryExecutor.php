@@ -49,7 +49,7 @@ class SqlQueryExecutor
 
             $data = array_map(fn ($row) => $this->stripBlacklistedColumns((array) $row), $results);
 
-            Log::info('Wanda SQL executed', [
+            Log::info('Tribes SQL executed', [
                 'rows' => count($data),
                 'sql'  => substr($sql, 0, 500),
             ]);
@@ -60,7 +60,7 @@ class SqlQueryExecutor
                 rowCount: count($data),
             );
         } catch (SqlValidationException | SqlAccessControlException $e) {
-            Log::warning('Wanda SQL validation failed', [
+            Log::warning('Tribes SQL validation failed', [
                 'error' => $e->getMessage(),
                 'sql'   => substr($sql, 0, 500),
             ]);
@@ -70,7 +70,7 @@ class SqlQueryExecutor
                 error: $e->getMessage(),
             );
         } catch (\Throwable $e) {
-            Log::error('Wanda SQL execution failed', [
+            Log::error('Tribes SQL execution failed', [
                 'error' => $e->getMessage(),
                 'sql'   => substr($sql, 0, 500),
             ]);

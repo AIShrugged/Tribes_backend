@@ -21,7 +21,7 @@ class InsightRetrievalService
     ) {}
 
     /**
-     * Get formatted memory context for injecting into a Wanda Bot prompt.
+     * Get formatted memory context for injecting into a Tribes Bot prompt.
      */
     public function getContextForQuery(int $profileId, string $query): string
     {

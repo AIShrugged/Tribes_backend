@@ -27,7 +27,7 @@ class InsightService
     }
 
     /**
-     * Get context string for injecting into Wanda Bot prompts.
+     * Get context string for injecting into Tribes Bot prompts.
      */
     public function getContextForQuery(int $profileId, string $query): string
     {

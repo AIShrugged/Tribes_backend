@@ -7,7 +7,7 @@ use App\Models\ChannelMessage;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 
-class WandaPromptBuilder
+class TribesPromptBuilder
 {
     private const MAX_HISTORY_MESSAGES = 20;
 
@@ -27,7 +27,7 @@ class WandaPromptBuilder
         $accessibleUserIds = implode(', ', $accessInfo['user_ids'] ?? [$user->id]);
 
         $systemPrompt = <<<PROMPT
-Ты — Wanda, AI-ассистент для анализа данных о встречах и followup-документах. Отвечай на русском.
+Ты — Tribes, AI-ассистент для анализа данных о встречах и followup-документах. Отвечай на русском.
 
 ## Текущая дата: {$currentDate}
 - Текущий месяц: {$currentMonth}
