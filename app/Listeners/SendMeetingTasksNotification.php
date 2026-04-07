@@ -80,12 +80,15 @@ class SendMeetingTasksNotification
         $lines[] = '📋 <b>Meeting Tasks — ' . e($calendarEvent->title ?? 'Meeting') . '</b>';
         $lines[] = '';
 
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+
         foreach ($issues as $i => $issue) {
             $num = $i + 1;
             $title = e($issue->name);
             $assignee = $issue->assignee_name ? ' → ' . e($issue->assignee_name) : '';
             $due = $issue->due_date ? ' <i>(' . $issue->due_date->format('d.m.Y') . ')</i>' : '';
-            $lines[] = "{$num}. {$title}{$assignee}{$due}";
+            $url = $frontendUrl . '/dashboard/issues/' . $issue->id;
+            $lines[] = "{$num}. <a href=\"{$url}\">{$title}</a>{$assignee}{$due}";
         }
 
         return implode("\n", $lines);
