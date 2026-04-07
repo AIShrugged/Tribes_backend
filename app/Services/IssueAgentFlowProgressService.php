@@ -882,6 +882,7 @@ PROMPT;
                 'issue_id' => $issue->id,
                 'flow_kind' => 'execution',
                 'flow_step_id' => $step->id,
+                'max_iterations' => 20,
             ],
         ]);
     }
@@ -904,6 +905,14 @@ You are executing step {$step->position} of an issue development flow.
 
 - Title: {$step->title}
 - Instructions: {$step->prompt}
+
+## Git Branch
+
+All execution steps for this issue **must use a single shared branch**: `feature/issue-{$issue->id}`.
+
+- If the branch does not exist yet, create it from `dev`: `git checkout dev && git pull && git checkout -b feature/issue-{$issue->id}`
+- If the branch already exists, switch to it: `git checkout feature/issue-{$issue->id} && git pull`
+- Commit and push your changes to `feature/issue-{$issue->id}` — never to a different branch.
 
 ## Requirements
 
