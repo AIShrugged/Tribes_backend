@@ -8,6 +8,7 @@ use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
 use App\Services\Agenda\PreviousMeetingResolver;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Auth;
 
 class CalendarEventDetailController extends Controller
@@ -28,7 +29,7 @@ class CalendarEventDetailController extends Controller
                 'meetingSummary',
                 'meetingReview',
                 'tasks.assignee',
-                'agendas' => function (Builder $agendas): void {
+                'agendas' => function (HasMany $agendas): void {
                     $agendas->where(function (Builder $agendaQuery): void {
                         $agendaQuery->where('type', 'general')
                             ->orWhere(function (Builder $personalAgendaQuery): void {
