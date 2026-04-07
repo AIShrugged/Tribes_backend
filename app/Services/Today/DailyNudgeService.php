@@ -48,9 +48,12 @@ class DailyNudgeService
             ->where('date', $date->format('Y-m-d'))
             ->first();
 
-        if ($existing && ! $existing->isExpired()) {
+        if ($existing && ! $existing->isExpired() && preg_match('/[.!?]$/u', $existing->text ?? '')) {
             return $existing->text;
         }
+
+        // Delete incomplete or expired nudge before regenerating
+        $existing?->delete();
 
         try {
             $context = $this->buildContext($user, $date);
@@ -64,14 +67,24 @@ class DailyNudgeService
             $response = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: config('ai.providers.openrouter.models.today_nudge', 'google/gemini-3.1-pro-preview'),
-                maxTokens: 1024,
+                maxTokens: 4096,
             );
 
             $nudge = trim($response);
             $nudge = trim($nudge, '"\'');
 
-            if (empty($nudge) || mb_strlen($nudge) > 500) {
+            if (empty($nudge)) {
                 return null;
+            }
+
+            // If response doesn't end with sentence-terminating punctuation, trim to last complete sentence
+            if (!preg_match('/[.!?]$/', $nudge)) {
+                if (preg_match('/^(.*[.!?])/su', $nudge, $m)) {
+                    $nudge = trim($m[1]);
+                } else {
+                    // No complete sentence found — discard
+                    return null;
+                }
             }
 
             $this->save($user->id, $date, $nudge);
