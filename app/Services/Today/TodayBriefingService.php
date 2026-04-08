@@ -139,24 +139,38 @@ class TodayBriefingService
             $meetingState = 'waiting';
         }
 
-        // Load tasks from the most recent previous event in the series that has tasks (all assignees)
-        $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
-
-        $prevTasks = collect();
-        $totalTasks = 0;
-        $doneTasks = 0;
-
-        if ($prevEvent) {
-            $allPrevTasks = Issue::withoutTrashed()
+        // Ready meeting: show tasks created on this meeting
+        // Future/waiting meeting: show open tasks from previous meeting in series
+        if ($meetingState === 'ready') {
+            $allTasks = Issue::withoutTrashed()
                 ->where('sourceable_type', CalendarEvent::class)
-                ->where('sourceable_id', $prevEvent->id)
+                ->where('sourceable_id', $event->id)
                 ->whereNotIn('status', ['cancelled'])
                 ->with('assignee')
                 ->get();
 
-            $totalTasks = $allPrevTasks->count();
-            $doneTasks = $allPrevTasks->where('status', 'done')->count();
-            $prevTasks = $allPrevTasks->whereNotIn('status', ['done']);
+            $totalTasks = $allTasks->count();
+            $doneTasks = $allTasks->where('status', 'done')->count();
+            $prevTasks = $allTasks->whereNotIn('status', ['done']);
+        } else {
+            $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
+
+            $prevTasks = collect();
+            $totalTasks = 0;
+            $doneTasks = 0;
+
+            if ($prevEvent) {
+                $allPrevTasks = Issue::withoutTrashed()
+                    ->where('sourceable_type', CalendarEvent::class)
+                    ->where('sourceable_id', $prevEvent->id)
+                    ->whereNotIn('status', ['cancelled'])
+                    ->with('assignee')
+                    ->get();
+
+                $totalTasks = $allPrevTasks->count();
+                $doneTasks = $allPrevTasks->where('status', 'done')->count();
+                $prevTasks = $allPrevTasks->whereNotIn('status', ['done']);
+            }
         }
 
         // Agenda content: personal upcoming agenda for user, or general meeting agenda
