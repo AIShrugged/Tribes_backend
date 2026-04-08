@@ -2,7 +2,6 @@
 
 namespace App\Services\Agent\Tools;
 
-use App\Enums\UserRole;
 use App\Models\User;
 
 class GetUserOrganizationsTool implements ToolInterface
@@ -34,7 +33,6 @@ class GetUserOrganizationsTool implements ToolInterface
     public function execute(?array $parameters): mixed
     {
         $organizations = $this->user->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
             ->get(['organizations.id', 'organizations.name']);
 
         return [

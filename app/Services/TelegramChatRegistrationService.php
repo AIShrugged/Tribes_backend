@@ -120,9 +120,9 @@ class TelegramChatRegistrationService
             ]);
         }
 
-        if (! $user->isOrganizationManager((int) $registration->organization_id)) {
+        if (! $user->isOrganizationMember((int) $registration->organization_id)) {
             throw ValidationException::withMessages([
-                'attach_code' => ['Only an organization manager can attach this chat.'],
+                'attach_code' => ['Only an organization member can attach this chat.'],
             ]);
         }
 

@@ -15,16 +15,16 @@ class TeamNotificationSettingPolicy
 
     public function create(User $user, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 
     public function update(User $user, TeamNotificationSetting $setting): bool
     {
-        return $user->isOrganizationManager($setting->team->organization);
+        return $user->isOrganizationMember($setting->team->organization);
     }
 
     public function destroy(User $user, TeamNotificationSetting $setting): bool
     {
-        return $user->isOrganizationManager($setting->team->organization);
+        return $user->isOrganizationMember($setting->team->organization);
     }
 }

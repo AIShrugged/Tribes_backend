@@ -79,10 +79,10 @@ class SaveMethodologyTool implements ToolInterface
             ];
         }
 
-        if (! $this->user->isOrganizationManager($organizationId)) {
+        if (! $this->user->isOrganizationMember($organizationId)) {
             return [
                 'success' => false,
-                'error'   => 'Only a manager of the organization can create methodologies.',
+                'error'   => 'Only a member of the organization can create methodologies.',
             ];
         }
 

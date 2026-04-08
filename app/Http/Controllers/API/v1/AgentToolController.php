@@ -17,14 +17,13 @@ class AgentToolController extends Controller
 
     public function index(Request $request): ApiResponse
     {
-        $managesAnyOrganization = $request->user()
+        $isMemberOfAnyOrganization = $request->user()
             ->organizations()
-            ->wherePivot('role', \App\Enums\UserRole::MANAGER->value)
             ->exists();
 
-        if (! $managesAnyOrganization) {
+        if (! $isMemberOfAnyOrganization) {
             throw new AppException(
-                'Only organization managers can manage agent tools.',
+                'Only organization members can manage agent tools.',
                 'AGENT_TOOL_MANAGER_REQUIRED',
                 403,
             );

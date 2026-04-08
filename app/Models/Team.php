@@ -16,7 +16,7 @@ class Team extends Model
 
     public function scopeVisibleFor(Builder $query, User $user, Organization $organization): Builder
     {
-        if ($user->isOrganizationManager($organization)) {
+        if ($user->isOrganizationMember($organization)) {
             return $query;
         }
 

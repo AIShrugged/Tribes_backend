@@ -86,7 +86,7 @@ class UpdateAgentTaskTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'Agent task not found or access denied'];
         }
 
-        if (! $this->user->isOrganizationManager($task->organization_id)) {
+        if (! $this->user->isOrganizationMember($task->organization_id)) {
             return ['success' => false, 'error' => 'Agent task not found or access denied'];
         }
 
