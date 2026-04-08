@@ -99,7 +99,7 @@ class DemoDataService
                 DB::table('transcript_entries')->whereIn('calendar_event_id', $eventIds)->delete();
                 DB::table('followups')->whereIn('calendar_event_id', $eventIds)->delete();
                 DB::table('meeting_summaries')->whereIn('calendar_event_id', $eventIds)->delete();
-                DB::table('issues')->whereIn('calendar_event_id', $eventIds)->delete();
+                DB::table('issues')->where('sourceable_type', \App\Models\CalendarEvent::class)->whereIn('sourceable_id', $eventIds)->delete();
                 DB::table('calendar_event_profile')->whereIn('calendar_event_id', $eventIds)->delete();
                 CalendarEvent::whereIn('id', $eventIds)->delete();
             }
