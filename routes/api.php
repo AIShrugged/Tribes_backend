@@ -230,7 +230,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('/sources', [SourceController::class, 'index']);
         Route::delete('/sources/{source}', [SourceController::class, 'destroy']);
 
-        // Wanda Chat
+        // Tribes Chat
         Route::apiResource('chats', ChatController::class);
         Route::get('chats/{chat}/messages', [ChatMessageController::class, 'index']);
         Route::post('chats/{chat}/messages', [ChatMessageController::class, 'store']);

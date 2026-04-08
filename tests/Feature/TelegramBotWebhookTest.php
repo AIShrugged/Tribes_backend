@@ -109,7 +109,7 @@ class TelegramBotWebhookTest extends TestCase
                         'id' => 777000,
                         'is_bot' => true,
                         'username' => 'wanda_test_bot',
-                        'first_name' => 'Wanda',
+                        'first_name' => 'Tribes',
                     ],
                 ],
                 'new_chat_member' => [
@@ -118,7 +118,7 @@ class TelegramBotWebhookTest extends TestCase
                         'id' => 777000,
                         'is_bot' => true,
                         'username' => 'wanda_test_bot',
-                        'first_name' => 'Wanda',
+                        'first_name' => 'Tribes',
                     ],
                 ],
             ],

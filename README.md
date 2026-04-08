@@ -20,7 +20,7 @@ Default credentials: `minioadmin / minioadmin`
 ## Internal docs
 
 - Agent runtime architecture: [docs/agent-runtime-architecture.md](/home/anor/projects/spodial_hr_backend/docs/agent-runtime-architecture.md)
-- Async Wanda chat runtime: [docs/async-chat-runtime.md](/home/anor/projects/spodial_hr_backend/docs/async-chat-runtime.md)
+- Async Tribes chat runtime: [docs/async-chat-runtime.md](/home/anor/projects/spodial_hr_backend/docs/async-chat-runtime.md)
 - Async Telegram runtime: [docs/async-telegram-runtime.md](/home/anor/projects/spodial_hr_backend/docs/async-telegram-runtime.md)
 - MCP server overview: [docs/mcp-server.md](/home/anor/projects/spodial_hr_backend/docs/mcp-server.md)
 

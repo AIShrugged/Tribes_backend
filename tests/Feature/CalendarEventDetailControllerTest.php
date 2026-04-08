@@ -58,8 +58,8 @@ class CalendarEventDetailControllerTest extends TestCase
             'source_id' => $source->id,
             'external_id' => 'event-prev',
             'platform' => 'google_meet',
-            'title' => 'Wanda: Tech Sync',
-            'url' => 'https://meet.google.com/wanda-tech-sync',
+            'title' => 'Tribes: Tech Sync',
+            'url' => 'https://meet.google.com/tribes-tech-sync',
             'description' => 'Previous meeting',
             'starts_at' => now()->subWeek(),
             'ends_at' => now()->subWeek()->addHour(),
@@ -72,7 +72,7 @@ class CalendarEventDetailControllerTest extends TestCase
         MeetingSummary::create([
             'calendar_event_id' => $previousEvent->id,
             'status' => 'done',
-            'title' => 'Wanda: Tech Sync #11',
+            'title' => 'Tribes: Tech Sync #11',
             'summary' => 'Previous meeting recap.',
             'key_points' => ['Previous key point'],
             'decisions' => ['Previous decision'],
@@ -82,8 +82,8 @@ class CalendarEventDetailControllerTest extends TestCase
             'source_id' => $source->id,
             'external_id' => 'event-current',
             'platform' => 'google_meet',
-            'title' => 'Wanda: Tech Sync',
-            'url' => 'https://meet.google.com/wanda-tech-sync',
+            'title' => 'Tribes: Tech Sync',
+            'url' => 'https://meet.google.com/tribes-tech-sync',
             'description' => 'Current meeting',
             'starts_at' => now()->subDay(),
             'ends_at' => now()->subDay()->addHour(),
@@ -127,7 +127,7 @@ class CalendarEventDetailControllerTest extends TestCase
         MeetingSummary::create([
             'calendar_event_id' => $calendarEvent->id,
             'status' => 'done',
-            'title' => 'Wanda: Tech Sync #12',
+            'title' => 'Tribes: Tech Sync #12',
             'summary' => 'Mono vs multi-agent architecture debate.',
             'key_points' => ['Current setup: 2 agents'],
             'decisions' => ['Move toward orchestrator pattern with role-based agents'],
@@ -163,9 +163,9 @@ class CalendarEventDetailControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.event.id', $calendarEvent->id)
-            ->assertJsonPath('data.event.title', 'Wanda: Tech Sync')
-            ->assertJsonPath('data.event.meeting_link.url', 'https://meet.google.com/wanda-tech-sync')
-            ->assertJsonPath('data.summary.title', 'Wanda: Tech Sync #12')
+            ->assertJsonPath('data.event.title', 'Tribes: Tech Sync')
+            ->assertJsonPath('data.event.meeting_link.url', 'https://meet.google.com/tribes-tech-sync')
+            ->assertJsonPath('data.summary.title', 'Tribes: Tech Sync #12')
             ->assertJsonPath('data.review.key_insight', 'The team needs clearer role separation.')
             ->assertJsonPath('data.previous_meeting.id', $previousEvent->id)
             ->assertJsonPath('data.participants.0.name', 'Ivan')

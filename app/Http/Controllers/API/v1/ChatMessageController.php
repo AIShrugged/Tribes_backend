@@ -19,7 +19,7 @@ use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 
-#[Group('Wanda Chat', 'Chat messages and async run status for Wanda conversations.')]
+#[Group('Tribes Chat', 'Chat messages and async run status for Tribes conversations.')]
 class ChatMessageController extends Controller
 {
     use AuthorizesRequests;
@@ -140,7 +140,7 @@ class ChatMessageController extends Controller
     /**
      * Send message
      *
-     * Sends a user message to the Wanda AI bot and returns a queued assistant message.
+     * Sends a user message to the Tribes AI bot and returns a queued assistant message.
      * The final assistant reply is produced asynchronously and becomes available via message polling.
      *
      * @subgroup Chat Messages
@@ -187,7 +187,7 @@ class ChatMessageController extends Controller
      * @response 404 scenario="Not Found" {"message": "No query results for model [Chat] 1"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
-    #[Endpoint(title: 'Send chat message', description: 'Send a user message to Wanda and return the queued assistant message placeholder.')]
+    #[Endpoint(title: 'Send chat message', description: 'Send a user message to Tribes and return the queued assistant message placeholder.')]
     #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
     #[BodyParameter('content', 'Message text to send to the bot.', required: true, type: 'string', example: 'Summarise the key points from last week\'s meetings.')]
     #[BodyParameter('page_html', 'Optional raw HTML of the current page to add to the model context.', required: false, type: 'string', example: '<html><body><h1>Dashboard</h1></body></html>')]
