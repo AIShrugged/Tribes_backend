@@ -222,7 +222,7 @@ Transcript Ready (CalendarEvent)
 
 **Методы:**
 - `processTranscript(CalendarEvent)` — обработка транскрипта митинга
-- `getContextForQuery(email, query)` — контекст для Wanda Bot
+- `getContextForQuery(email, query)` — контекст для Tribes Bot
 - `getFullProfile(email)` — полный профиль пользователя
 - `getShortTermContext(email)` — краткосрочный контекст
 - `getRelationship(emailA, emailB)` — отношения между людьми
@@ -627,7 +627,7 @@ $insightService->processTranscript($calendarEvent);
 // → Извлекает инсайты, обновляет профили, создает relationships
 ```
 
-#### Получение контекста для Wanda Bot
+#### Получение контекста для Tribes Bot
 ```php
 $context = $insightService->getContextForQuery('user@example.com', 'Tell me about my goals');
 // → Возвращает релевантный контекст из ShortTerm + Profile

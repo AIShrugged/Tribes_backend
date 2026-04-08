@@ -17,7 +17,7 @@ use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 
-#[Group('Wanda Chat', 'AI chat sessions and conversation containers.')]
+#[Group('Tribes Chat', 'AI chat sessions and conversation containers.')]
 class ChatController extends Controller
 {
     use AuthorizesRequests;

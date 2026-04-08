@@ -206,7 +206,7 @@ class IssueAgentFlowProgressService
                 array_keys($questions),
             ));
 
-            $message = "[Wanda] Задача «{$issue->name}» требует уточнений перед запуском агента:\n\n{$questionList}\n\nПожалуйста, дополни описание задачи и повтори запуск.";
+            $message = "[Tribes] Задача «{$issue->name}» требует уточнений перед запуском агента:\n\n{$questionList}\n\nПожалуйста, дополни описание задачи и повтори запуск.";
 
             $conversation = $this->userChannelTargetResolver->resolve($owner, ConversationChannelType::TELEGRAM);
             if ($conversation) {
@@ -802,9 +802,9 @@ PROMPT;
 После оценки — отправь постановщику задачи сообщение через send_user_message (канал: telegram) с итогом.
 
 Формат сообщения:
-- Если done: «[Wanda] Задача «{название}» выполнена. {краткое резюме}»
-- Если partial: «[Wanda] Задача «{название}» выполнена частично. Не закрыто: {список}»
-- Если failed: «[Wanda] Задача «{название}» не выполнена. {причина}»
+- Если done: «[Tribes] Задача «{название}» выполнена. {краткое резюме}»
+- Если partial: «[Tribes] Задача «{название}» выполнена частично. Не закрыто: {список}»
+- Если failed: «[Tribes] Задача «{название}» не выполнена. {причина}»
 
 ## Вывод
 

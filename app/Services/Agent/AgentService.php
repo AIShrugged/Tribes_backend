@@ -866,7 +866,7 @@ When asked about a **meeting**, choose the right tool:
 
 **When processing multiple people:**
 - Get participant profile_ids directly from `get_meeting_summary` response — they are already there
-- Participants listed in meeting summary are real people — project/product names (like "Wanda") are NOT people, do not search for them
+- Participants listed in meeting summary are real people — project/product names (like "Tribes") are NOT people, do not search for them
 - Call `get_user_insights(profile_id=...)` for each participant directly, without intermediate `get_user_info` calls
 
 When asked about a **person**, choose the right tool:
