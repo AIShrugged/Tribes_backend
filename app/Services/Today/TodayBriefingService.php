@@ -121,10 +121,6 @@ class TodayBriefingService
             ->with([
                 'meetingSummary',
                 'meetingReview',
-                'issues' => fn($q) => $q->withoutTrashed()
-                    ->whereNotIn('status', ['done', 'cancelled'])
-                    ->where('assignee_id', $user->id),
-                'issues.assignee',
                 'participants',
             ])
             ->orderBy('starts_at')
@@ -143,18 +139,25 @@ class TodayBriefingService
             $meetingState = 'waiting';
         }
 
-        // Total/done counts for readiness bar (all user's tasks, not just open)
-        $totalTasks = Issue::withoutTrashed()
-            ->where('sourceable_type', CalendarEvent::class)
-            ->where('sourceable_id', $event->id)
-            ->where('assignee_id', $user->id)
-            ->count();
-        $doneTasks = Issue::withoutTrashed()
-            ->where('sourceable_type', CalendarEvent::class)
-            ->where('sourceable_id', $event->id)
-            ->where('assignee_id', $user->id)
-            ->where('status', 'done')
-            ->count();
+        // Load tasks from the most recent previous event in the series that has tasks (all assignees)
+        $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
+
+        $prevTasks = collect();
+        $totalTasks = 0;
+        $doneTasks = 0;
+
+        if ($prevEvent) {
+            $allPrevTasks = Issue::withoutTrashed()
+                ->where('sourceable_type', CalendarEvent::class)
+                ->where('sourceable_id', $prevEvent->id)
+                ->whereNotIn('status', ['cancelled'])
+                ->with('assignee')
+                ->get();
+
+            $totalTasks = $allPrevTasks->count();
+            $doneTasks = $allPrevTasks->where('status', 'done')->count();
+            $prevTasks = $allPrevTasks->whereNotIn('status', ['done']);
+        }
 
         // Agenda content: personal upcoming agenda for user, or general meeting agenda
         $agendaContent = $this->loadAgendaContent($event, $user);
@@ -170,7 +173,7 @@ class TodayBriefingService
             meeting_state: $meetingState,
             summary: $this->buildSummaryDTO($summary),
             review: $this->buildReviewDTO($review),
-            tasks: $event->issues->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
+            tasks: $prevTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
             total_tasks_count: $totalTasks,
             done_tasks_count: $doneTasks,
             agenda_content: $agendaContent,
