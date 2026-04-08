@@ -20,28 +20,26 @@ class FollowupAccessService
             return true;
         }
 
-        return $this->isManagerOfUser($requester, $targetUser);
+        return $this->isMemberOfSameOrganization($requester, $targetUser);
     }
 
     public function canAccessTeamData(User $requester, Team $team): bool
     {
-        return $requester->isOrganizationManager($team->organization);
+        return $requester->isOrganizationMember($team->organization);
     }
 
     public function canAccessOrganizationData(User $requester, Organization $organization): bool
     {
-        return $requester->isOrganizationManager($organization);
+        return $requester->isOrganizationMember($organization);
     }
 
     public function getAccessibleUserIds(User $user): array
     {
         $userIds = [$user->id];
 
-        $managedOrganizations = $user->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
-            ->get();
+        $organizations = $user->organizations()->get();
 
-        foreach ($managedOrganizations as $organization) {
+        foreach ($organizations as $organization) {
             $orgUserIds = $organization->users()->pluck('users.id')->toArray();
             $userIds = array_merge($userIds, $orgUserIds);
         }
@@ -53,11 +51,9 @@ class FollowupAccessService
     {
         $teamIds = [];
 
-        $managedOrganizations = $user->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
-            ->get();
+        $organizations = $user->organizations()->get();
 
-        foreach ($managedOrganizations as $organization) {
+        foreach ($organizations as $organization) {
             $orgTeamIds = $organization->teams()->pluck('id')->toArray();
             $teamIds = array_merge($teamIds, $orgTeamIds);
         }
@@ -68,34 +64,21 @@ class FollowupAccessService
     public function getAccessibleOrganizationIds(User $user): array
     {
         return $user->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
             ->pluck('organizations.id')
             ->toArray();
     }
 
     public function getUserRole(User $user): string
     {
-        $hasManagerRole = $user->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
-            ->exists();
-
-        return $hasManagerRole ? UserRole::MANAGER->value : UserRole::EMPLOYEE->value;
+        return $user->organizations()->exists()
+            ? UserRole::MANAGER->value
+            : UserRole::EMPLOYEE->value;
     }
 
     public function getAccessDescription(User $user): array
     {
-        $role = $this->getUserRole($user);
-
-        if ($role === UserRole::EMPLOYEE->value) {
-            return [
-                'role'        => $role,
-                'description' => 'Доступ только к своим данным',
-                'user_ids'    => [$user->id],
-            ];
-        }
-
         return [
-            'role'             => $role,
+            'role'             => $this->getUserRole($user),
             'description'      => 'Доступ к данным своих организаций',
             'user_ids'         => $this->getAccessibleUserIds($user),
             'team_ids'         => $this->getAccessibleTeamIds($user),
@@ -103,19 +86,18 @@ class FollowupAccessService
         ];
     }
 
-    private function isManagerOfUser(User $requester, User $targetUser): bool
+    private function isMemberOfSameOrganization(User $requester, User $targetUser): bool
     {
-        $requesterManagedOrgIds = $requester->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
+        $requesterOrgIds = $requester->organizations()
             ->pluck('organizations.id')
             ->toArray();
 
-        if (empty($requesterManagedOrgIds)) {
+        if (empty($requesterOrgIds)) {
             return false;
         }
 
         return $targetUser->organizations()
-            ->whereIn('organizations.id', $requesterManagedOrgIds)
+            ->whereIn('organizations.id', $requesterOrgIds)
             ->exists();
     }
 }

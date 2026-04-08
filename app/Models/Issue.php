@@ -86,27 +86,16 @@ class Issue extends Model
 
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
-        $managerOrganizationIds = $user->organizations()
-            ->wherePivot('role', 'manager')
-            ->pluck('organizations.id');
-        $memberOrganizationIds = $user->organizations()
-            ->pluck('organizations.id');
+        $organizationIds = $user->organizations()->pluck('organizations.id');
         $teamIds = $user->teams()->pluck('teams.id');
 
-        return $query->where(function (Builder $builder) use ($managerOrganizationIds, $memberOrganizationIds, $teamIds, $user): void {
-            if ($managerOrganizationIds->isNotEmpty()) {
-                $builder->orWhereIn('organization_id', $managerOrganizationIds);
+        return $query->where(function (Builder $builder) use ($organizationIds, $teamIds, $user): void {
+            if ($organizationIds->isNotEmpty()) {
+                $builder->orWhereIn('organization_id', $organizationIds);
             }
 
             if ($teamIds->isNotEmpty()) {
                 $builder->orWhereIn('team_id', $teamIds);
-            }
-
-            if ($memberOrganizationIds->isNotEmpty()) {
-                $builder->orWhere(function (Builder $q) use ($memberOrganizationIds): void {
-                    $q->whereIn('organization_id', $memberOrganizationIds)
-                      ->whereNull('team_id');
-                });
             }
 
             $builder->orWhere(function (Builder $legacy) use ($user): void {

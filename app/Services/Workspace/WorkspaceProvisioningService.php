@@ -151,12 +151,12 @@ class WorkspaceProvisioningService
             throw new \RuntimeException('You do not belong to this team.');
         }
 
-        if (in_array($scopeType, ['org_shared', 'team_shared'], true) && ! $actor->isOrganizationManager($organization)) {
-            throw new \RuntimeException('Only organization managers can create shared workspaces.');
+        if (in_array($scopeType, ['org_shared', 'team_shared'], true) && ! $actor->isOrganizationMember($organization)) {
+            throw new \RuntimeException('Only organization members can create shared workspaces.');
         }
 
-        if (in_array($scopeType, ['user_private', 'user_team_private', 'personal_shared'], true) && $owner !== null && (int) $owner->id !== (int) $actor->id && ! $actor->isOrganizationManager($organization)) {
-            throw new \RuntimeException('Only organization managers can create private workspaces for other users.');
+        if (in_array($scopeType, ['user_private', 'user_team_private', 'personal_shared'], true) && $owner !== null && (int) $owner->id !== (int) $actor->id && ! $actor->isOrganizationMember($organization)) {
+            throw new \RuntimeException('Only organization members can create private workspaces for other users.');
         }
 
         if ($scopeType === 'user_team_private' && $team !== null && $owner !== null && ! $owner->isTeamMember($team)) {

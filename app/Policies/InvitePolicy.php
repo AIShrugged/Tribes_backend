@@ -13,7 +13,7 @@ class InvitePolicy
      */
     public function viewAny(User $user, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 
     /**
@@ -21,7 +21,7 @@ class InvitePolicy
      */
     public function create(User $user, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 
     /**
@@ -29,6 +29,6 @@ class InvitePolicy
      */
     public function delete(User $user, Invite $invite, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 }

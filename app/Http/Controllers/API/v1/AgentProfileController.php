@@ -175,16 +175,14 @@ class AgentProfileController extends Controller
 
     private function assertUserCanManageProfiles(User $user): void
     {
-        $managesAnyOrganization = $user->organizations()
-            ->wherePivot('role', \App\Enums\UserRole::MANAGER->value)
-            ->exists();
+        $isMemberOfAnyOrganization = $user->organizations()->exists();
 
-        if ($managesAnyOrganization) {
+        if ($isMemberOfAnyOrganization) {
             return;
         }
 
         throw new AppException(
-            'Only organization managers can manage agent profiles.',
+            'Only organization members can manage agent profiles.',
             'AGENT_PROFILE_MANAGER_REQUIRED',
             403,
         );

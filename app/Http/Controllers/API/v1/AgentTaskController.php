@@ -216,7 +216,6 @@ class AgentTaskController extends Controller
     private function managedOrganizationIds(User $user): array
     {
         return $user->organizations()
-            ->wherePivot('role', \App\Enums\UserRole::MANAGER->value)
             ->pluck('organizations.id')
             ->all();
     }
@@ -228,7 +227,7 @@ class AgentTaskController extends Controller
         }
 
         throw new AppException(
-            'Only organization managers can manage agent tasks and runs.',
+            'Only organization members can manage agent tasks and runs.',
             'AGENT_TASK_MANAGER_REQUIRED',
             403,
         );

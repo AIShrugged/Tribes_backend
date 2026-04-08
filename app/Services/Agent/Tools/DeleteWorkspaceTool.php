@@ -53,9 +53,9 @@ class DeleteWorkspaceTool extends AbstractAgentTool
         }
 
         $isOwner = (int) ($workspace->owner_user_id ?? 0) === (int) $this->user->id;
-        $isManager = $this->user->isOrganizationManager($workspace->organization_id);
+        $isMember = $this->user->isOrganizationMember($workspace->organization_id);
 
-        if (! $isOwner && ! $isManager) {
+        if (! $isOwner && ! $isMember) {
             return ['success' => false, 'error' => 'Workspace not found or access denied'];
         }
 

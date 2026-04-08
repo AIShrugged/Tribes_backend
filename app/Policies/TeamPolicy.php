@@ -21,16 +21,16 @@ class TeamPolicy
 
     public function create(User $user, int|Organization $organization): bool
     {
-        return $user->isOrganizationManager($organization);
+        return $user->isOrganizationMember($organization);
     }
 
     public function update(User $user, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 
     public function destroy(User $user, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 }

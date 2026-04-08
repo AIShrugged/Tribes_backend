@@ -25,7 +25,7 @@ class MethodologyPolicy
     {
         return $methodology->isDefault()
             || $user->isMemberOfOneTeam($methodology->teams)
-            || $user->isOrganizationManager($methodology->organization);
+            || $user->isOrganizationMember($methodology->organization);
     }
 
     /**
@@ -33,7 +33,7 @@ class MethodologyPolicy
      */
     public function create(User $user, int|Organization $organization): bool
     {
-        return $user->isOrganizationManager($organization);
+        return $user->isOrganizationMember($organization);
     }
 
     /**
@@ -41,7 +41,7 @@ class MethodologyPolicy
      */
     public function update(User $user, Methodology $methodology): bool
     {
-        return $user->isOrganizationManager($methodology->organization);
+        return $user->isOrganizationMember($methodology->organization);
     }
 
     /**
@@ -49,6 +49,6 @@ class MethodologyPolicy
      */
     public function delete(User $user, Methodology $methodology): bool
     {
-        return $user->isOrganizationManager($methodology->organization);
+        return $user->isOrganizationMember($methodology->organization);
     }
 }

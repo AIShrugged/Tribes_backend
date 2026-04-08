@@ -2,7 +2,6 @@
 
 namespace App\Services\Workspace;
 
-use App\Enums\UserRole;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspacePermission;
@@ -82,7 +81,7 @@ class WorkspaceAccessService
             return $abilities;
         }
 
-        if ((int) $workspace->owner_user_id === (int) $user->id || $user->isOrganizationManager($workspace->organization_id)) {
+        if ((int) $workspace->owner_user_id === (int) $user->id || $user->isOrganizationMember($workspace->organization_id)) {
             return [
                 'list' => true,
                 'read' => true,
@@ -151,10 +150,6 @@ class WorkspaceAccessService
     private function resolveAccessibleWorkspaceIds(User $user, ?string $ability = null): array
     {
         $organizationIds = $user->organizations()->pluck('organizations.id')->all();
-        $managedOrganizationIds = $user->organizations()
-            ->wherePivot('role', UserRole::MANAGER->value)
-            ->pluck('organizations.id')
-            ->all();
         $teamIds = $user->teams()->pluck('teams.id')->all();
 
         $workspaceIds = Workspace::query()
@@ -188,8 +183,8 @@ class WorkspaceAccessService
                     });
                 }
 
-                if ($managedOrganizationIds !== []) {
-                    $query->orWhereIn('organization_id', $managedOrganizationIds);
+                if ($organizationIds !== []) {
+                    $query->orWhereIn('organization_id', $organizationIds);
                 }
             })
             ->pluck('id')

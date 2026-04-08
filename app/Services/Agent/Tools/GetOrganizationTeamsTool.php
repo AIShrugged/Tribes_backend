@@ -49,10 +49,10 @@ class GetOrganizationTeamsTool implements ToolInterface
             ];
         }
 
-        if (! $this->user->isOrganizationManager($organizationId)) {
+        if (! $this->user->isOrganizationMember($organizationId)) {
             return [
                 'success' => false,
-                'error'   => 'You are not a manager of this organization.',
+                'error'   => 'You are not a member of this organization.',
             ];
         }
 

@@ -13,7 +13,7 @@ class TeamUserPolicy
      */
     public function viewAny(User $user, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization) || $user->isTeamMember($team);
+        return $user->isOrganizationMember($team->organization) || $user->isTeamMember($team);
     }
 
     /**
@@ -21,11 +21,11 @@ class TeamUserPolicy
      */
     public function view(User $user, TeamUser $teamUser, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization) || $user->isTeamMember($team);
+        return $user->isOrganizationMember($team->organization) || $user->isTeamMember($team);
     }
 
     public function kick(User $user, TeamUser $teamUser, Team $team): bool
     {
-        return $user->isOrganizationManager($team->organization);
+        return $user->isOrganizationMember($team->organization);
     }
 }

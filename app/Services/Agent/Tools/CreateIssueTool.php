@@ -158,9 +158,9 @@ class CreateIssueTool extends AbstractAgentTool
                 allowUnbound: false,
             );
 
-            if ($teamId === null && ! $user->isOrganizationManager((int) $organizationId)) {
+            if ($teamId === null && ! $user->isOrganizationMember((int) $organizationId)) {
                 throw ValidationException::withMessages([
-                    'organization_id' => ['Only organization managers can create organization-level issues without a team scope.'],
+                    'organization_id' => ['Only organization members can create organization-level issues without a team scope.'],
                 ]);
             }
 
