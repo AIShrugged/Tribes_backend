@@ -23,6 +23,7 @@ Default credentials: `minioadmin / minioadmin`
 - Async Tribes chat runtime: [docs/async-chat-runtime.md](/home/anor/projects/spodial_hr_backend/docs/async-chat-runtime.md)
 - Async Telegram runtime: [docs/async-telegram-runtime.md](/home/anor/projects/spodial_hr_backend/docs/async-telegram-runtime.md)
 - MCP server overview: [docs/mcp-server.md](/home/anor/projects/spodial_hr_backend/docs/mcp-server.md)
+- Paperclip integration plans: [docs/paperclip-integration-plans.md](/home/anor/projects/spodial_hr_backend/docs/paperclip-integration-plans.md)
 
 ## Tests
 
