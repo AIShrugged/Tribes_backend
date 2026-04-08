@@ -25,6 +25,20 @@ class MeetingContextService
     }
 
     /**
+     * Find the most recent previous event in the series that has any tasks.
+     */
+    public function findPreviousEventWithTasks(CalendarEvent $event): ?CalendarEvent
+    {
+        return CalendarEvent::query()
+            ->where('title', $event->title)
+            ->where('url', $event->url)
+            ->where('starts_at', '<', $event->starts_at)
+            ->whereHas('issues', fn($q) => $q->withoutTrashed()->whereNotIn('status', ['cancelled']))
+            ->orderByDesc('starts_at')
+            ->first();
+    }
+
+    /**
      * Find the most recent previous event with a completed summary.
      */
     public function findPreviousEventWithSummary(CalendarEvent $event): ?CalendarEvent
