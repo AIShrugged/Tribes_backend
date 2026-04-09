@@ -11,6 +11,7 @@ use App\Http\Controllers\API\v1\AgentToolController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
+use App\Http\Controllers\API\v1\OrganizationCalendarController;
 use App\Http\Controllers\API\v1\ChatArtifactController;
 use App\Http\Controllers\API\v1\ChatController;
 use App\Http\Controllers\API\v1\ChatMessageController;
@@ -106,6 +107,7 @@ Route::group(['prefix' => 'v1'], function () {
         });
 
         Route::group(['prefix' => 'calendar-events'], function () {
+            Route::get('/organization', [OrganizationCalendarController::class, 'index'])->name('calendar-events.organization');
             Route::get('/', [CalendarEventController::class, 'index'])->name('calendar-events.index');
             Route::get('/{calendar_event_id}', [CalendarEventController::class, 'show'])->name('calendar-events.show');
             Route::get('/{calendar_event_id}/detail', [CalendarEventDetailController::class, 'show'])
