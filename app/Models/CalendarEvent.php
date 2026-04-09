@@ -108,9 +108,15 @@ class CalendarEvent extends Model
      */
     public function getRecallExternalId(): ?string
     {
+        if (!empty($this->external_id)) {
+            return $this->external_id;
+        }
+
         return DB::table('calendar_event_source')
             ->where('calendar_event_id', $this->id)
+            ->where('required_bot', true)
             ->whereNotNull('external_id')
+            ->orderBy('id')
             ->value('external_id');
     }
 }

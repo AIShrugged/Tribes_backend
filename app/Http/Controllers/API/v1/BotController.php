@@ -62,7 +62,7 @@ class BotController extends Controller
             ]);
         }
 
-        CalendarEventChanged::dispatch($calendarEvent);
+        CalendarEventChanged::dispatch($calendarEvent, true);
 
         return ApiResponse::success(
             data: CalendarEventResource::make($calendarEvent),

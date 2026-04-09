@@ -302,6 +302,121 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
+    public function calendar_sync_events_for_same_meeting_from_different_sources_schedule_only_one_bot(): void
+    {
+        $secondUser = User::factory()->create();
+        $organization = Organization::query()->firstOrFail();
+        $organization->users()->attach($secondUser, ['role' => 'employee']);
+
+        $sourceA = Source::create([
+            'user_id' => $this->user->id,
+            'type' => 'google_calendar',
+            'external_id' => 'calendar-a',
+            'identity' => 'calendar-a@example.com',
+        ]);
+
+        $sourceB = Source::create([
+            'user_id' => $secondUser->id,
+            'type' => 'google_calendar',
+            'external_id' => 'calendar-b',
+            'identity' => 'calendar-b@example.com',
+        ]);
+
+        $meetingStart = now()->addHours(3)->startOfSecond();
+        $meetingEnd = $meetingStart->copy()->addHour();
+        $meetingUrl = 'https://meet.google.com/shared-sync-test';
+        $botScheduleCalls = 0;
+
+        Http::fake(function ($request) use ($meetingStart, $meetingEnd, $meetingUrl, &$botScheduleCalls) {
+            $url = $request->url();
+
+            if ($request->method() === 'GET' && str_starts_with($url, 'https://us-west-2.recall.ai/api/v2/calendar-events/')) {
+                $calendarId = $request->data()['calendar_id'] ?? null;
+                $externalId = match ($calendarId) {
+                    'calendar-a' => 'recall-event-a',
+                    'calendar-b' => 'recall-event-b',
+                    default => 'recall-event-unknown',
+                };
+
+                return Http::response([
+                    'results' => [
+                        [
+                            'id' => $externalId,
+                            'meeting_platform' => 'google_meet',
+                            'meeting_url' => $meetingUrl,
+                            'start_time' => $meetingStart->toIso8601String(),
+                            'end_time' => $meetingEnd->toIso8601String(),
+                            'raw' => [
+                                'summary' => 'Shared synced meeting',
+                                'description' => 'Meeting from multi-source sync webhook',
+                                'attendees' => [],
+                            ],
+                        ],
+                    ],
+                ], 200);
+            }
+
+            if ($request->method() === 'POST' && preg_match('#https://us-west-2\\.recall\\.ai/api/v2/calendar-events/([^/]+)/bot/#', $url, $matches) === 1) {
+                $botScheduleCalls++;
+                $externalId = $matches[1];
+
+                return Http::response([
+                    'bots' => [
+                        [
+                            'bot_id' => 'bot-shared-1',
+                            'deduplication_key' => md5($externalId),
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['message' => 'Unexpected request in test'], 500);
+        });
+
+        $firstResponse = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data' => [
+                'calendar_id' => $sourceA->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ]);
+
+        $secondResponse = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data' => [
+                'calendar_id' => $sourceB->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ]);
+
+        $firstResponse->assertOk();
+        $secondResponse->assertOk();
+
+        $event = CalendarEvent::query()
+            ->where('url', $meetingUrl)
+            ->where('starts_at', $meetingStart)
+            ->firstOrFail();
+
+        $this->assertSame(1, $botScheduleCalls);
+        $this->assertSame('recall-event-a', $event->external_id);
+        $this->assertSame('bot-shared-1', $event->bot?->external_id);
+
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $event->id,
+            'source_id' => $sourceA->id,
+            'external_id' => 'recall-event-a',
+            'required_bot' => true,
+        ]);
+
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $event->id,
+            'source_id' => $sourceB->id,
+            'external_id' => 'recall-event-b',
+            'required_bot' => true,
+        ]);
+    }
+
+    #[Test]
     public function bot_require_recreates_active_recall_bot_when_required_bot_is_true(): void
     {
         Http::fake(function ($request) {

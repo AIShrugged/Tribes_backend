@@ -19,7 +19,8 @@ class CalendarEventChanged
      * Create a new event instance.
      */
     public function __construct(
-        public CalendarEvent $calendarEvent
+        public CalendarEvent $calendarEvent,
+        public bool $forceReschedule = false,
     ) {
         //
     }
