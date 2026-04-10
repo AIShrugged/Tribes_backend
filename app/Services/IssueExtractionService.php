@@ -36,8 +36,10 @@ class IssueExtractionService
             return collect();
         }
 
+        $orgContext = $team->organization?->context;
+
         $messages = [
-            new MessageDTO('system', $this->buildSystemPrompt()),
+            new MessageDTO('system', $this->buildSystemPrompt($orgContext)),
             new MessageDTO('user', "Дата встречи: {$event->starts_at->toDateString()}\nТекущая дата: ".now()->toDateString()."\n\nТранскрипт встречи:\n".$transcript),
         ];
 
@@ -126,10 +128,14 @@ class IssueExtractionService
         }
     }
 
-    private function buildSystemPrompt(): string
+    private function buildSystemPrompt(?string $orgContext = null): string
     {
-        return <<<'PROMPT'
-You are an AI assistant that extracts concrete tasks from work meeting transcripts.
+        $contextSection = $orgContext
+            ? "\n## Organization context\n\nUse this to better understand the domain, team roles, and terminology when extracting tasks:\n\n{$orgContext}\n"
+            : '';
+
+        return <<<PROMPT
+You are an AI assistant that extracts concrete tasks from work meeting transcripts.{$contextSection}
 
 Your goal is to find real commitments and decisions the team made during the meeting. Do NOT invent tasks, do NOT generalize discussions into tasks. Extract ONLY what someone explicitly committed to or what the team explicitly decided to do.
 
