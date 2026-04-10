@@ -7,6 +7,7 @@ use App\Models\CalendarEvent;
 use App\Models\MeetingAgenda;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use App\Services\Agenda\AgendaService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -116,7 +117,14 @@ class SendAgendaNotificationsJob implements ShouldQueue
 
     private function formatTelegramMessage(MeetingAgenda $agenda, CalendarEvent $event): string
     {
-        $lines = [];
+        $rawJson = $agenda->raw_json ?? [];
+
+        if ($agenda->isGeneral() && !empty($rawJson)) {
+            return AgendaService::renderForTelegram($rawJson, $event);
+        }
+
+        // Personal agenda — plain text fallback
+        $lines   = [];
         $lines[] = '<b>' . e($event->title) . '</b>';
         $lines[] = '🕐 ' . $event->starts_at->format('d.m.Y H:i');
         $lines[] = '';
