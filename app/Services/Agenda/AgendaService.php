@@ -169,19 +169,40 @@ class AgendaService
                 : null;
 
             // 1. Commitments with statuses from issues
-            $commitments = $this->extractCommitmentsFromSummary($previousSummary?->summary);
+            // Prefer structured JSON column (new format), fall back to text parsing (old format)
             $questions = $llmData['questions'] ?? [];
             $commitmentsCheck = [];
-            foreach ($commitments as $i => $raw) {
-                $parsed = $this->parseCommitment($raw, $prevDate);
-                $status = $this->matchCommitmentStatus($parsed['person'], $parsed['commitment'], $issues);
-                $commitmentsCheck[] = [
-                    'person' => $parsed['person'],
-                    'commitment' => $parsed['commitment'],
-                    'deadline' => $parsed['deadline'],
-                    'status' => $status,
-                    'question' => $questions[$i] ?? 'статус?',
-                ];
+            $structuredCommitments = $previousSummary?->commitments;
+
+            if (!empty($structuredCommitments) && is_array($structuredCommitments)) {
+                foreach ($structuredCommitments as $i => $c) {
+                    $person = $c['who'] ?? '';
+                    $commitment = $c['what'] ?? '';
+                    $deadline = isset($c['deadline']) && $c['deadline']
+                        ? Carbon::parse($c['deadline'])->format('d.m.Y')
+                        : null;
+                    $status = $this->matchCommitmentStatus($person, $commitment, $issues);
+                    $commitmentsCheck[] = [
+                        'person' => $person,
+                        'commitment' => $commitment,
+                        'deadline' => $deadline,
+                        'status' => $status,
+                        'question' => $questions[$i] ?? 'статус?',
+                    ];
+                }
+            } else {
+                $commitments = $this->extractCommitmentsFromSummary($previousSummary?->summary);
+                foreach ($commitments as $i => $raw) {
+                    $parsed = $this->parseCommitment($raw, $prevDate);
+                    $status = $this->matchCommitmentStatus($parsed['person'], $parsed['commitment'], $issues);
+                    $commitmentsCheck[] = [
+                        'person' => $parsed['person'],
+                        'commitment' => $parsed['commitment'],
+                        'deadline' => $parsed['deadline'],
+                        'status' => $status,
+                        'question' => $questions[$i] ?? 'статус?',
+                    ];
+                }
             }
             $doneCount = count(array_filter($commitmentsCheck, fn ($c) => $c['status'] === 'готово'));
             $totalCount = count($commitmentsCheck);
@@ -738,8 +759,8 @@ class AgendaService
             }
         }
 
-        // Format 2: "Краткое содержание" with bullet points "- Тема: описание"
-        if (empty($topics) && preg_match('/Краткое содержание\n(.*?)(?:\n\n|\n\||\z)/s', $summary, $m)) {
+        // Format 2: "Краткое содержание" with bullet points (bold or plain header)
+        if (empty($topics) && preg_match('/\*{0,2}Краткое содержание\*{0,2}\n(.*?)(?:\n\n|\n\*\*|\n\||\z)/s', $summary, $m)) {
             foreach (explode("\n", trim($m[1])) as $line) {
                 $line = trim(ltrim(trim($line), '-'));
                 if ($line !== '') {
