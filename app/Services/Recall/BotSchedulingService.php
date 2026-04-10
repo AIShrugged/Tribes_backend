@@ -18,19 +18,35 @@ class BotSchedulingService
     /**
      * Schedule a bot for the calendar event.
      *
-     * The bot is always recreated in Recall so meeting time changes and
-     * repeated "require bot" actions refresh the live bot state instead of
-     * reusing an older one.
+     * By default this is idempotent: if an active bot already exists, no
+     * additional Recall scheduling call is made. Set $forceRecreate=true to
+     * explicitly refresh an active bot in Recall.
      */
-    public function schedule(CalendarEvent $calendarEvent): void
+    public function schedule(CalendarEvent $calendarEvent, bool $forceRecreate = false): void
     {
         Log::info('BotSchedulingService: schedule requested', [
             'calendar_event_id' => $calendarEvent->id,
             'calendar_event_url' => $calendarEvent->url,
             'bot_id' => $calendarEvent->bot_id,
+            'force_recreate' => $forceRecreate,
         ]);
 
-        DB::transaction(function () use ($calendarEvent) {
+        DB::transaction(function () use ($calendarEvent, $forceRecreate) {
+            $calendarEvent = CalendarEvent::query()
+                ->with('bot')
+                ->lockForUpdate()
+                ->findOrFail($calendarEvent->id);
+
+            if ($calendarEvent->bot?->is_active && !$forceRecreate) {
+                Log::info('BotSchedulingService: active bot already exists, skipping schedule', [
+                    'calendar_event_id' => $calendarEvent->id,
+                    'bot_id' => $calendarEvent->bot->id,
+                    'meeting_url' => $calendarEvent->url,
+                ]);
+
+                return;
+            }
+
             if ($calendarEvent->bot?->is_active) {
                 Log::info('BotSchedulingService: recreating active bot', [
                     'calendar_event_id' => $calendarEvent->id,
@@ -87,9 +103,25 @@ class BotSchedulingService
             'meeting_url' => $calendarEvent->url,
         ]);
 
-        DB::transaction(function () use ($calendarEvent, $bot) {
-            $this->recallBotService->removeBot($calendarEvent);
-            $bot->deactivate();
+        DB::transaction(function () use ($calendarEvent) {
+            $lockedEvent = CalendarEvent::query()
+                ->with('bot')
+                ->lockForUpdate()
+                ->findOrFail($calendarEvent->id);
+
+            $activeBot = $lockedEvent->bot;
+            if (!$activeBot || !$activeBot->is_active) {
+                Log::info('BotSchedulingService: remove skipped after lock', [
+                    'calendar_event_id' => $lockedEvent->id,
+                    'bot_id' => $activeBot?->id,
+                    'bot_is_active' => $activeBot?->is_active,
+                ]);
+
+                return;
+            }
+
+            $this->recallBotService->removeBot($lockedEvent);
+            $activeBot->deactivate();
         });
     }
 
@@ -97,10 +129,9 @@ class BotSchedulingService
      * Handle the require/unrequire bot toggle from user.
      * Checks pivot table — bot is required if ANY participant's source requires it.
      *
-     * When the meeting is required, the bot is recreated in Recall so the live
-     * bot always matches the current meeting time.
+     * Manual flows may force bot recreation, while sync flows stay idempotent.
      */
-    public function handleRequirement(CalendarEvent $calendarEvent): void
+    public function handleRequirement(CalendarEvent $calendarEvent, bool $forceReschedule = false): void
     {
         $anyoneRequires = $calendarEvent->isRequiredBot();
         $botIsActive = (bool) $calendarEvent->bot?->is_active;
@@ -111,6 +142,7 @@ class BotSchedulingService
             'bot_id' => $calendarEvent->bot_id,
             'bot_is_active' => $botIsActive,
             'meeting_url' => $calendarEvent->url,
+            'force_reschedule' => $forceReschedule,
         ]);
 
         if (!$anyoneRequires && $botIsActive) {
@@ -120,7 +152,7 @@ class BotSchedulingService
         }
 
         if ($anyoneRequires) {
-            $this->schedule($calendarEvent);
+            $this->schedule($calendarEvent, $forceReschedule);
 
             return;
         }
