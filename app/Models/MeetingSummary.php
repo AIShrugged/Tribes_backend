@@ -12,8 +12,9 @@ class MeetingSummary extends Model
     protected function casts(): array
     {
         return [
-            'key_points' => 'array',
-            'decisions'  => 'array',
+            'key_points'  => 'array',
+            'decisions'   => 'array',
+            'commitments' => 'array',
         ];
     }
 

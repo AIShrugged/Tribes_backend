@@ -9,8 +9,11 @@ use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
+use App\Models\MeetingSeriesState;
 use App\Models\MeetingSummary;
+use App\Models\Organization;
 use App\Models\Setting;
+use App\Models\UpcomingAgenda;
 use App\Models\User;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
@@ -26,15 +29,72 @@ class AgendaService
     {
         $event->load('source.user.teams', 'source.user.organizations', 'participants.profile.user.telegramUser');
 
-        $previousEvent = $this->previousMeetingResolver->resolve($event);
+        $previousEvents = $this->previousMeetingResolver->resolveMany($event, 3);
+        $previousEvent = $previousEvents->first();
         $previousSummary = $previousEvent?->meetingSummary;
 
-        $teamIds = $event->source->user->teams->pluck('id');
-        $issues = $teamIds->isNotEmpty()
-            ? Issue::query()->withoutTrashed()->whereIn('team_id', $teamIds)->get()
+        // Issues linked to this meeting series (by sourceable CalendarEvent)
+        $seriesEventIds = CalendarEvent::query()
+            ->where('title', $event->title)
+            ->where('starts_at', '<', $event->starts_at)
+            ->pluck('id');
+
+        $issues = $seriesEventIds->isNotEmpty()
+            ? Issue::query()
+                ->withoutTrashed()
+                ->where('sourceable_type', CalendarEvent::class)
+                ->whereIn('sourceable_id', $seriesEventIds)
+                ->with('assignee')
+                ->get()
             : collect();
 
-        $this->generateGeneralAgenda($event, $previousEvent, $previousSummary, $issues);
+        // Organization context
+        $organization = $event->source?->user?->organizations?->first();
+        $orgContext = $organization?->context;
+
+        // Meeting series state (rolling aggregation)
+        // Try exact identifier first, fall back to title-based match
+        $seriesState = MeetingSeriesState::where(
+            'series_identifier',
+            MeetingSeriesState::buildSeriesIdentifier($event),
+        )->first();
+
+        if (!$seriesState) {
+            $seriesState = MeetingSeriesState::query()
+                ->whereHas('sourceEvent', fn ($q) => $q->where('title', $event->title))
+                ->orderByDesc('version')
+                ->first();
+        }
+
+        // Upcoming agendas from participants (follow-ups from last meeting)
+        $participantUserIds = $event->participants
+            ->filter(fn ($p) => $p->profile?->user_id)
+            ->pluck('profile.user_id')
+            ->unique();
+
+        $upcomingAgendas = $participantUserIds->isNotEmpty()
+            ? UpcomingAgenda::whereIn('user_id', $participantUserIds)
+                ->where('status', AgendaStatus::DONE->value)
+                ->get()
+            : collect();
+
+        // Previous agenda topics
+        $previousAgenda = $previousEvent
+            ? MeetingAgenda::where('calendar_event_id', $previousEvent->id)
+                ->where('type', 'general')
+                ->where('status', AgendaStatus::DONE)
+                ->first()
+            : null;
+
+        $context = new AgendaContext(
+            orgContext: $orgContext,
+            seriesState: $seriesState,
+            previousEvents: $previousEvents,
+            upcomingAgendas: $upcomingAgendas,
+            previousAgenda: $previousAgenda,
+        );
+
+        $this->generateGeneralAgenda($event, $previousEvent, $previousSummary, $issues, $context);
 
         $resolvedUsers = $event->participants
             ->filter(fn ($p) => $p->profile?->user_id)
@@ -42,7 +102,7 @@ class AgendaService
             ->unique('id');
 
         foreach ($resolvedUsers as $user) {
-            $this->generatePersonalAgenda($event, $user, $previousSummary, $previousEvent, $issues);
+            $this->generatePersonalAgenda($event, $user, $previousSummary, $previousEvent, $issues, $context);
         }
     }
 
@@ -51,6 +111,7 @@ class AgendaService
         ?CalendarEvent $previousEvent,
         ?MeetingSummary $previousSummary,
         Collection $issues,
+        AgendaContext $context,
     ): MeetingAgenda {
         $existingAgenda = MeetingAgenda::query()
             ->where('calendar_event_id', $event->id)
@@ -88,7 +149,7 @@ class AgendaService
         }
 
         try {
-            $prompt = $this->buildGeneralPrompt($event, $previousSummary, $issues);
+            $prompt = $this->buildGeneralPrompt($event, $issues, $context);
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
@@ -96,13 +157,68 @@ class AgendaService
                 forceJsonResponse: true,
             );
 
-            $llmData = json_decode($json, true);
+            if (!preg_match('/\{[\s\S]*\}/s', $json, $matches)) {
+                throw new \RuntimeException('No JSON in LLM response');
+            }
+            $llmData = json_decode($matches[0], true) ?? [];
             $structuredData = $this->collectStructuredData($event, $previousEvent, $previousSummary);
+
+            // --- PHP-computed data ---
+            $prevDate = $previousEvent
+                ? $this->normalizeDateTime($previousEvent->starts_at)
+                : null;
+
+            // 1. Commitments with statuses from issues
+            $commitments = $this->extractCommitmentsFromSummary($previousSummary?->summary);
+            $questions = $llmData['questions'] ?? [];
+            $commitmentsCheck = [];
+            foreach ($commitments as $i => $raw) {
+                $parsed = $this->parseCommitment($raw, $prevDate);
+                $status = $this->matchCommitmentStatus($parsed['person'], $parsed['commitment'], $issues);
+                $commitmentsCheck[] = [
+                    'person' => $parsed['person'],
+                    'commitment' => $parsed['commitment'],
+                    'deadline' => $parsed['deadline'],
+                    'status' => $status,
+                    'question' => $questions[$i] ?? 'статус?',
+                ];
+            }
+            $doneCount = count(array_filter($commitmentsCheck, fn ($c) => $c['status'] === 'готово'));
+            $totalCount = count($commitmentsCheck);
+
+            // 2. Decisions from previous meeting
+            $decisions = $previousSummary?->decisions ?? null;
+            $decisionsArray = is_string($decisions)
+                ? json_decode($decisions, true) ?? []
+                : ($decisions ?? []);
+
+            // 3. Tasks created between meetings
+            $tasksBetween = $this->getTasksBetweenMeetings($event, $previousEvent, $issues);
+
+            // 4. Backlog stats with deltas
+            $backlogStats = $this->getBacklogStats($issues, $previousEvent);
+
+            // 5. Previous meeting topics from summary
+            $prevTopics = $this->extractTopicsFromSummary($previousSummary?->summary);
+
+            $renderData = [
+                'event' => $event,
+                'meeting_goal' => $llmData['meeting_goal'] ?? '',
+                'discussion_topics' => $llmData['discussion_topics'] ?? [],
+                'main_problem' => $llmData['main_problem'] ?? '',
+                'prev_topics' => $prevTopics,
+                'commitments_check' => $commitmentsCheck,
+                'commitments_done' => $doneCount,
+                'commitments_total' => $totalCount,
+                'decisions_recap' => $decisionsArray,
+                'tasks_between' => $tasksBetween,
+                'backlog_stats' => $backlogStats,
+            ];
 
             $agenda->update([
                 'status' => AgendaStatus::DONE,
-                'raw_json' => array_merge($llmData, $structuredData),
-                'content' => $this->renderGeneralContent($llmData),
+                'raw_json' => array_merge($renderData, $structuredData, ['event' => null]),
+                'content' => $this->renderGeneralContent($renderData),
             ]);
 
             if ($event->source?->user) {
@@ -131,6 +247,7 @@ class AgendaService
         ?MeetingSummary $previousSummary,
         ?CalendarEvent $previousEvent,
         Collection $allIssues,
+        AgendaContext $context,
     ): MeetingAgenda {
         $existingAgenda = MeetingAgenda::query()
             ->where('calendar_event_id', $event->id)
@@ -169,7 +286,7 @@ class AgendaService
 
         try {
             $userIssues = $allIssues->where('assignee_id', $user->id);
-            $prompt = $this->buildPersonalPrompt($event, $user, $previousSummary, $previousEvent, $userIssues);
+            $prompt = $this->buildPersonalPrompt($event, $user, $previousEvent, $userIssues, $context);
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
@@ -290,73 +407,360 @@ class AgendaService
 
     private function buildGeneralPrompt(
         CalendarEvent $event,
-        ?MeetingSummary $previousSummary,
         Collection $issues,
+        AgendaContext $context,
     ): string {
         $eventStartsAt = $this->normalizeDateTime($event->starts_at);
 
         $parts = [];
-        $parts[] = 'Ты — ассистент для подготовки к рабочим встречам. Сгенерируй общую агенду для предстоящего митинга.';
+        $parts[] = 'Ты — ассистент для подготовки к рабочим встречам. Сгенерируй агенду для предстоящей планёрки.';
         $parts[] = '';
         $parts[] = "Название встречи: {$event->title}";
-        $parts[] = "Описание: {$event->description}";
         $parts[] = "Дата и время: {$eventStartsAt->format('d.m.Y H:i')}";
 
-        if ($previousSummary) {
+        // [1] Organization context
+        if ($context->orgContext) {
             $parts[] = '';
-            $parts[] = '--- ИТОГИ ПРЕДЫДУЩЕГО МИТИНГА ---';
-            $parts[] = "Тема: {$previousSummary->title}";
-            $parts[] = "Краткое содержание: {$previousSummary->summary}";
-
-            if (!empty($previousSummary->key_points)) {
-                $parts[] = 'Ключевые моменты:';
-                foreach ($previousSummary->key_points as $point) {
-                    $parts[] = "- {$point}";
-                }
-            }
-
-            if (!empty($previousSummary->decisions)) {
-                $parts[] = 'Решения:';
-                foreach ($previousSummary->decisions as $decision) {
-                    $parts[] = "- {$decision}";
-                }
-            }
-        } else {
-            $parts[] = '';
-            $parts[] = 'Предыдущий митинг с таким названием не найден (возможно, это первая встреча).';
+            $parts[] = '--- КОНТЕКСТ ПРОЕКТА ---';
+            $parts[] = $context->orgContext;
         }
 
-        if ($issues->isNotEmpty()) {
+        // [2] Meeting series state (rolling aggregation) — strategic context only
+        if ($context->seriesState?->content) {
             $parts[] = '';
-            $parts[] = '--- ЗАДАЧИ КОМАНДЫ ---';
+            $parts[] = '--- ТЕКУЩЕЕ СОСТОЯНИЕ ПРОЕКТА ---';
+            $parts[] = $context->seriesState->content;
+        }
 
-            $grouped = $issues->groupBy('status');
-            foreach ($grouped as $status => $group) {
-                $parts[] = mb_strtoupper($status) . " ({$group->count()}):";
-                foreach ($group->take(10) as $issue) {
-                    $parts[] = "- {$issue->name}" . ($issue->due_date ? " (срок: {$issue->due_date->format('d.m.Y')})" : '');
-                }
-                if ($group->count() > 10) {
-                    $parts[] = "  ... и ещё " . ($group->count() - 10) . ' задач';
-                }
+        // [3] PRIMARY SOURCE: Commitments from previous meeting (extracted in PHP, not LLM)
+        $allCommitments = [];
+        $allDecisions = [];
+        $prevMeetingDate = null;
+
+        if ($context->previousEvents->isNotEmpty()) {
+            $prevEvent = $context->previousEvents->first();
+            $summary = $prevEvent?->meetingSummary;
+
+            if ($summary) {
+                $prevMeetingDate = $this->normalizeDateTime($prevEvent->starts_at);
+                $allCommitments = $this->extractCommitmentsFromSummary($summary->summary);
+
+                $decisions = is_string($summary->decisions ?? null)
+                    ? json_decode($summary->decisions, true) ?? []
+                    : ($summary->decisions ?? []);
+                $allDecisions = $decisions;
+
+                // Brief summary for LLM context
+                $summaryText = mb_substr($summary->summary, 0, 500);
+                $summaryText = preg_replace('/### Следующие шаги.*$/s', '', $summaryText);
+                $summaryText = preg_replace('/=== COMMITMENTS ===.*$/s', '', $summaryText);
+
+                $parts[] = '';
+                $parts[] = '--- КОНТЕКСТ ПРЕДЫДУЩЕЙ ВСТРЕЧИ ---';
+                $parts[] = "Дата: {$prevMeetingDate->format('d.m.Y')}";
+                $parts[] = trim($summaryText);
+            }
+        }
+
+        // Pass numbered commitments to LLM for question generation
+        if (!empty($allCommitments)) {
+            $parts[] = '';
+            $parts[] = '--- ОБЯЗАТЕЛЬСТВА С ПРОШЛОЙ ВСТРЕЧИ (нужно сгенерировать вопрос к каждому) ---';
+            foreach ($allCommitments as $i => $c) {
+                $parts[] = ($i + 1) . ". {$c}";
             }
         }
 
         $parts[] = '';
-        $parts[] = 'Сгенерируй JSON с полями:';
-        $parts[] = '- "previous_meeting_recap": краткий пересказ предыдущего митинга (1-3 предложения), или null если первая встреча';
-        $parts[] = '- "topics_to_discuss": массив тем для обсуждения на этом митинге (3-7 пунктов)';
-        $parts[] = '- "team_tasks_overview": краткий обзор состояния задач команды (2-4 предложения)';
+        $parts[] = 'Сгенерируй JSON со следующими полями:';
+        $parts[] = '';
+        $parts[] = '- "meeting_goal": ОДНО короткое предложение (максимум 12 слов) — главное, что должно быть решено.';
+        $parts[] = '- "discussion_topics": массив объектов {title, description} — 3-5 тем для обсуждения на встрече. Каждая тема — конкретный вопрос с коротким описанием (1 предложение). Строй от обязательств и решений, не от абстрактных тем.';
+        $parts[] = '- "main_problem": строка — одна главная проблематика за прошедший период (2-3 предложения). Что блокирует прогресс или требует стратегического решения. Если нет явной проблемы — null.';
+        $parts[] = '- "questions": массив строк — ровно ' . count($allCommitments) . ' вопросов, по одному на каждое обязательство выше (в том же порядке). Каждый вопрос — конкретный. Не пропускай ни одного.';
+        $parts[] = '';
+        $parts[] = 'ВАЖНО: в "questions" должно быть ровно ' . count($allCommitments) . ' элементов.';
 
         return implode("\n", $parts);
+    }
+
+    private function parseCommitment(string $raw, ?Carbon $meetingDate): array
+    {
+        // Parse "[Person] commitment (deadline)" format
+        $person = '?';
+        $commitment = $raw;
+        $deadline = null;
+
+        // Extract person: "[Иван и Борис]" or "Иван и Борис:" at start
+        if (preg_match('/^\[([^\]]+)\]\s*(.*)$/s', $raw, $m)) {
+            $person = $m[1];
+            $commitment = $m[2];
+        } elseif (preg_match('/^([^:]+?):\s*(.*)$/s', $raw, $m)) {
+            // "Иван и Борис: commitment" format
+            $person = trim($m[1]);
+            $commitment = $m[2];
+        }
+
+        // Extract deadline from parentheses
+        if (preg_match('/\(([^)]+)\)\s*$/', $commitment, $m)) {
+            $deadlineText = mb_strtolower(trim($m[1]));
+            $commitment = trim(preg_replace('/\([^)]+\)\s*$/', '', $commitment));
+
+            if ($meetingDate && str_contains($deadlineText, 'завтра')) {
+                $deadline = $meetingDate->copy()->addDay()->format('d.m.Y');
+            } elseif ($deadlineText !== 'без срока') {
+                $deadline = $m[1];
+            }
+        }
+
+        return [
+            'person' => $person,
+            'commitment' => trim($commitment),
+            'deadline' => $deadline,
+        ];
+    }
+
+    private function extractCommitmentsFromSummary(?string $summary): array
+    {
+        if (!$summary) {
+            return [];
+        }
+
+        $commitments = [];
+
+        // Format 1: "=== COMMITMENTS ===" section
+        if (preg_match('/=== COMMITMENTS ===(.*?)(?:===|\z)/s', $summary, $m)) {
+            foreach (explode("\n", trim($m[1])) as $line) {
+                $line = trim(ltrim(trim($line), '-'));
+                if ($line !== '') {
+                    $commitments[] = $line;
+                }
+            }
+        }
+
+        // Format 2: "### Следующие шаги" section
+        if (empty($commitments) && preg_match('/### Следующие шаги\n(.*?)(?:###|===|\z)/s', $summary, $m)) {
+            foreach (explode("\n", trim($m[1])) as $line) {
+                $line = trim(ltrim(trim($line), '-'));
+                if ($line !== '') {
+                    $commitments[] = $line;
+                }
+            }
+        }
+
+        // Format 3: Markdown table "| Кто | Что делает | Дедлайн |"
+        if (empty($commitments) && preg_match_all('/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|/m', $summary, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $row) {
+                $who = trim($row[1]);
+                $what = trim($row[2]);
+                $deadline = trim($row[3]);
+
+                // Skip header and separator rows
+                if ($who === 'Кто' || str_starts_with($who, '-')) {
+                    continue;
+                }
+
+                $deadlineStr = ($deadline && $deadline !== '-')
+                    ? " ({$deadline})"
+                    : ' (без срока)';
+
+                $commitments[] = "[{$who}] {$what}{$deadlineStr}";
+            }
+        }
+
+        return $commitments;
+    }
+
+    private function matchCommitmentStatus(string $person, string $commitment, Collection $issues): string
+    {
+        // Name mapping: Russian/short names → names in issues table
+        $nameVariants = $this->getNameVariants($person);
+
+        // Find issues matching this person
+        $personIssues = $issues->filter(function ($issue) use ($nameVariants) {
+            $assignee = mb_strtolower($issue->assignee?->name ?? $issue->assignee_name ?? '');
+            foreach ($nameVariants as $variant) {
+                if (str_contains($assignee, $variant)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        if ($personIssues->isEmpty()) {
+            return 'ожидание';
+        }
+
+        // Check if any matching issue is done
+        $commitmentWords = array_filter(
+            preg_split('/[\s,.:;]+/u', mb_strtolower($commitment)),
+            fn ($w) => mb_strlen($w) > 3,
+        );
+
+        foreach ($personIssues as $issue) {
+            $issueName = mb_strtolower($issue->name);
+            $matchCount = 0;
+            foreach ($commitmentWords as $word) {
+                if (str_contains($issueName, $word)) {
+                    $matchCount++;
+                }
+            }
+            // If at least 2 words match, consider it related
+            if ($matchCount >= 2 || ($matchCount >= 1 && count($commitmentWords) <= 2)) {
+                return match ($issue->status) {
+                    'done' => 'готово',
+                    'in_progress' => 'в работе',
+                    'cancelled' => 'отменено',
+                    default => 'ожидание',
+                };
+            }
+        }
+
+        // No matching issue found — check if person has any in_progress tasks
+        $hasInProgress = $personIssues->contains('status', 'in_progress');
+        return $hasInProgress ? 'в работе' : 'ожидание';
+    }
+
+    private function getNameVariants(string $person): array
+    {
+        $person = mb_strtolower(trim($person));
+        $map = [
+            'борис' => ['boris', 'борис'],
+            'борь' => ['boris', 'борис'],
+            'boris' => ['boris', 'борис'],
+            'иван' => ['ivan', 'иван', 'zakharov', 'захаров'],
+            'ivan' => ['ivan', 'иван', 'zakharov'],
+            'константин' => ['konstantin', 'константин', 'kupreychenko', 'купрейченко', 'костя'],
+            'костя' => ['konstantin', 'константин', 'kupreychenko', 'костя'],
+            'konstantin' => ['konstantin', 'константин', 'kupreychenko'],
+            'слава' => ['slava', 'слава'],
+            'slava' => ['slava', 'слава'],
+            'фёдор' => ['fedor', 'фёдор', 'федор', 'zhernovoy', 'жерновой'],
+            'федор' => ['fedor', 'фёдор', 'федор', 'zhernovoy'],
+            'fedor' => ['fedor', 'фёдор', 'федор', 'zhernovoy'],
+            'никита' => ['nikita', 'никита'],
+        ];
+
+        // Try exact match first
+        if (isset($map[$person])) {
+            return $map[$person];
+        }
+
+        // Try partial match (for compound names like "Иван и Борис")
+        $variants = [];
+        foreach ($map as $key => $values) {
+            if (str_contains($person, $key)) {
+                $variants = array_merge($variants, $values);
+            }
+        }
+
+        return !empty($variants) ? array_unique($variants) : [$person];
+    }
+
+    private function getTasksBetweenMeetings(
+        CalendarEvent $event,
+        ?CalendarEvent $previousEvent,
+        Collection $issues,
+    ): array {
+        if (!$previousEvent) {
+            return [];
+        }
+
+        return $issues
+            ->filter(fn ($i) => $i->created_at >= $previousEvent->starts_at
+                && $i->created_at < $event->starts_at)
+            ->map(fn ($i) => [
+                'name' => $i->name,
+                'assignee' => $i->assignee?->name ?? $i->assignee_name,
+                'status' => match ($i->status) {
+                    'done' => 'готово',
+                    'in_progress' => 'в работе',
+                    'cancelled' => 'отменено',
+                    default => 'открыта',
+                },
+            ])
+            ->values()
+            ->toArray();
+    }
+
+    private function getBacklogStats(Collection $issues, ?CalendarEvent $previousEvent): array
+    {
+        $open = $issues->where('status', 'open')->count();
+        $inProgress = $issues->where('status', 'in_progress')->count();
+        $done = $issues->where('status', 'done')->count();
+        $cancelled = $issues->where('status', 'cancelled')->count();
+        $paused = $issues->whereNotIn('status', ['open', 'in_progress', 'done', 'cancelled'])->count();
+        $total = $issues->count();
+
+        // Calculate deltas based on issues created/updated since previous meeting
+        $deltaOpen = 0;
+        $deltaInProgress = 0;
+        $deltaDone = 0;
+
+        if ($previousEvent) {
+            $since = $previousEvent->starts_at;
+            $deltaOpen = $issues->where('status', 'open')
+                ->filter(fn ($i) => $i->created_at >= $since)->count();
+            $deltaInProgress = $issues->where('status', 'in_progress')
+                ->filter(fn ($i) => $i->updated_at >= $since)->count();
+            $deltaDone = $issues->where('status', 'done')
+                ->filter(fn ($i) => $i->updated_at >= $since)->count();
+        }
+
+        return [
+            'total' => $total,
+            'open' => $open,
+            'in_progress' => $inProgress,
+            'done' => $done,
+            'cancelled' => $cancelled,
+            'paused' => $paused,
+            'delta_open' => $deltaOpen,
+            'delta_in_progress' => $deltaInProgress,
+            'delta_done' => $deltaDone,
+        ];
+    }
+
+    private function extractTopicsFromSummary(?string $summary): array
+    {
+        if (!$summary) {
+            return [];
+        }
+
+        $topics = [];
+
+        // Format 1: "### Тема N: Title" sections
+        if (preg_match_all('/### (?:Тема \d+[:.]\s*)?(.+?)(?=\n###|\n===|\z)/s', $summary, $matches)) {
+            foreach ($matches[1] as $topic) {
+                $title = trim(explode("\n", trim($topic))[0]);
+                if (!str_contains($title, 'Следующие шаги') && $title !== '') {
+                    $topics[] = $title;
+                }
+            }
+        }
+
+        // Format 2: "Краткое содержание" with bullet points "- Тема: описание"
+        if (empty($topics) && preg_match('/Краткое содержание\n(.*?)(?:\n\n|\n\||\z)/s', $summary, $m)) {
+            foreach (explode("\n", trim($m[1])) as $line) {
+                $line = trim(ltrim(trim($line), '-'));
+                if ($line !== '') {
+                    // Take text before first colon or first 80 chars
+                    $colonPos = mb_strpos($line, ':');
+                    $topics[] = $colonPos && $colonPos < 80
+                        ? mb_substr($line, 0, $colonPos)
+                        : mb_substr($line, 0, 80);
+                }
+            }
+        }
+
+        return array_slice($topics, 0, 6);
     }
 
     private function buildPersonalPrompt(
         CalendarEvent $event,
         User $user,
-        ?MeetingSummary $previousSummary,
         ?CalendarEvent $previousEvent,
         Collection $userIssues,
+        AgendaContext $context,
     ): string {
         $eventStartsAt = $this->normalizeDateTime($event->starts_at);
         $previousStartsAt = $previousEvent?->starts_at
@@ -369,19 +773,60 @@ class AgendaService
         $parts[] = "Название встречи: {$event->title}";
         $parts[] = "Дата и время: {$eventStartsAt->format('d.m.Y H:i')}";
 
-        if ($previousSummary) {
+        // Organization context
+        if ($context->orgContext) {
             $parts[] = '';
-            $parts[] = '--- ИТОГИ ПРЕДЫДУЩЕГО МИТИНГА ---';
-            $parts[] = "Краткое содержание: {$previousSummary->summary}";
+            $parts[] = '--- КОНТЕКСТ ПРОЕКТА ---';
+            $parts[] = $context->orgContext;
+        }
 
-            if (!empty($previousSummary->key_points)) {
-                $parts[] = 'Ключевые моменты:';
-                foreach ($previousSummary->key_points as $point) {
-                    $parts[] = "- {$point}";
+        // Meeting series state
+        if ($context->seriesState?->content) {
+            $parts[] = '';
+            $parts[] = '--- ТЕКУЩЕЕ СОСТОЯНИЕ ПРОЕКТА ---';
+            $parts[] = $context->seriesState->content;
+        }
+
+        // Previous summaries
+        if ($context->previousEvents->isNotEmpty()) {
+            $parts[] = '';
+            $parts[] = '--- ИТОГИ ПРЕДЫДУЩИХ МИТИНГОВ ---';
+
+            foreach ($context->previousEvents->take(2) as $prevEvent) {
+                $summary = $prevEvent->meetingSummary;
+                if (! $summary) {
+                    continue;
+                }
+
+                $parts[] = ">> {$prevEvent->starts_at->format('d.m.Y')}: {$summary->summary}";
+
+                if (! empty($summary->key_points)) {
+                    foreach ($summary->key_points as $point) {
+                        $parts[] = "- {$point}";
+                    }
                 }
             }
         }
 
+        // User's upcoming agenda follow-ups
+        $userUpcoming = $context->upcomingAgendas->firstWhere('user_id', $user->id);
+        if ($userUpcoming?->raw_json) {
+            $followUps = $userUpcoming->raw_json['follow_up_items'] ?? [];
+            $openQuestions = $userUpcoming->raw_json['open_questions'] ?? [];
+
+            if (! empty($followUps) || ! empty($openQuestions)) {
+                $parts[] = '';
+                $parts[] = '--- НЕЗАКРЫТЫЕ ВОПРОСЫ И FOLLOW-UPS ---';
+                foreach ($followUps as $item) {
+                    $parts[] = "- [follow-up] {$item}";
+                }
+                foreach ($openQuestions as $item) {
+                    $parts[] = "- [вопрос] {$item}";
+                }
+            }
+        }
+
+        // User's issues
         $openTasks = $userIssues->whereIn('status', ['open', 'in_progress']);
         if ($openTasks->isNotEmpty()) {
             $parts[] = '';
@@ -431,6 +876,23 @@ class AgendaService
         return implode("\n", $parts);
     }
 
+    private function collectFollowUps(Collection $upcomingAgendas): Collection
+    {
+        $items = collect();
+
+        foreach ($upcomingAgendas as $agenda) {
+            $raw = $agenda->raw_json ?? [];
+            foreach ($raw['follow_up_items'] ?? [] as $item) {
+                $items->push($item);
+            }
+            foreach ($raw['open_questions'] ?? [] as $item) {
+                $items->push($item);
+            }
+        }
+
+        return $items->unique()->values();
+    }
+
     private function normalizeDateTime(mixed $value): Carbon
     {
         if ($value instanceof Carbon) {
@@ -442,30 +904,124 @@ class AgendaService
 
     private function renderGeneralContent(array $data): string
     {
+        $event = $data['event'] ?? null;
         $lines = [];
-        $lines[] = '📋 Общая агенда митинга';
-        $lines[] = '';
 
-        if (!empty($data['previous_meeting_recap'])) {
-            $lines[] = '🔙 Прошлый митинг:';
-            $lines[] = $data['previous_meeting_recap'];
+        // Header
+        $title = $event?->title ?? 'Встреча';
+        $date = $event ? $this->normalizeDateTime($event->starts_at)->format('d.m.Y') : '';
+        $time = $event ? $this->normalizeDateTime($event->starts_at)->format('H:i') : '';
+        $lines[] = "{$title}";
+        $lines[] = "{$date}  ·  {$time}";
+
+        // 1. Discussion topics
+        if (!empty($data['discussion_topics'])) {
             $lines[] = '';
-        }
-
-        if (!empty($data['topics_to_discuss'])) {
-            $lines[] = '📌 Темы для обсуждения:';
-            foreach ($data['topics_to_discuss'] as $i => $topic) {
-                $lines[] = ($i + 1) . '. ' . $topic;
+            $lines[] = '1. Темы для обсуждения';
+            foreach ($data['discussion_topics'] as $topic) {
+                $title = $topic['title'] ?? $topic;
+                $desc = $topic['description'] ?? '';
+                $lines[] = "● {$title}";
+                if ($desc) {
+                    $lines[] = "  {$desc}";
+                }
             }
-            $lines[] = '';
         }
 
-        if (!empty($data['team_tasks_overview'])) {
-            $lines[] = '📊 Обзор задач команды:';
-            $lines[] = $data['team_tasks_overview'];
+        // 2. Main problem
+        if (!empty($data['main_problem'])) {
+            $lines[] = '';
+            $lines[] = '2. Главная проблематика';
+            $lines[] = $data['main_problem'];
+        }
+
+        // 3. Previous meeting topics
+        if (!empty($data['prev_topics'])) {
+            $lines[] = '';
+            $lines[] = '3. Темы прошлого митинга';
+            foreach ($data['prev_topics'] as $topic) {
+                $lines[] = "● {$topic}";
+            }
+        }
+
+        // 4. Tasks from previous meeting + statuses
+        if (!empty($data['commitments_check'])) {
+            $doneCount = $data['commitments_done'] ?? 0;
+            $totalCount = $data['commitments_total'] ?? count($data['commitments_check']);
+            $pct = $totalCount > 0 ? round($doneCount / $totalCount * 100) : 0;
+
+            $lines[] = '';
+            $lines[] = "4. Задачи с прошлого митинга";
+            $lines[] = "Выполнено — {$doneCount} из {$totalCount} ({$pct}%)";
+            $lines[] = '';
+            $lines[] = 'Задача | Ответственный | Статус';
+            $lines[] = '-------|---------------|-------';
+            foreach ($data['commitments_check'] as $c) {
+                $person = $c['person'] ?? '?';
+                $commitment = $c['commitment'] ?? '';
+                $deadline = !empty($c['deadline']) ? " (срок: {$c['deadline']})" : '';
+                $status = $c['status'] ?? 'ожидание';
+                $lines[] = "{$commitment}{$deadline} | {$person} | {$status}";
+            }
+        }
+
+        // 5. Tasks created between meetings
+        if (!empty($data['tasks_between'])) {
+            $btDone = count(array_filter($data['tasks_between'], fn ($t) => $t['status'] === 'готово'));
+            $btTotal = count($data['tasks_between']);
+            $btPct = $btTotal > 0 ? round($btDone / $btTotal * 100) : 0;
+
+            $lines[] = '';
+            $lines[] = '5. Задачи, созданные между митингами';
+            $lines[] = "Выполнено — {$btDone} из {$btTotal} ({$btPct}%)";
+            $lines[] = '';
+            $lines[] = 'Задача | Ответственный | Статус';
+            $lines[] = '-------|---------------|-------';
+            foreach ($data['tasks_between'] as $t) {
+                $lines[] = "{$t['name']} | {$t['assignee']} | {$t['status']}";
+            }
+        }
+
+        // 6. Backlog progress
+        if (!empty($data['backlog_stats'])) {
+            $bs = $data['backlog_stats'];
+            $lines[] = '';
+            $lines[] = '6. Прогресс по бэклогу';
+            $lines[] = "Всего задач: {$bs['total']}";
+            $lines[] = "Открыто: {$bs['open']}" . ($bs['delta_open'] ? " (+{$bs['delta_open']} новых)" : '');
+            $lines[] = "В работе: {$bs['in_progress']}" . ($bs['delta_in_progress'] ? " (+{$bs['delta_in_progress']})" : '');
+            $lines[] = "Закрыто: {$bs['done']}" . ($bs['delta_done'] ? " (+{$bs['delta_done']})" : '');
+
+            if ($bs['total'] > 0) {
+                $pct = round($bs['done'] / $bs['total'] * 100);
+                $lines[] = "Общий прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
+            }
         }
 
         return implode("\n", $lines);
+    }
+
+    private function detectStuckTasks(Collection $issues, CalendarEvent $event): Collection
+    {
+        $previousEventIds = CalendarEvent::query()
+            ->where('title', $event->title)
+            ->where('starts_at', '<', $event->starts_at)
+            ->orderByDesc('starts_at')
+            ->pluck('id');
+
+        // Stuck = open tasks created 3-6 meetings ago (skipping 2 most recent)
+        // Tasks older than 6 meetings are just backlog — not red flags
+        $stuckWindowIds = $previousEventIds->skip(2)->take(4)->values();
+
+        if ($stuckWindowIds->isEmpty()) {
+            return collect();
+        }
+
+        return $issues
+            ->whereIn('status', ['open', 'in_progress'])
+            ->filter(fn ($i) => $stuckWindowIds->contains($i->sourceable_id))
+            ->take(5)
+            ->values();
     }
 
     private function renderPersonalContent(array $data, User $user): string
