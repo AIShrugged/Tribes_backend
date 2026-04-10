@@ -116,6 +116,7 @@ class TodayBriefingService
                 if ($sourceIds->isNotEmpty()) {
                     $q->orWhereIn('source_id', $sourceIds);
                 }
+                $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
             })
             ->whereBetween('starts_at', [$startOfDay, $endOfDay])
             ->with([
@@ -319,6 +320,7 @@ class TodayBriefingService
                 if ($sourceIds->isNotEmpty()) {
                     $q->orWhereIn('source_id', $sourceIds);
                 }
+                $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
             })
             ->pluck('id');
 
