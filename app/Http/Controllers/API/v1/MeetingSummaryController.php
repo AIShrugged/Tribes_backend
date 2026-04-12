@@ -44,6 +44,14 @@ class MeetingSummaryController extends Controller
      *       "Launch the redesign by March 1st",
      *       "Hire two senior engineers in Q1"
      *     ],
+     *     "tracker_url": "https://tracker.example.com/board/123",
+     *     "tasks": [
+     *       {
+     *         "id": 10,
+     *         "name": "Update onboarding flow",
+     *         "status": "open"
+     *       }
+     *     ],
      *     "created_at": "2026-02-10T20:00:00.000000Z",
      *     "updated_at": "2026-02-10T20:05:00.000000Z"
      *   },
@@ -63,6 +71,7 @@ class MeetingSummaryController extends Controller
     public function show(MeetingSummaryRequest $request): ApiResponse
     {
         $calendarEvent = CalendarEvent::owned(Auth::id())
+            ->with('issues')
             ->findOrFail($request->getCalendarEventId());
 
         $summary = $calendarEvent->meetingSummary;
@@ -70,6 +79,10 @@ class MeetingSummaryController extends Controller
         if (!$summary) {
             return ApiResponse::notFound();
         }
+
+        // Expose the eager-loaded issues collection on the summary under the
+        // relation name used by MeetingSummaryResource ('calendarEventIssues').
+        $summary->setRelation('calendarEventIssues', $calendarEvent->issues);
 
         return ApiResponse::success(data: MeetingSummaryResource::make($summary));
     }
@@ -84,9 +97,14 @@ class MeetingSummaryController extends Controller
     public function generate(MeetingSummaryRequest $request, MeetingSummaryService $service): ApiResponse
     {
         $calendarEvent = CalendarEvent::owned(Auth::id())
+            ->with('issues')
             ->findOrFail($request->getCalendarEventId());
 
         $summary = $service->generate($calendarEvent);
+
+        // Expose the eager-loaded issues collection on the summary under the
+        // relation name used by MeetingSummaryResource ('calendarEventIssues').
+        $summary->setRelation('calendarEventIssues', $calendarEvent->issues);
 
         return ApiResponse::success(data: MeetingSummaryResource::make($summary));
     }
