@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\AgentTaskExecutionMode;
 use App\Enums\AgentTaskRunStatus;
 use App\Enums\ConversationChannelType;
 use App\Models\AgentTask;
@@ -12,6 +13,7 @@ use App\Services\Channel\ChannelRuntimeService;
 use App\Services\IssueAgentFlowProgressService;
 use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
+use App\Services\PaperclipAgentTaskExecutor;
 use App\Services\SandboxRunWorkspaceService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -48,6 +50,7 @@ class RunAgentTaskJob implements ShouldQueue
     public function handle(
         InlineAgentTaskExecutor $inlineExecutor,
         IsolatedAgentTaskExecutor $isolatedExecutor,
+        PaperclipAgentTaskExecutor $paperclipExecutor,
         SandboxRunWorkspaceService $sandboxRunWorkspaceService,
         IssueAgentFlowProgressService $flowProgressService,
     ): void
@@ -89,9 +92,11 @@ class RunAgentTaskJob implements ShouldQueue
         ]);
 
         try {
-            $response = $task->isIsolated()
-                ? $isolatedExecutor->execute($task, $run)
-                : $inlineExecutor->execute($task, $run);
+            $response = match ($task->effectiveExecutionMode()) {
+                AgentTaskExecutionMode::ISOLATED   => $isolatedExecutor->execute($task, $run),
+                AgentTaskExecutionMode::PAPERCLIP  => $paperclipExecutor->execute($task, $run),
+                default                            => $inlineExecutor->execute($task, $run),
+            };
 
             $run->update([
                 'status' => AgentTaskRunStatus::COMPLETED->value,

@@ -101,6 +101,11 @@ class AgentTask extends Model
         return $this->effectiveExecutionMode() === AgentTaskExecutionMode::INLINE;
     }
 
+    public function isPaperclip(): bool
+    {
+        return $this->effectiveExecutionMode() === AgentTaskExecutionMode::PAPERCLIP;
+    }
+
     public function effectiveExecutionMode(): AgentTaskExecutionMode
     {
         return $this->execution_mode
