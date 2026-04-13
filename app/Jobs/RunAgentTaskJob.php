@@ -14,6 +14,7 @@ use App\Services\IssueAgentFlowProgressService;
 use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
 use App\Services\PaperclipAgentTaskExecutor;
+use App\Jobs\CheckPaperclipIssueStatusJob;
 use App\Services\SandboxRunWorkspaceService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -92,10 +93,21 @@ class RunAgentTaskJob implements ShouldQueue
         ]);
 
         try {
+            if ($task->isPaperclip()) {
+                $paperclipExecutor->dispatch($task, $run);
+
+                $intervals     = config('paperclip.polling.intervals', [1, 2, 5, 10, 10, 10]);
+                $firstInterval = $intervals[0];
+
+                CheckPaperclipIssueStatusJob::dispatch($run->id, 0, 0)
+                    ->delay(now()->addSeconds($firstInterval));
+
+                return;
+            }
+
             $response = match ($task->effectiveExecutionMode()) {
-                AgentTaskExecutionMode::ISOLATED   => $isolatedExecutor->execute($task, $run),
-                AgentTaskExecutionMode::PAPERCLIP  => $paperclipExecutor->execute($task, $run),
-                default                            => $inlineExecutor->execute($task, $run),
+                AgentTaskExecutionMode::ISOLATED => $isolatedExecutor->execute($task, $run),
+                default                          => $inlineExecutor->execute($task, $run),
             };
 
             $run->update([

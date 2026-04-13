@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\AgentTaskRunStatus;
+use App\Jobs\CheckPaperclipIssueStatusJob;
 use App\Jobs\RunAgentTaskJob;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
@@ -10,6 +11,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -24,30 +26,32 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
         parent::setUp();
 
         config([
-            'paperclip.api_url'              => 'http://paperclip-test.local',
-            'paperclip.api_key'              => 'test-api-key',
-            'paperclip.company_id'           => 'company-test',
-            'paperclip.agent_id'             => 'agent-test',
-            'paperclip.polling.intervals'    => [0],  // no sleep during tests
-            'paperclip.polling.max_seconds'  => 5,
+            'paperclip.api_url'           => 'http://paperclip-test.local',
+            'paperclip.api_key'           => 'test-api-key',
+            'paperclip.company_id'        => 'company-test',
+            'paperclip.agent_id'          => 'agent-test',
+            'paperclip.polling.intervals' => [0],  // no delay in tests
+            'paperclip.polling.max_seconds' => 60,
         ]);
     }
 
+    // -------------------------------------------------------------------------
+    // RunAgentTaskJob: creates issue and dispatches CheckJob
+    // -------------------------------------------------------------------------
+
     #[Test]
-    public function paperclip_task_completes_and_stores_output_from_plan_document(): void
+    public function job_creates_issue_dispatches_check_job_and_leaves_run_in_processing(): void
     {
+        Queue::fake();
+
         Http::fake([
             'paperclip-test.local/api/companies/company-test/issues' => Http::response([
                 'id'     => self::ISSUE_ID,
                 'status' => 'todo',
             ], 201),
-
-            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::sequence()
-                ->push(['id' => self::ISSUE_ID, 'status' => 'in_progress'], 200)
-                ->push(['id' => self::ISSUE_ID, 'status' => 'done', 'planDocument' => 'The task is done. Here is the result.'], 200),
         ]);
 
-        [$task, $run] = $this->createPaperclipTaskAndRun('Summarise last week');
+        [$task, $run] = $this->createPaperclipTaskAndRun();
 
         $job = new RunAgentTaskJob($task->id, $run->id, 1);
         $this->app->call([$job, 'handle']);
@@ -55,116 +59,20 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
         $run  = $run->fresh();
         $task = $task->fresh();
 
-        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->status->value);
-        $this->assertSame('The task is done. Here is the result.', $run->output);
+        $this->assertSame(AgentTaskRunStatus::PROCESSING->value, $run->status->value);
         $this->assertSame(self::ISSUE_ID, $run->paperclip_issue_id);
-        $this->assertSame(self::ISSUE_ID, $run->metadata['paperclip_issue_id']);
-        $this->assertFalse($task->enabled);
-        $this->assertNull($task->locked_at);
-        $this->assertNotNull($task->last_completed_at);
+        $this->assertNull($run->finished_at);
+        $this->assertNotNull($task->locked_at);
+
+        Queue::assertPushed(CheckPaperclipIssueStatusJob::class, function ($job) use ($run) {
+            return $job->agentTaskRunId === $run->id
+                && $job->pollStep === 0
+                && $job->elapsedSeconds === 0;
+        });
     }
 
     #[Test]
-    public function paperclip_task_completes_and_stores_output_from_last_comment_when_no_plan_document(): void
-    {
-        Http::fake([
-            'paperclip-test.local/api/companies/company-test/issues' => Http::response([
-                'id'     => self::ISSUE_ID,
-                'status' => 'todo',
-            ], 201),
-
-            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
-                'id'          => self::ISSUE_ID,
-                'status'      => 'done',
-                'planDocument' => null,
-            ], 200),
-
-            'paperclip-test.local/api/issues/'.self::ISSUE_ID.'/comments' => Http::response([
-                ['body' => 'First comment'],
-                ['body' => 'Final result comment'],
-            ], 200),
-        ]);
-
-        [$task, $run] = $this->createPaperclipTaskAndRun('Write a summary');
-
-        $job = new RunAgentTaskJob($task->id, $run->id, 1);
-        $this->app->call([$job, 'handle']);
-
-        $run = $run->fresh();
-
-        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->status->value);
-        $this->assertSame('Final result comment', $run->output);
-        $this->assertSame(self::ISSUE_ID, $run->paperclip_issue_id);
-    }
-
-    #[Test]
-    public function paperclip_task_fails_when_issue_is_cancelled(): void
-    {
-        Http::fake([
-            'paperclip-test.local/api/companies/company-test/issues' => Http::response([
-                'id'     => self::ISSUE_ID,
-                'status' => 'todo',
-            ], 201),
-
-            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
-                'id'     => self::ISSUE_ID,
-                'status' => 'cancelled',
-            ], 200),
-        ]);
-
-        [$task, $run] = $this->createPaperclipTaskAndRun('Task that will be cancelled');
-
-        $job = new RunAgentTaskJob($task->id, $run->id, 1);
-        try {
-            $this->app->call([$job, 'handle']);
-        } catch (\RuntimeException) {
-            // job re-throws after updating run/task state
-        }
-
-        $run  = $run->fresh();
-        $task = $task->fresh();
-
-        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->status->value);
-        $this->assertStringContainsString('cancelled', $run->error_message);
-        $this->assertSame(self::ISSUE_ID, $run->paperclip_issue_id);
-        $this->assertNull($task->locked_at);
-        $this->assertNotNull($task->last_failed_at);
-    }
-
-    #[Test]
-    public function paperclip_task_fails_on_polling_timeout(): void
-    {
-        config(['paperclip.polling.max_seconds' => 0]);  // timeout immediately
-
-        Http::fake([
-            'paperclip-test.local/api/companies/company-test/issues' => Http::response([
-                'id'     => self::ISSUE_ID,
-                'status' => 'todo',
-            ], 201),
-
-            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
-                'id'     => self::ISSUE_ID,
-                'status' => 'in_progress',
-            ], 200),
-        ]);
-
-        [$task, $run] = $this->createPaperclipTaskAndRun('Long running task');
-
-        $job = new RunAgentTaskJob($task->id, $run->id, 1);
-        try {
-            $this->app->call([$job, 'handle']);
-        } catch (\RuntimeException) {
-            // job re-throws after updating run/task state
-        }
-
-        $run = $run->fresh();
-
-        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->status->value);
-        $this->assertStringContainsString('timeout', $run->error_message);
-    }
-
-    #[Test]
-    public function paperclip_task_fails_when_api_returns_error(): void
+    public function job_fails_run_when_paperclip_api_returns_error(): void
     {
         Http::fake([
             'paperclip-test.local/api/companies/company-test/issues' => Http::response([
@@ -172,57 +80,195 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
             ], 401),
         ]);
 
-        [$task, $run] = $this->createPaperclipTaskAndRun('Task with bad credentials');
+        [$task, $run] = $this->createPaperclipTaskAndRun();
 
         $job = new RunAgentTaskJob($task->id, $run->id, 1);
         try {
             $this->app->call([$job, 'handle']);
-        } catch (\RuntimeException) {
-            // job re-throws after updating run/task state
-        }
+        } catch (\RuntimeException) {}
 
-        $run = $run->fresh();
-
-        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->status->value);
-        $this->assertStringContainsString('401', $run->error_message);
+        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->fresh()->status->value);
+        $this->assertStringContainsString('401', $run->fresh()->error_message);
     }
 
     #[Test]
-    public function paperclip_issue_is_created_with_task_prompt_as_description(): void
+    public function issue_is_created_with_correct_payload(): void
     {
+        Queue::fake();
+
         Http::fake([
             'paperclip-test.local/api/companies/company-test/issues' => Http::response([
-                'id'     => self::ISSUE_ID,
-                'status' => 'todo',
+                'id' => self::ISSUE_ID, 'status' => 'todo',
             ], 201),
-
-            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
-                'id'          => self::ISSUE_ID,
-                'status'      => 'done',
-                'planDocument' => 'done',
-            ], 200),
         ]);
 
-        [$task, $run] = $this->createPaperclipTaskAndRun(
-            name: 'My task',
-            prompt: 'Do something important',
-        );
+        [$task, $run] = $this->createPaperclipTaskAndRun(name: 'My task', prompt: 'Do something important');
 
-        $job = new RunAgentTaskJob($task->id, $run->id, 1);
-        $this->app->call([$job, 'handle']);
+        $this->app->call([new RunAgentTaskJob($task->id, $run->id, 1), 'handle']);
 
         Http::assertSent(function (Request $request) use ($task) {
             if (! str_contains($request->url(), '/api/companies/company-test/issues')) {
                 return false;
             }
-
             $body = $request->data();
 
             return $body['title'] === $task->name
                 && str_contains($body['description'], $task->prompt)
                 && $body['assigneeAgentId'] === 'agent-test'
-                && $body['status'] === 'todo';
+                && $body['status'] === 'todo'
+                && ! isset($body['callbackUrl']);
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // CheckPaperclipIssueStatusJob: completes run
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function check_job_completes_run_from_plan_document(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id'           => self::ISSUE_ID,
+                'status'       => 'done',
+                'planDocument' => 'The task is done. Here is the result.',
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        $run  = $run->fresh();
+        $task = $task->fresh();
+
+        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->status->value);
+        $this->assertSame('The task is done. Here is the result.', $run->output);
+        $this->assertNotNull($run->finished_at);
+        $this->assertFalse($task->enabled);
+        $this->assertNull($task->locked_at);
+        $this->assertNotNull($task->last_completed_at);
+    }
+
+    #[Test]
+    public function check_job_completes_run_from_last_comment_when_no_plan_document(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id' => self::ISSUE_ID, 'status' => 'done', 'planDocument' => null,
+            ], 200),
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID.'/comments' => Http::response([
+                ['body' => 'First comment'],
+                ['body' => 'Final result comment'],
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->fresh()->status->value);
+        $this->assertSame('Final result comment', $run->fresh()->output);
+    }
+
+    // -------------------------------------------------------------------------
+    // CheckPaperclipIssueStatusJob: re-queues when in_progress
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function check_job_requeues_itself_when_issue_in_progress(): void
+    {
+        Queue::fake();
+
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id' => self::ISSUE_ID, 'status' => 'in_progress',
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        $this->assertSame(AgentTaskRunStatus::PROCESSING->value, $run->fresh()->status->value);
+
+        Queue::assertPushed(CheckPaperclipIssueStatusJob::class, function ($job) use ($run) {
+            return $job->agentTaskRunId === $run->id
+                && $job->pollStep === 1
+                && $job->elapsedSeconds === 0; // interval=0 in tests
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // CheckPaperclipIssueStatusJob: fails on cancelled
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function check_job_fails_run_when_issue_cancelled(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id' => self::ISSUE_ID, 'status' => 'cancelled',
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        $run  = $run->fresh();
+        $task = $task->fresh();
+
+        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->status->value);
+        $this->assertStringContainsString('cancelled', $run->error_message);
+        $this->assertNotNull($task->last_failed_at);
+        $this->assertNull($task->locked_at);
+    }
+
+    // -------------------------------------------------------------------------
+    // CheckPaperclipIssueStatusJob: fails on timeout
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function check_job_fails_run_on_timeout(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id' => self::ISSUE_ID, 'status' => 'in_progress',
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        // elapsed already at max
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 60), 'handle']);
+
+        $run = $run->fresh();
+
+        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->status->value);
+        $this->assertStringContainsString('timeout', $run->error_message);
+    }
+
+    // -------------------------------------------------------------------------
+    // CheckPaperclipIssueStatusJob: idempotent
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function check_job_skips_already_completed_run(): void
+    {
+        Http::fake(); // no HTTP calls expected
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'completed']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        Http::assertNothingSent();
     }
 
     // -------------------------------------------------------------------------

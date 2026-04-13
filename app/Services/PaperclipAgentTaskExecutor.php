@@ -13,7 +13,11 @@ class PaperclipAgentTaskExecutor
         private readonly AgentTaskContextBuilder $contextBuilder,
     ) {}
 
-    public function execute(AgentTask $task, AgentTaskRun $run): string
+    /**
+     * Create a Paperclip issue for the task and return immediately.
+     * Completion is handled asynchronously via the webhook endpoint.
+     */
+    public function dispatch(AgentTask $task, AgentTaskRun $run): void
     {
         $context = $this->contextBuilder->build($task);
 
@@ -40,66 +44,6 @@ class PaperclipAgentTaskExecutor
             'agent_task_run_id'  => $run->id,
             'paperclip_issue_id' => $issueId,
         ]);
-
-        return $this->pollUntilDone($task, $run, $issueId);
-    }
-
-    private function pollUntilDone(AgentTask $task, AgentTaskRun $run, string $issueId): string
-    {
-        $timeoutSeconds = $task->metadata['timeout_seconds']
-            ?? config('paperclip.polling.max_seconds', 1800);
-
-        $intervals = config('paperclip.polling.intervals', [1, 2, 5, 10, 10, 10]);
-        $elapsed   = 0;
-        $step      = 0;
-
-        while (true) {
-            $sleepSeconds = $intervals[min($step, count($intervals) - 1)];
-            sleep($sleepSeconds);
-            $elapsed += $sleepSeconds;
-            $step++;
-
-            $issue  = $this->client->getIssue($issueId);
-            $status = $issue['status'] ?? null;
-
-            Log::debug('Paperclip polling', [
-                'agent_task_run_id'  => $run->id,
-                'paperclip_issue_id' => $issueId,
-                'status'             => $status,
-                'elapsed'            => $elapsed,
-            ]);
-
-            if ($status === 'done') {
-                return $this->extractOutput($issue, $issueId);
-            }
-
-            if ($status === 'cancelled') {
-                throw new \RuntimeException("Paperclip issue {$issueId} was cancelled.");
-            }
-
-            if ($elapsed >= $timeoutSeconds) {
-                throw new \RuntimeException(
-                    "Paperclip polling timeout after {$elapsed}s for issue {$issueId}."
-                );
-            }
-        }
-    }
-
-    private function extractOutput(array $issue, string $issueId): string
-    {
-        if (! empty($issue['planDocument'])) {
-            return $issue['planDocument'];
-        }
-
-        $comments = $this->client->getIssueComments($issueId);
-
-        if (! empty($comments)) {
-            $last = end($comments);
-
-            return $last['body'] ?? '';
-        }
-
-        return '';
     }
 
     private function buildDescription(array $context): string
