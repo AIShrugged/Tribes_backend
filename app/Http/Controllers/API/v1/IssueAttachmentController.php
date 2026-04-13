@@ -21,6 +21,10 @@ class IssueAttachmentController extends Controller
 
         $path = $request->file('file')->store("issues/{$task->id}", $disk);
 
+        if ($path === false) {
+            return ApiResponse::error('Failed to store attachment', 500);
+        }
+
         $attachment = $task->attachments()->create([
             'file_path' => $path,
             'uploaded_at' => now(),
@@ -52,8 +56,13 @@ class IssueAttachmentController extends Controller
     public function download(int $attachment): StreamedResponse
     {
         $record = IssueAttachment::query()->findOrFail($attachment);
+        $disk = $this->attachmentDisk();
 
-        return Storage::disk($this->attachmentDisk())->response(
+        if (!Storage::disk($disk)->exists($record->file_path)) {
+            abort(404, 'Attachment file not found');
+        }
+
+        return Storage::disk($disk)->response(
             $record->file_path,
             basename($record->file_path),
             ['Content-Disposition' => 'inline; filename="'.basename($record->file_path).'"']

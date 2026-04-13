@@ -13,6 +13,7 @@ class IssueAttachmentResource extends JsonResource
         return [
             'id' => $this->id,
             'file_path' => $this->file_path,
+            'original_name' => $this->file_path ? basename($this->file_path) : null,
             'file_url' => URL::temporarySignedRoute(
                 'attachments.download',
                 now()->addMinutes(30),
