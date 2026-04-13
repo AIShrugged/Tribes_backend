@@ -51,6 +51,7 @@ class SendMeetingSummaryNotification
     private function send(TelegramChatRegistration $registration, $summary): void
     {
         try {
+            $summary->calendarEvent->loadMissing(['participants', 'issues']);
             $text = $this->formatMessage($summary);
 
             $telegram = new Api(config('telegram.bot_token'));
@@ -82,11 +83,46 @@ class SendMeetingSummaryNotification
         $lines[] = '<b>' . e($summary->title) . '</b>';
         $lines[] = '';
 
-        if ($summary->summary) {
-            $lines[] = $this->markdownToTelegramHtml($summary->summary);
+        $attendees = $summary->calendarEvent->participants->pluck('name')->filter()->values();
+        if ($attendees->isNotEmpty()) {
+            $lines[] = '👥 <b>Участники:</b> ' . e($attendees->implode(', '));
+            $lines[] = '';
         }
 
-        return implode("\n", $lines);
+        if ($summary->summary) {
+            $lines[] = $this->markdownToTelegramHtml($summary->summary);
+            $lines[] = '';
+        }
+
+        if (!empty($summary->key_points)) {
+            $lines[] = '<b>Ключевые тезисы:</b>';
+            foreach ($summary->key_points as $point) {
+                $lines[] = '• ' . e($point);
+            }
+            $lines[] = '';
+        }
+
+        if (!empty($summary->decisions)) {
+            $lines[] = '<b>Решения:</b>';
+            foreach ($summary->decisions as $decision) {
+                $lines[] = '• ' . e($decision);
+            }
+            $lines[] = '';
+        }
+
+        $issues = $summary->calendarEvent->issues;
+        if ($issues->isNotEmpty()) {
+            $frontendUrl = rtrim(config('app.frontend_url'), '/');
+            $lines[] = '<b>Задачи:</b>';
+            foreach ($issues as $issue) {
+                $url      = $frontendUrl . '/dashboard/issues/' . $issue->id;
+                $assignee = $issue->assignee_name ? ' → ' . e($issue->assignee_name) : '';
+                $due      = $issue->due_date ? ' <i>(' . \Carbon\Carbon::parse($issue->due_date)->format('d.m.Y') . ')</i>' : '';
+                $lines[]  = '• <a href="' . $url . '">' . e($issue->name) . '</a>' . $assignee . $due;
+            }
+        }
+
+        return trim(implode("\n", $lines));
     }
 
     private function markdownToTelegramHtml(string $markdown): string
