@@ -9,6 +9,7 @@ use App\Models\AgentActivityLog;
 use App\Models\ChannelConversation;
 use App\Models\ChannelMessage;
 use App\Models\Issue;
+use App\Models\Organization;
 use App\Services\OpenRouterClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -92,7 +93,9 @@ class TelegramTaskService
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
             ->get();
 
-        $result = $this->callLLM($recentMessages, $openTasks);
+        $orgContext = Organization::find($conversation->organization_id)?->context;
+
+        $result = $this->callLLM($recentMessages, $openTasks, $orgContext);
 
         if (! $result) {
             return false;
@@ -173,7 +176,7 @@ class TelegramTaskService
         return $changed;
     }
 
-    private function callLLM(Collection $messages, Collection $existingTasks): ?array
+    private function callLLM(Collection $messages, Collection $existingTasks, ?string $orgContext = null): ?array
     {
         $messagesText = $messages->map(
             fn ($m) => "[ID:{$m->id}] {$m->content}"
@@ -185,8 +188,12 @@ class TelegramTaskService
                 fn ($t) => "[ID:{$t->id}] {$t->name} (статус: {$t->status})"
             )->join("\n");
 
+        $contextBlock = $orgContext
+            ? "\n## Контекст организации\n\nИспользуй это для лучшего понимания предметной области, ролей команды и терминологии при определении задач:\n\n{$orgContext}\n"
+            : '';
+
         $prompt = <<<PROMPT
-Ты — ассистент, который анализирует переписку в Telegram и отслеживает задачи.
+Ты — ассистент, который анализирует переписку в Telegram и отслеживает задачи.{$contextBlock}
 
 Вот последние сообщения из чата:
 {$messagesText}
