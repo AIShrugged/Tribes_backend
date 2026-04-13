@@ -51,6 +51,9 @@ class IssueExtractionService
                 forceJsonResponse: true,
             );
 
+            if (is_string($json) && preg_match('/\{[\s\S]*\}/s', $json, $matches)) {
+                $json = $matches[0];
+            }
             $decoded = is_string($json) ? json_decode($json, true) : $json;
             $items = $decoded['issues'] ?? [];
         } catch (\Throwable $e) {

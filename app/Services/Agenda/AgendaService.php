@@ -1022,6 +1022,104 @@ class AgendaService
         return implode("\n", $lines);
     }
 
+    public static function renderForTelegram(array $data, CalendarEvent $event): string
+    {
+        $lines = [];
+
+        $date = Carbon::parse($event->starts_at)->format('d.m.Y');
+        $time = Carbon::parse($event->starts_at)->format('H:i');
+        $lines[] = "<b>{$event->title}</b>";
+        $lines[] = "🕐 {$date} · {$time}";
+
+        if (!empty($data['meeting_goal'])) {
+            $lines[] = '';
+            $lines[] = '<b>Цель:</b> ' . e($data['meeting_goal']);
+        }
+
+        // 1. Discussion topics
+        if (!empty($data['discussion_topics'])) {
+            $lines[] = '';
+            $lines[] = '<b>1. Темы для обсуждения</b>';
+            foreach ($data['discussion_topics'] as $topic) {
+                $title = e($topic['title'] ?? $topic);
+                $desc  = e($topic['description'] ?? '');
+                $lines[] = "● {$title}";
+                if ($desc) {
+                    $lines[] = "  <i>{$desc}</i>";
+                }
+            }
+        }
+
+        // 2. Main problem
+        if (!empty($data['main_problem'])) {
+            $lines[] = '';
+            $lines[] = '<b>2. Главная проблематика</b>';
+            $lines[] = e($data['main_problem']);
+        }
+
+        // 3. Previous meeting topics
+        if (!empty($data['prev_topics'])) {
+            $lines[] = '';
+            $lines[] = '<b>3. Темы прошлого митинга</b>';
+            foreach ($data['prev_topics'] as $topic) {
+                // Strip bold markers from topic text
+                $topic = trim(str_replace(['**', '*'], '', $topic));
+                $lines[] = '● ' . e($topic);
+            }
+        }
+
+        // 4. Tasks from previous meeting
+        if (!empty($data['commitments_check'])) {
+            $done  = $data['commitments_done'] ?? 0;
+            $total = $data['commitments_total'] ?? count($data['commitments_check']);
+            $pct   = $total > 0 ? round($done / $total * 100) : 0;
+
+            $lines[] = '';
+            $lines[] = "<b>4. Задачи с прошлого митинга</b>";
+            $lines[] = "Выполнено — {$done} из {$total} ({$pct}%)";
+            foreach ($data['commitments_check'] as $c) {
+                $statusIcon = match ($c['status']) {
+                    'готово'   => '✅',
+                    'в работе' => '🔄',
+                    'отменено' => '❌',
+                    default    => '⏳',
+                };
+                $deadline = $c['deadline'] ? " <i>({$c['deadline']})</i>" : '';
+                $lines[]  = "{$statusIcon} <b>" . e($c['person']) . "</b> — " . e($c['commitment']) . $deadline;
+            }
+        }
+
+        // 5. Tasks between meetings
+        if (!empty($data['tasks_between'])) {
+            $btTotal = count($data['tasks_between']);
+            $btDone  = count(array_filter($data['tasks_between'], fn ($t) => $t['status'] === 'done'));
+
+            $lines[] = '';
+            $lines[] = '<b>5. Задачи между митингами</b>';
+            $lines[] = "Выполнено — {$btDone} из {$btTotal}";
+            foreach ($data['tasks_between'] as $t) {
+                $icon    = $t['status'] === 'done' ? '✅' : '🔵';
+                $lines[] = "{$icon} <b>" . e($t['assignee']) . "</b> — " . e($t['name']);
+            }
+        }
+
+        // 6. Backlog
+        if (!empty($data['backlog_stats'])) {
+            $bs    = $data['backlog_stats'];
+            $lines[] = '';
+            $lines[] = '<b>6. Прогресс по бэклогу</b>';
+            $openDelta = $bs['delta_open'] ? " (+{$bs['delta_open']})" : '';
+            $doneDelta = $bs['delta_done'] ? " (+{$bs['delta_done']})" : '';
+            $lines[]   = "Всего: {$bs['total']} | Открыто: {$bs['open']}{$openDelta} | В работе: {$bs['in_progress']} | Закрыто: {$bs['done']}{$doneDelta}";
+            if ($bs['total'] > 0) {
+                $pct     = round($bs['done'] / $bs['total'] * 100);
+                $lines[] = "Прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
     private function detectStuckTasks(Collection $issues, CalendarEvent $event): Collection
     {
         $previousEventIds = CalendarEvent::query()

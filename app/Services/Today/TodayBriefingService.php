@@ -111,6 +111,7 @@ class TodayBriefingService
         $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
 
         return CalendarEvent::query()
+            ->where('required_bot', true)
             ->where(function ($q) use ($user, $sourceIds) {
                 $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
                 if ($sourceIds->isNotEmpty()) {
