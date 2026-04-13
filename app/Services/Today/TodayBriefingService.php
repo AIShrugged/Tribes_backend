@@ -108,9 +108,16 @@ class TodayBriefingService
     {
         $startOfDay = $date->copy()->startOfDay()->utc();
         $endOfDay = $date->copy()->endOfDay()->utc();
+        $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
 
         return CalendarEvent::query()
-            ->whereHas('sources', fn($q) => $q->where('required_bot', true)->where('user_id', $user->id))
+            ->where(function ($q) use ($user, $sourceIds) {
+                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+                if ($sourceIds->isNotEmpty()) {
+                    $q->orWhereIn('source_id', $sourceIds);
+                }
+                $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
+            })
             ->whereBetween('starts_at', [$startOfDay, $endOfDay])
             ->with([
                 'meetingSummary',
