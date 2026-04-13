@@ -24,6 +24,7 @@ use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\OrganizationController;
+use App\Http\Controllers\API\v1\PaperclipWebhookController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SandboxToolGatewayController;
 use App\Http\Controllers\API\v1\SourceController;
@@ -75,6 +76,7 @@ Route::group(['prefix' => 'v1'], function () {
     Route::get('google/oauth/callback', [GoogleCalendarController::class, 'callback'])
         ->name('google.oauth.callback');
 
+    Route::post('paperclip/webhook', [PaperclipWebhookController::class, 'webhook']);
     Route::post('recall/webhook', [RecallWebhookController::class, 'webhook']);
 
     // Telegram bot webhook
