@@ -153,7 +153,7 @@ class WorkspaceAccessService
         $teamIds = $user->teams()->pluck('teams.id')->all();
 
         $workspaceIds = Workspace::query()
-            ->where(function ($query) use ($user, $organizationIds, $managedOrganizationIds, $teamIds): void {
+            ->where(function ($query) use ($user, $organizationIds, $teamIds): void {
                 $query->where('owner_user_id', $user->id);
 
                 if ($organizationIds !== []) {
