@@ -71,6 +71,8 @@ class MeetingSummaryController extends Controller
             return ApiResponse::notFound();
         }
 
+        $summary->setRelation('calendarEvent', $calendarEvent->load('participants'));
+
         return ApiResponse::success(data: MeetingSummaryResource::make($summary));
     }
 
