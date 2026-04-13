@@ -8,6 +8,7 @@ use App\Enums\MeetingTaskStatus;
 use App\Events\MeetingTasksExtracted;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Services\CalendarEventOrganizationResolver;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -20,6 +21,7 @@ class MeetingTaskService
         private readonly OpenRouterClient $llm,
         private readonly TranscriptBuilderService $transcriptBuilder,
         private readonly ParticipantProfileMatchingService $participantMatcher,
+        private readonly CalendarEventOrganizationResolver $organizationResolver,
     ) {
     }
 
@@ -35,9 +37,12 @@ class MeetingTaskService
             ->mapWithKeys(fn ($participant) => [$participant->profile_id => $participant->profile->user_id])
             ->all();
 
+        $resolved   = $this->organizationResolver->resolve($event);
+        $orgContext = $resolved ? $resolved['team']->organization?->context : null;
+
         try {
             $json = $this->llm->chat(
-                messages: [new MessageDTO('user', $this->buildPrompt($transcript, $participants))],
+                messages: [new MessageDTO('user', $this->buildPrompt($transcript, $participants, $orgContext))],
                 model: Setting::get('model.meeting_tasks', config('ai.providers.openrouter.models.meeting_tasks')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
@@ -89,7 +94,7 @@ class MeetingTaskService
         return $event->issues()->get();
     }
 
-    private function buildPrompt(string $transcript, Collection $participants): string
+    private function buildPrompt(string $transcript, Collection $participants, ?string $orgContext = null): string
     {
         $participantsBlock = '';
 
@@ -103,8 +108,12 @@ class MeetingTaskService
             BLOCK;
         }
 
+        $contextBlock = $orgContext
+            ? "\n## Organization context\n\nUse this to better understand the domain, team roles, and terminology when extracting tasks:\n\n{$orgContext}\n"
+            : '';
+
         return <<<TXT
-        Analyze the meeting transcript and extract all tasks, assignments, and action items.
+        Analyze the meeting transcript and extract all tasks, assignments, and action items.{$contextBlock}
         Return a JSON array of tasks in the following format:
         [
             {
