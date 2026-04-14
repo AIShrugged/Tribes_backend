@@ -72,7 +72,7 @@ class CreateAgentTaskTool extends AbstractAgentTool
                 ],
                 'execution_mode' => [
                     'type' => 'string',
-                    'enum' => ['inline', 'isolated'],
+                    'enum' => ['inline', 'isolated', 'paperclip'],
                     'description' => 'Optional execution mode override.',
                 ],
                 'sandbox_profile' => [
