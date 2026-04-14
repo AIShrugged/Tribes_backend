@@ -8,6 +8,7 @@ use App\Http\Resources\API\v1\IssueAttachmentResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\IssueAttachment;
 use App\Models\Issue;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use App\Models\User;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -56,6 +57,25 @@ class IssueAttachmentController extends Controller
     public function download(int $attachment): StreamedResponse
     {
         $record = IssueAttachment::query()->findOrFail($attachment);
+        $disk = $this->attachmentDisk();
+
+        if (!Storage::disk($disk)->exists($record->file_path)) {
+            abort(404, 'Attachment file not found');
+        }
+
+        return Storage::disk($disk)->response(
+            $record->file_path,
+            basename($record->file_path),
+            ['Content-Disposition' => 'inline; filename="'.basename($record->file_path).'"']
+        );
+    }
+
+    public function downloadAuthenticated(Request $request, int $attachment): StreamedResponse
+    {
+        $record = IssueAttachment::query()
+            ->whereHas('issue', fn ($query) => $query->visibleTo($request->user()))
+            ->findOrFail($attachment);
+
         $disk = $this->attachmentDisk();
 
         if (!Storage::disk($disk)->exists($record->file_path)) {

@@ -192,6 +192,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('issues/{issue}/attachments', [IssueAttachmentController::class, 'store'])->name('issues.attachments.store');
         Route::get('issues/{issue}/attachments', [IssueAttachmentController::class, 'index'])->name('issues.attachments.index');
         Route::delete('attachments/{attachment}', [IssueAttachmentController::class, 'destroy'])->name('attachments.destroy');
+        Route::get('attachments/{attachment}/download', [IssueAttachmentController::class, 'downloadAuthenticated'])->name('attachments.download.auth');
 
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
         Route::apiResource('teams', TeamController::class)

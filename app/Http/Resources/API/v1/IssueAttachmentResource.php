@@ -4,7 +4,6 @@ namespace App\Http\Resources\API\v1;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\URL;
 
 class IssueAttachmentResource extends JsonResource
 {
@@ -14,11 +13,7 @@ class IssueAttachmentResource extends JsonResource
             'id' => $this->id,
             'file_path' => $this->file_path,
             'original_name' => $this->file_path ? basename($this->file_path) : null,
-            'file_url' => URL::temporarySignedRoute(
-                'attachments.download',
-                now()->addMinutes(30),
-                ['attachment' => $this->id],
-            ),
+            'file_url' => route('attachments.download.auth', ['attachment' => $this->id]),
             'issue_id' => $this->issue_id,
             'uploaded_at' => $this->uploaded_at,
         ];
