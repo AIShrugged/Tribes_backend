@@ -9,6 +9,7 @@ use App\Models\Channel;
 use App\Models\Profile;
 use App\Models\Source;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class CalendarEventSyncService
 {
@@ -39,19 +40,45 @@ class CalendarEventSyncService
                 'ends_at'     => $endTime,
             ]);
         } else {
-            $creatorUserId = $this->creatorResolver->resolve($eventDTO->creatorEmail);
+            // Check if this is a moved event: same external_id in pivot but different starts_at.
+            // Google Calendar keeps the same event ID when a meeting is rescheduled, so we can
+            // detect a reschedule and update the existing future event instead of creating a duplicate.
+            $movedEventId = DB::table('calendar_event_source')
+                ->where('source_id', $source->id)
+                ->where('external_id', $eventDTO->externalId)
+                ->value('calendar_event_id');
 
-            $calendarEvent = CalendarEvent::create([
-                'source_id'       => $source->id,
-                'creator_user_id' => $creatorUserId,
-                'external_id'     => $eventDTO->externalId,
-                'platform'        => $eventDTO->platform,
-                'url'             => $eventDTO->url,
-                'title'           => $eventDTO->title,
-                'description'     => $eventDTO->description,
-                'starts_at'       => $startTime,
-                'ends_at'         => $endTime,
-            ]);
+            $movedEvent = $movedEventId
+                ? CalendarEvent::where('id', $movedEventId)
+                    ->where('url', $eventDTO->url)
+                    ->where('starts_at', '>', Carbon::now())
+                    ->first()
+                : null;
+
+            if ($movedEvent) {
+                $movedEvent->update([
+                    'platform'    => $eventDTO->platform,
+                    'title'       => $eventDTO->title,
+                    'description' => $eventDTO->description,
+                    'starts_at'   => $startTime,
+                    'ends_at'     => $endTime,
+                ]);
+                $calendarEvent = $movedEvent;
+            } else {
+                $creatorUserId = $this->creatorResolver->resolve($eventDTO->creatorEmail);
+
+                $calendarEvent = CalendarEvent::create([
+                    'source_id'       => $source->id,
+                    'creator_user_id' => $creatorUserId,
+                    'external_id'     => $eventDTO->externalId,
+                    'platform'        => $eventDTO->platform,
+                    'url'             => $eventDTO->url,
+                    'title'           => $eventDTO->title,
+                    'description'     => $eventDTO->description,
+                    'starts_at'       => $startTime,
+                    'ends_at'         => $endTime,
+                ]);
+            }
         }
 
         // Attach source to event via pivot
