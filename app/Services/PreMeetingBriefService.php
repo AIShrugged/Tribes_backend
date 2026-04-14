@@ -216,7 +216,6 @@ class PreMeetingBriefService
         // All open tasks (accumulated backlog), excluding cancelled
         $allOpenTasks = $this->findAllOpenTasks($event, $teamId);
         $overdue = $allOpenTasks->filter(fn($i) => $i->due_date && Carbon::parse($i->due_date)->lt(Carbon::now()));
-        $notOverdue = $allOpenTasks->filter(fn($i) => ! $i->due_date || Carbon::parse($i->due_date)->gte(Carbon::now()));
 
         if ($overdue->isNotEmpty()) {
             $lines[] = '';
@@ -225,26 +224,23 @@ class PreMeetingBriefService
             $this->appendTaskLines($lines, $overdue, '• ', showDueDate: true);
         }
 
-        if ($notOverdue->isNotEmpty()) {
-            $lines[] = '';
-            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '📌 <b>Open tasks:</b> ' . $notOverdue->count();
-            $this->appendTaskLines($lines, $notOverdue, '• ', showDueDate: true);
-        }
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+        $allTasksUrl = $frontendUrl . '/dashboard/issues';
+        $suffix = "\n\n<a href=\"" . e($allTasksUrl) . "\">show all</a>";
 
         $text = implode("\n", $lines);
 
         // Truncate if exceeds Telegram limit — cut at last newline to avoid breaking HTML tags
-        if (mb_strlen($text) > self::TELEGRAM_MAX_LENGTH) {
-            $cut = mb_substr($text, 0, self::TELEGRAM_MAX_LENGTH - 20);
+        if (mb_strlen($text) > self::TELEGRAM_MAX_LENGTH - mb_strlen($suffix)) {
+            $cut = mb_substr($text, 0, self::TELEGRAM_MAX_LENGTH - mb_strlen($suffix));
             $lastNewline = mb_strrpos($cut, "\n");
             if ($lastNewline !== false) {
                 $cut = mb_substr($cut, 0, $lastNewline);
             }
-            $text = $cut . "\n\n<i>…truncated</i>";
+            $text = $cut;
         }
 
-        return $text;
+        return $text . $suffix;
     }
 
     private function formatFromAgenda(MeetingAgenda $agenda, CalendarEvent $event, Team $team, string $channelType): string
@@ -365,21 +361,13 @@ class PreMeetingBriefService
         // Tasks: fetch live from DB so they reflect current state
         $allOpenTasks = $this->findAllOpenTasks($event, $team->id);
         $now = Carbon::now();
-        $overdue    = $allOpenTasks->filter(fn($i) => $i->due_date && Carbon::parse($i->due_date)->lt($now));
-        $notOverdue = $allOpenTasks->filter(fn($i) => !$i->due_date || Carbon::parse($i->due_date)->gte($now));
+        $overdue = $allOpenTasks->filter(fn($i) => $i->due_date && Carbon::parse($i->due_date)->lt($now));
 
         if ($overdue->isNotEmpty()) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
             $lines[] = '🔴 <b>Overdue tasks:</b> ' . $overdue->count();
             $this->appendTaskLines($lines, $overdue, '• ', showDueDate: true);
-        }
-
-        if ($notOverdue->isNotEmpty()) {
-            $lines[] = '';
-            $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '📌 <b>Open tasks:</b> ' . $notOverdue->count();
-            $this->appendTaskLines($lines, $notOverdue, '• ', showDueDate: true);
         }
 
         // Fallback: old format topics_to_discuss
@@ -393,21 +381,22 @@ class PreMeetingBriefService
             }
         }
 
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+        $allTasksUrl = $frontendUrl . '/dashboard/issues';
+        $suffix = "\n\n<a href=\"" . e($allTasksUrl) . "\">show all</a>";
+
         $text = implode("\n", $lines);
 
-        if (mb_strlen($text) > self::TELEGRAM_MAX_LENGTH) {
-            $frontendUrl = rtrim(config('app.frontend_url'), '/');
-            $allTasksUrl = $frontendUrl . '/dashboard/issues';
-            $suffix = "\n\n<a href=\"" . e($allTasksUrl) . "\">show all</a>";
+        if (mb_strlen($text) > self::TELEGRAM_MAX_LENGTH - mb_strlen($suffix)) {
             $cut = mb_substr($text, 0, self::TELEGRAM_MAX_LENGTH - mb_strlen($suffix));
             $lastNewline = mb_strrpos($cut, "\n");
             if ($lastNewline !== false) {
                 $cut = mb_substr($cut, 0, $lastNewline);
             }
-            $text = $cut . $suffix;
+            $text = $cut;
         }
 
-        return $text;
+        return $text . $suffix;
     }
 
     private function appendTaskArrayLines(array &$lines, array $tasks, string $prefix, bool $showDueDate = false): void
