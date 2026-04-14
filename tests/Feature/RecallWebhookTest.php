@@ -302,6 +302,91 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
+    public function calendar_sync_event_updates_existing_future_event_when_meeting_is_rescheduled(): void
+    {
+        $oldStartsAt = now()->addHours(2)->startOfSecond();
+        $oldEndsAt   = now()->addHours(3)->startOfSecond();
+        $newStartsAt = now()->addHours(5)->startOfSecond();
+        $newEndsAt   = now()->addHours(6)->startOfSecond();
+
+        $source = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'reschedule-calendar-id',
+            'identity'    => 'reschedule@example.com',
+        ]);
+
+        // Существующий ивент со старым временем
+        $existingEvent = CalendarEvent::create([
+            'platform'    => 'google_meet',
+            'title'       => 'Rescheduled meeting',
+            'url'         => 'https://meet.google.com/reschedule-test',
+            'description' => 'Original description',
+            'starts_at'   => $oldStartsAt,
+            'ends_at'     => $oldEndsAt,
+        ]);
+
+        $existingEvent->sources()->attach($source->id, [
+            'external_id'  => 'gc-event-fixed-id',
+            'required_bot' => false,
+        ]);
+
+        $deduplicationKey = md5('gc-event-fixed-id');
+
+        Http::fake([
+            // Более специфичный паттерн должен идти первым — fnmatch(*) матчит слеши
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*/bot/' => Http::response([
+                'bots' => [
+                    ['bot_id' => 'bot-reschedule-1', 'deduplication_key' => $deduplicationKey],
+                ],
+            ], 200),
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+                'results' => [
+                    [
+                        'id'               => 'gc-event-fixed-id', // тот же Google Calendar event ID
+                        'meeting_platform' => 'google_meet',
+                        'meeting_url'      => 'https://meet.google.com/reschedule-test',
+                        'start_time'       => $newStartsAt->toIso8601String(),
+                        'end_time'         => $newEndsAt->toIso8601String(),
+                        'raw' => [
+                            'summary'     => 'Rescheduled meeting',
+                            'description' => 'Original description',
+                            'attendees'   => [],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data' => [
+                'calendar_id'    => $source->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ]);
+
+        $response->assertOk();
+
+        // Должен существовать только один ивент (не дубликат)
+        $this->assertSame(
+            1,
+            CalendarEvent::where('url', 'https://meet.google.com/reschedule-test')->count(),
+            'Должен быть ровно один CalendarEvent — дубликат не должен создаваться'
+        );
+
+        $existingEvent->refresh();
+        $this->assertTrue(
+            $existingEvent->starts_at->eq($newStartsAt),
+            'starts_at существующего ивента должен обновиться на новое время'
+        );
+        $this->assertTrue(
+            $existingEvent->ends_at->eq($newEndsAt),
+            'ends_at существующего ивента должен обновиться на новое время'
+        );
+    }
+
+    #[Test]
     public function bot_require_recreates_active_recall_bot_when_required_bot_is_true(): void
     {
         Http::fake(function ($request) {
