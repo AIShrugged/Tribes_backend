@@ -965,60 +965,6 @@ class AgendaService
             }
         }
 
-        // 4. Tasks from previous meeting + statuses
-        if (!empty($data['commitments_check'])) {
-            $doneCount = $data['commitments_done'] ?? 0;
-            $totalCount = $data['commitments_total'] ?? count($data['commitments_check']);
-            $pct = $totalCount > 0 ? round($doneCount / $totalCount * 100) : 0;
-
-            $lines[] = '';
-            $lines[] = "4. Задачи с прошлого митинга";
-            $lines[] = "Выполнено — {$doneCount} из {$totalCount} ({$pct}%)";
-            $lines[] = '';
-            $lines[] = 'Задача | Ответственный | Статус';
-            $lines[] = '-------|---------------|-------';
-            foreach ($data['commitments_check'] as $c) {
-                $person = $c['person'] ?? '?';
-                $commitment = $c['commitment'] ?? '';
-                $deadline = !empty($c['deadline']) ? " (срок: {$c['deadline']})" : '';
-                $status = $c['status'] ?? 'ожидание';
-                $lines[] = "{$commitment}{$deadline} | {$person} | {$status}";
-            }
-        }
-
-        // 5. Tasks created between meetings
-        if (!empty($data['tasks_between'])) {
-            $btDone = count(array_filter($data['tasks_between'], fn ($t) => $t['status'] === 'готово'));
-            $btTotal = count($data['tasks_between']);
-            $btPct = $btTotal > 0 ? round($btDone / $btTotal * 100) : 0;
-
-            $lines[] = '';
-            $lines[] = '5. Задачи, созданные между митингами';
-            $lines[] = "Выполнено — {$btDone} из {$btTotal} ({$btPct}%)";
-            $lines[] = '';
-            $lines[] = 'Задача | Ответственный | Статус';
-            $lines[] = '-------|---------------|-------';
-            foreach ($data['tasks_between'] as $t) {
-                $lines[] = "{$t['name']} | {$t['assignee']} | {$t['status']}";
-            }
-        }
-
-        // 6. Backlog progress
-        if (!empty($data['backlog_stats'])) {
-            $bs = $data['backlog_stats'];
-            $lines[] = '';
-            $lines[] = '6. Прогресс по бэклогу';
-            $lines[] = "Всего задач: {$bs['total']}";
-            $lines[] = "Открыто: {$bs['open']}" . ($bs['delta_open'] ? " (+{$bs['delta_open']} новых)" : '');
-            $lines[] = "В работе: {$bs['in_progress']}" . ($bs['delta_in_progress'] ? " (+{$bs['delta_in_progress']})" : '');
-            $lines[] = "Закрыто: {$bs['done']}" . ($bs['delta_done'] ? " (+{$bs['delta_done']})" : '');
-
-            if ($bs['total'] > 0) {
-                $pct = round($bs['done'] / $bs['total'] * 100);
-                $lines[] = "Общий прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
-            }
-        }
-
         return implode("\n", $lines);
     }
 
