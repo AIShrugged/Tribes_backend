@@ -50,7 +50,7 @@ class CreateFollowupAgentTaskTool extends AbstractAgentTool
                 ],
                 'execution_mode' => [
                     'type' => 'string',
-                    'enum' => ['inline', 'isolated'],
+                    'enum' => ['inline', 'isolated', 'paperclip'],
                     'description' => 'Optional execution mode override for the follow-up task.',
                 ],
                 'sandbox_profile' => [

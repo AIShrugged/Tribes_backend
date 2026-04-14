@@ -45,7 +45,7 @@ class UpdateAgentTaskTool extends AbstractAgentTool
                 'team_id' => ['type' => ['integer', 'null']],
                 'agent_profile_id' => ['type' => ['integer', 'null']],
                 'schedule_type' => ['type' => 'string', 'enum' => ['one_off', 'interval']],
-                'execution_mode' => ['type' => ['string', 'null'], 'enum' => ['inline', 'isolated', null]],
+                'execution_mode' => ['type' => ['string', 'null'], 'enum' => ['inline', 'isolated', 'paperclip', null]],
                 'sandbox_profile' => ['type' => ['string', 'null']],
                 'interval_seconds' => ['type' => ['integer', 'null']],
                 'agent_task_type' => ['type' => ['string', 'null']],
