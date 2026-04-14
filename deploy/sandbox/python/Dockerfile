@@ -1,4 +1,5 @@
 FROM docker.io/library/php:8.3-cli-alpine3.21
+LABEL keep="true"
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
