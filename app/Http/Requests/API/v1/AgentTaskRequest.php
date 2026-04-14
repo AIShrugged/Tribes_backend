@@ -59,7 +59,7 @@ class AgentTaskRequest extends ApiResourceRequest
             'team_id' => ['nullable', 'integer', 'exists:teams,id'],
             'agent_profile_id' => ['nullable', 'integer', 'exists:agent_profiles,id'],
             'schedule_type' => [$required, 'in:one_off,interval'],
-            'execution_mode' => ['nullable', 'in:inline,isolated'],
+            'execution_mode' => ['nullable', 'in:inline,isolated,paperclip'],
             'sandbox_profile' => ['nullable', 'string', 'max:64'],
             'interval_seconds' => ['nullable', 'integer', 'min:1'],
             'agent_task_type' => ['nullable', 'string', 'max:32'],
