@@ -30,6 +30,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+    networks:
+      - default
+      - docker_default
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,6 +85,9 @@ services:
       AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
       AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
       QUEUE_NAMES: default
+    networks:
+      - default
+      - docker_default
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,6 +139,9 @@ services:
       AGENT_TASK_SANDBOX_HOST_RUNS_ROOT: /data/sandbox-runs
       AGENT_TASK_SANDBOX_RUN_ROOT: /data/sandbox-runs
       QUEUE_NAMES: agent-tasks
+    networks:
+      - default
+      - docker_default
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,6 +184,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+    networks:
+      - default
+      - docker_default
     depends_on:
       postgres:
         condition: service_healthy
@@ -238,6 +250,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
 volumes:
   pgdata:
   minio-data:
+
+networks:
+  docker_default:
+    external: true
