@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\AgentTaskRunStatus;
 use App\Jobs\CheckPaperclipIssueStatusJob;
 use App\Jobs\RunAgentTaskJob;
+use App\Models\AgentActivityLog;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\User;
@@ -269,6 +270,109 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
         $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
 
         Http::assertNothingSent();
+    }
+
+    // -------------------------------------------------------------------------
+    // Activity sync
+    // -------------------------------------------------------------------------
+
+    #[Test]
+    public function check_job_saves_paperclip_activity_when_issue_done(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id'           => self::ISSUE_ID,
+                'status'       => 'done',
+                'planDocument' => 'Done.',
+            ], 200),
+            'paperclip-test.local/api/companies/company-test/activity*' => Http::response([
+                [
+                    'action'     => 'created',
+                    'entityType' => 'issue',
+                    'entityId'   => self::ISSUE_ID,
+                    'actor'      => ['id' => 'agent-test', 'name' => 'Paperclip Agent'],
+                    'details'    => ['status' => 'todo'],
+                    'createdAt'  => '2026-04-15T10:00:00Z',
+                ],
+                [
+                    'action'     => 'updated',
+                    'entityType' => 'issue',
+                    'entityId'   => self::ISSUE_ID,
+                    'actor'      => ['id' => 'agent-test', 'name' => 'Paperclip Agent'],
+                    'details'    => ['status' => 'done'],
+                    'createdAt'  => '2026-04-15T10:05:00Z',
+                ],
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->fresh()->status->value);
+
+        $logs = AgentActivityLog::where('agent_task_run_id', $run->id)->get();
+        $this->assertCount(2, $logs);
+
+        $first = $logs->first();
+        $this->assertSame('paperclip_created', $first->tool_name);
+        $this->assertSame($run->id, $first->agent_task_run_id);
+        $this->assertArrayHasKey('action', $first->tool_result);
+        $this->assertSame('2026-04-15 10:00:00', $first->created_at->format('Y-m-d H:i:s'));
+    }
+
+    #[Test]
+    public function check_job_saves_activity_when_issue_cancelled(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id' => self::ISSUE_ID, 'status' => 'cancelled',
+            ], 200),
+            'paperclip-test.local/api/companies/company-test/activity*' => Http::response([
+                [
+                    'action'     => 'cancelled',
+                    'entityType' => 'issue',
+                    'entityId'   => self::ISSUE_ID,
+                    'actor'      => ['id' => 'agent-test', 'name' => 'Paperclip Agent'],
+                    'details'    => [],
+                    'createdAt'  => '2026-04-15T10:03:00Z',
+                ],
+            ], 200),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->fresh()->status->value);
+
+        $logs = AgentActivityLog::where('agent_task_run_id', $run->id)->get();
+        $this->assertCount(1, $logs);
+        $this->assertSame('paperclip_cancelled', $logs->first()->tool_name);
+    }
+
+    #[Test]
+    public function check_job_still_completes_run_when_activity_sync_fails(): void
+    {
+        Http::fake([
+            'paperclip-test.local/api/issues/'.self::ISSUE_ID => Http::response([
+                'id' => self::ISSUE_ID, 'status' => 'done', 'planDocument' => 'Done.',
+            ], 200),
+            'paperclip-test.local/api/companies/company-test/activity*' => Http::response([
+                'error' => 'Internal Server Error',
+            ], 500),
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        // Run completes despite activity sync failure
+        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->fresh()->status->value);
+        $this->assertSame(0, AgentActivityLog::where('agent_task_run_id', $run->id)->count());
     }
 
     // -------------------------------------------------------------------------

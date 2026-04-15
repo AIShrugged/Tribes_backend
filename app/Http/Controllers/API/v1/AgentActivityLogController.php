@@ -48,6 +48,10 @@ class AgentActivityLogController extends Controller
             $query->where('agent_run_uuid', $request->input('agent_run_uuid'));
         }
 
+        if ($request->has('agent_task_run_id')) {
+            $query->where('agent_task_run_id', $request->integer('agent_task_run_id'));
+        }
+
         $limit = min((int) $request->input('limit', 50), 200);
         $offset = (int) $request->input('offset', 0);
 
@@ -58,6 +62,7 @@ class AgentActivityLogController extends Controller
             'description',
             'success',
             'agent_run_uuid',
+            'agent_task_run_id',
             'created_at',
         ]);
 

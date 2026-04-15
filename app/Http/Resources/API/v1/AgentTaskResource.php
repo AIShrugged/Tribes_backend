@@ -78,6 +78,7 @@ class AgentTaskResource extends JsonResource
             'metadata_schema' => self::metadataSchema(),
             'latest_run' => $latestRun ? [
                 'id' => $latestRun->id,
+                'paperclip_issue_id' => $latestRun->paperclip_issue_id,
                 'status' => $latestRun->status?->value ?? $latestRun->status,
                 'attempt' => $latestRun->attempt,
                 'scheduled_for' => $latestRun->scheduled_for,
@@ -90,6 +91,16 @@ class AgentTaskResource extends JsonResource
                     'tool_calls' => data_get($latestRun->metadata, 'tool_calls', []),
                     'llm_calls' => data_get($latestRun->metadata, 'llm_calls', []),
                 ],
+                'activity' => $latestRun->relationLoaded('activityLogs')
+                    ? $latestRun->activityLogs->map(fn ($log) => [
+                        'id'          => $log->id,
+                        'tool_name'   => $log->tool_name,
+                        'description' => $log->description,
+                        'tool_result' => $log->tool_result,
+                        'success'     => $log->success,
+                        'created_at'  => $log->created_at,
+                    ])->values()
+                    : null,
             ] : null,
             'metadata' => $this->metadata,
             'created_at' => $this->created_at,

@@ -12,6 +12,7 @@ class AgentTaskRunResource extends JsonResource
         return [
             'id' => $this->id,
             'agent_task_id' => $this->agent_task_id,
+            'paperclip_issue_id' => $this->paperclip_issue_id,
             'status' => $this->status?->value ?? $this->status,
             'attempt' => $this->attempt,
             'scheduled_for' => $this->scheduled_for,

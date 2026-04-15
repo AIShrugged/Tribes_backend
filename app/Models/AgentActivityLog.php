@@ -14,6 +14,7 @@ class AgentActivityLog extends Model
         'user_id',
         'chat_id',
         'agent_run_uuid',
+        'agent_task_run_id',
         'tool_name',
         'description',
         'success',
@@ -40,6 +41,11 @@ class AgentActivityLog extends Model
     public function chat(): BelongsTo
     {
         return $this->belongsTo(Chat::class);
+    }
+
+    public function agentTaskRun(): BelongsTo
+    {
+        return $this->belongsTo(AgentTaskRun::class);
     }
 
     /**
@@ -107,6 +113,12 @@ class AgentActivityLog extends Model
             'methodology_scheme_generated' => 'Сгенерировал схему методологии',
             'transcript_analyzed'      => 'Проанализировал транскрипт встречи',
             'sandbox_llm_completion'   => 'Выполнил sandbox LLM completion',
+            'paperclip_created'        => 'Агент Paperclip создал объект',
+            'paperclip_updated'        => 'Агент Paperclip обновил объект',
+            'paperclip_commented'      => 'Агент Paperclip оставил комментарий',
+            'paperclip_approved'       => 'Агент Paperclip подтвердил действие',
+            'paperclip_cancelled'      => 'Агент Paperclip отменил объект',
+            'paperclip_deleted'        => 'Агент Paperclip удалил объект',
         ];
 
         $base = $descriptions[$toolName] ?? $toolName;
@@ -152,13 +164,15 @@ class AgentActivityLog extends Model
         ?int $chatId = null,
         ?string $agentRunUuid = null,
         bool $success = true,
+        ?int $agentTaskRunId = null,
     ): ?self {
         try {
             return self::create([
-                'user_id'        => $user->id,
-                'chat_id'        => $chatId,
-                'agent_run_uuid' => $agentRunUuid,
-                'tool_name'      => $toolName,
+                'user_id'             => $user->id,
+                'chat_id'             => $chatId,
+                'agent_run_uuid'      => $agentRunUuid,
+                'agent_task_run_id'   => $agentTaskRunId,
+                'tool_name'           => $toolName,
                 'description'    => self::descriptionFor($toolName, $toolResult),
                 'success'        => $success,
                 'tool_args'      => $toolArgs !== [] ? $toolArgs : null,
