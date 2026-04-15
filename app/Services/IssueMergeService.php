@@ -1,0 +1,298 @@
+<?php
+
+namespace App\Services;
+
+use App\Domain\DTO\AI\MessageDTO;
+use App\Enums\MeetingTaskStatus;
+use App\Models\CalendarEvent;
+use App\Models\Issue;
+use App\Models\IssueComment;
+use App\Models\Setting;
+use App\Models\Team;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+
+class IssueMergeService
+{
+    public function __construct(
+        private readonly OpenRouterClient $llm,
+        private readonly IssueTypeResolver $issueTypeResolver,
+    ) {}
+
+    /**
+     * Persist extracted items, deduplicating against existing open issues.
+     *
+     * @param  array<int, array>  $items  Raw items from Pass 1 LLM response
+     * @return Collection<int, Issue>
+     */
+    public function persist(array $items, CalendarEvent $event, Team $team, User $user): Collection
+    {
+        if (empty($items)) {
+            return collect();
+        }
+
+        $existingIssues = Issue::query()
+            ->where('team_id', $team->id)
+            ->where('status', '!=', MeetingTaskStatus::DONE->value)
+            ->get(['id', 'name', 'description']);
+
+        if ($existingIssues->isEmpty()) {
+            return $this->createAll($items, $event, $team, $user);
+        }
+
+        $decisions = $this->getDecisions($items, $existingIssues, $event);
+
+        if ($decisions === null) {
+            Log::warning('Issue merge fallback: creating all items without deduplication', [
+                'calendar_event_id' => $event->id,
+                'team_id' => $team->id,
+            ]);
+
+            return $this->createAll($items, $event, $team, $user);
+        }
+
+        return $this->applyDecisions($decisions, $items, $existingIssues, $event, $team, $user);
+    }
+
+    private function getDecisions(array $items, Collection $existingIssues, CalendarEvent $event): ?array
+    {
+        $existingList = $existingIssues->map(fn (Issue $issue) => [
+            'id'                  => $issue->id,
+            'name'                => $issue->name,
+            'description_excerpt' => mb_substr(strip_tags($issue->description ?? ''), 0, 300),
+        ])->values()->all();
+
+        $newList = array_map(fn (int $i, array $item) => [
+            'index'       => $i,
+            'name'        => $item['name'],
+            'description' => $item['description'] ?? '',
+        ], array_keys($items), $items);
+
+        $userMessage = json_encode([
+            'meeting_title' => $event->title,
+            'meeting_date'  => $event->starts_at->toDateString(),
+            'new_issues'    => array_values($newList),
+            'existing_issues' => $existingList,
+        ], JSON_UNESCAPED_UNICODE);
+
+        try {
+            $json = $this->llm->chat(
+                messages: [
+                    new MessageDTO('system', $this->buildMergeSystemPrompt()),
+                    new MessageDTO('user', $userMessage),
+                ],
+                model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
+                maxTokens: 4096,
+                forceJsonResponse: true,
+            );
+
+            if (is_string($json) && preg_match('/\{[\s\S]*\}/s', $json, $matches)) {
+                $json = $matches[0];
+            }
+
+            $decoded = is_string($json) ? json_decode($json, true) : $json;
+
+            return $decoded['decisions'] ?? null;
+        } catch (\Throwable $e) {
+            Log::error('Issue merge LLM call failed', [
+                'calendar_event_id' => $event->id,
+                'error'             => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function applyDecisions(
+        array $decisions,
+        array $items,
+        Collection $existingIssues,
+        CalendarEvent $event,
+        Team $team,
+        User $user
+    ): Collection {
+        $result = collect();
+        $existingById = $existingIssues->keyBy('id');
+        $processedIndexes = [];
+
+        foreach ($decisions as $decision) {
+            $index = $decision['index'] ?? null;
+            $action = $decision['action'] ?? 'create';
+
+            if ($index === null || !isset($items[$index])) {
+                continue;
+            }
+
+            $processedIndexes[] = $index;
+
+            if ($action === 'skip') {
+                continue;
+            }
+
+            if ($action === 'update' && !empty($decision['existing_issue_id'])) {
+                $existing = $existingById->get($decision['existing_issue_id']);
+
+                if (!$existing) {
+                    $result->push($this->createIssue($items[$index], $event, $team, $user));
+                    continue;
+                }
+
+                $result->push($this->updateIssue($existing, $decision, $event, $user));
+                continue;
+            }
+
+            $result->push($this->createIssue($items[$index], $event, $team, $user));
+        }
+
+        // Items the LLM skipped entirely — create them to avoid silent data loss
+        foreach (array_keys($items) as $index) {
+            if (!in_array($index, $processedIndexes, strict: true)) {
+                $result->push($this->createIssue($items[$index], $event, $team, $user));
+            }
+        }
+
+        return $result;
+    }
+
+    private function updateIssue(Issue $existing, array $decision, CalendarEvent $event, User $user): Issue
+    {
+        $updates = [];
+
+        if (!empty($decision['assignee_name'])) {
+            $updates['assignee_name'] = $decision['assignee_name'];
+        }
+
+        if (!empty($decision['due_date'])) {
+            $parsed = $this->parseDueDate($decision['due_date']);
+            if ($parsed !== null) {
+                $updates['due_date'] = $parsed;
+            }
+        }
+
+        if (!empty($updates)) {
+            $existing->update($updates);
+        }
+
+        $updateText = $decision['update_description'] ?? '';
+        $dateStr = $event->starts_at->toDateString();
+
+        IssueComment::create([
+            'issue_id'  => $existing->id,
+            'user_id'   => $user->id,
+            'parent_id' => null,
+            'content'   => "**Обновление по встрече \"{$event->title}\" от {$dateStr}:**\n\n{$updateText}",
+        ]);
+
+        Log::info('Issue updated via merge', [
+            'issue_id'          => $existing->id,
+            'calendar_event_id' => $event->id,
+        ]);
+
+        return $existing->fresh();
+    }
+
+    private function createAll(array $items, CalendarEvent $event, Team $team, User $user): Collection
+    {
+        return collect($items)->map(fn (array $item) => $this->createIssue($item, $event, $team, $user));
+    }
+
+    private function createIssue(array $item, CalendarEvent $event, Team $team, User $user): Issue
+    {
+        return Issue::create([
+            'user_id'         => $user->id,
+            'organization_id' => $team->organization_id,
+            'team_id'         => $team->id,
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id'   => $event->id,
+            'name'            => trim($item['name'] ?? ''),
+            'description'     => $item['description'] ?? null,
+            'type'            => $this->issueTypeResolver->resolve(
+                $team->organization_id,
+                $team->id,
+                $item['type'] ?? null
+            )?->key ?? Issue::TYPE_BACKEND,
+            'status'          => MeetingTaskStatus::OPEN->value,
+            'assignee_name'   => $item['assignee_name'] ?? null,
+            'due_date'        => $this->parseDueDate($item['due_date'] ?? null),
+        ]);
+    }
+
+    private function parseDueDate(?string $value): ?Carbon
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function buildMergeSystemPrompt(): string
+    {
+        return <<<PROMPT
+You are an AI assistant that helps deduplicate project tasks.
+
+You will receive:
+- A list of newly extracted issues from a recent meeting ("new_issues")
+- A list of existing open issues from the project ("existing_issues")
+
+For each new issue, decide:
+- "create" — this is a genuinely new task, not covered by any existing issue
+- "update" — this new issue matches an existing one (same goal, possibly worded differently) and adds new context
+- "skip" — this issue is already fully covered by an existing issue and adds no new information
+
+## Matching rules
+
+Match by INTENT and GOAL, not by exact wording. Examples of the same task with different wording:
+- "Test fly.io" / "Find alternative to Qlify" / "Set up DevOps environment" — likely the same task
+- "Fix auth bug" / "Users can't log in" / "Investigate login failure" — likely the same task
+
+If the new issue adds context, steps, progress updates, or new details to an existing task — choose "update".
+If the new issue is identical or adds nothing new — choose "skip".
+If it is a genuinely different task — choose "create".
+
+## Response format
+
+Return JSON strictly in this format:
+{
+  "decisions": [
+    {
+      "index": 0,
+      "action": "create"
+    },
+    {
+      "index": 1,
+      "action": "update",
+      "existing_issue_id": 42,
+      "update_description": "New context from this meeting: ...",
+      "assignee_name": null,
+      "due_date": null
+    },
+    {
+      "index": 2,
+      "action": "skip"
+    }
+  ]
+}
+
+## Field rules for "update"
+
+**existing_issue_id** — ID from "existing_issues". Required.
+
+**update_description** — concise summary of what NEW information this meeting added. Do NOT repeat what is already in the existing description. 1-5 sentences.
+
+**assignee_name** — only if this meeting explicitly assigned or reassigned someone. Otherwise null.
+
+**due_date** — YYYY-MM-DD, only if this meeting explicitly mentioned a deadline. Otherwise null.
+
+## Important
+- Every item in "new_issues" must appear exactly once in "decisions", matched by "index".
+- Do not invent existing_issue_id values — use only IDs from "existing_issues".
+PROMPT;
+    }
+}
