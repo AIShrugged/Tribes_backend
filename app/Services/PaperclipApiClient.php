@@ -49,6 +49,23 @@ class PaperclipApiClient
     }
 
     /**
+     * Get activity log for the company, optionally filtered by agentId, entityType, entityId.
+     *
+     * @param  array{agentId?: string, entityType?: string, entityId?: string}  $filters
+     */
+    public function getActivity(array $filters = []): array
+    {
+        $response = $this->request()->get(
+            "{$this->apiUrl}/api/companies/{$this->companyId}/activity",
+            $filters
+        );
+
+        $this->assertOk($response, 'getActivity');
+
+        return $response->json();
+    }
+
+    /**
      * Get comments for an issue, ordered by creation date ascending.
      */
     public function getIssueComments(string $issueId): array

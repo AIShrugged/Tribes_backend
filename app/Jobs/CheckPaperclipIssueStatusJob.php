@@ -6,6 +6,7 @@ use App\Enums\AgentTaskRunStatus;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Services\IssueAgentFlowProgressService;
+use App\Services\PaperclipActivitySyncService;
 use App\Services\PaperclipApiClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -28,6 +29,7 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
     public function handle(
         PaperclipApiClient $client,
         IssueAgentFlowProgressService $flowProgressService,
+        PaperclipActivitySyncService $activitySync,
     ): void {
         $run = AgentTaskRun::with('task')->find($this->agentTaskRunId);
 
@@ -60,6 +62,7 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
 
 
         if ($status === 'done') {
+            $this->syncActivity($activitySync, $run);
             $output = $this->extractOutput($issue, $issueId, $client);
             $this->completeRun($run, $task, $output, $flowProgressService);
 
@@ -67,6 +70,7 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
         }
 
         if ($status === 'cancelled') {
+            $this->syncActivity($activitySync, $run);
             $this->failRun($run, $task, "Paperclip issue {$issueId} was cancelled.", $flowProgressService);
 
             return;
@@ -90,6 +94,19 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
 
         static::dispatch($this->agentTaskRunId, $this->pollStep + 1, $this->elapsedSeconds + $nextInterval)
             ->delay(now()->addSeconds($nextInterval));
+    }
+
+    private function syncActivity(PaperclipActivitySyncService $activitySync, AgentTaskRun $run): void
+    {
+        try {
+            $activitySync->syncForIssue($run);
+        } catch (\Throwable $e) {
+            Log::warning('Paperclip: activity sync failed', [
+                'agent_task_run_id'  => $run->id,
+                'paperclip_issue_id' => $run->paperclip_issue_id,
+                'error'              => $e->getMessage(),
+            ]);
+        }
     }
 
     private function extractOutput(array $issue, string $issueId, PaperclipApiClient $client): string

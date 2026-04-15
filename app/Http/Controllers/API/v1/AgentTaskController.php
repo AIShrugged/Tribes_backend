@@ -113,7 +113,7 @@ class AgentTaskController extends Controller
     {
         $task = $this->findManagedTask($request->user(), $agentTask);
 
-        return ApiResponse::success(data: AgentTaskResource::make($task->load(['profile', 'latestRun'])));
+        return ApiResponse::success(data: AgentTaskResource::make($task->load(['profile', 'latestRun.activityLogs'])));
     }
 
     #[Endpoint(title: 'Update agent task', description: 'Updates an existing agent task owned by the authenticated user.')]
@@ -135,7 +135,7 @@ class AgentTaskController extends Controller
 
         $task->update($data);
 
-        return ApiResponse::success(data: AgentTaskResource::make($task->refresh()->load(['profile', 'latestRun'])));
+        return ApiResponse::success(data: AgentTaskResource::make($task->refresh()->load(['profile', 'latestRun.activityLogs'])));
     }
 
     #[Endpoint(title: 'Delete agent task', description: 'Deletes an agent task and its run history.')]
