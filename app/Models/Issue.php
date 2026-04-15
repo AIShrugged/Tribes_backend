@@ -158,6 +158,11 @@ class Issue extends Model
         return $this->hasMany(IssueAttachment::class, 'issue_id');
     }
 
+    public function comments(): HasMany
+    {
+        return $this->hasMany(IssueComment::class)->whereNull('parent_id')->with(['user', 'replies.user'])->orderBy('created_at');
+    }
+
     public static function normalizeType(?string $type): ?string
     {
         return match ($type) {

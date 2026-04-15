@@ -3,14 +3,11 @@
 namespace App\Services;
 
 use App\Domain\DTO\AI\MessageDTO;
-use App\Enums\MeetingTaskStatus;
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
-use App\Models\Issue;
 use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
-use App\Services\IssueTypeResolver;
 use App\Services\Followup\TranscriptBuilderService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -20,7 +17,7 @@ class IssueExtractionService
     public function __construct(
         private readonly OpenRouterClient $llm,
         private readonly TranscriptBuilderService $transcriptBuilder,
-        private readonly IssueTypeResolver $issueTypeResolver,
+        private readonly IssueMergeService $issueMerge,
     ) {}
 
     /**
@@ -66,34 +63,9 @@ class IssueExtractionService
             return collect();
         }
 
-        $issues = collect();
+        $items = array_values(array_filter($items, fn ($item) => trim($item['name'] ?? '') !== ''));
 
-        foreach ($items as $item) {
-            $name = trim($item['name'] ?? '');
-            if ($name === '') {
-                continue;
-            }
-
-            $issue = Issue::create([
-                'user_id' => $user->id,
-                'organization_id' => $team->organization_id,
-                'team_id' => $team->id,
-                'sourceable_type' => CalendarEvent::class,
-                'sourceable_id' => $event->id,
-                'name' => $name,
-                'description' => $item['description'] ?? null,
-                'type' => $this->issueTypeResolver->resolve(
-                    $team->organization_id,
-                    $team->id,
-                    $item['type'] ?? null
-                )?->key ?? Issue::TYPE_BACKEND,
-                'status' => MeetingTaskStatus::OPEN->value,
-                'assignee_name' => $item['assignee_name'] ?? null,
-                'due_date' => $this->parseDueDate($item['due_date'] ?? null),
-            ]);
-
-            $issues->push($issue);
-        }
+        $issues = $this->issueMerge->persist($items, $event, $team, $user);
 
         Log::info('Issues extracted from transcript', [
             'calendar_event_id' => $event->id,
@@ -116,19 +88,6 @@ class IssueExtractionService
         );
 
         return $issues;
-    }
-
-    private function parseDueDate(?string $value): ?\Carbon\Carbon
-    {
-        if (blank($value)) {
-            return null;
-        }
-
-        try {
-            return \Carbon\Carbon::parse($value);
-        } catch (\Throwable) {
-            return null;
-        }
     }
 
     private function buildSystemPrompt(?string $orgContext = null): string

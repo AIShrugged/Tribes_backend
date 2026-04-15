@@ -40,6 +40,7 @@ use App\Http\Controllers\API\v1\MeetingReviewController;
 use App\Http\Controllers\API\v1\MeetingSummaryController;
 use App\Http\Controllers\API\v1\InsightController;
 use App\Http\Controllers\API\v1\IssueAttachmentController;
+use App\Http\Controllers\API\v1\IssueCommentController;
 use App\Http\Controllers\API\v1\IssueAgentFlowController;
 use App\Http\Controllers\API\v1\IssueController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
@@ -193,6 +194,11 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('issues/{issue}/attachments', [IssueAttachmentController::class, 'index'])->name('issues.attachments.index');
         Route::delete('attachments/{attachment}', [IssueAttachmentController::class, 'destroy'])->name('attachments.destroy');
         Route::get('attachments/{attachment}/download', [IssueAttachmentController::class, 'downloadAuthenticated'])->name('attachments.download.auth');
+
+        Route::get('issues/{issue}/comments', [IssueCommentController::class, 'index'])->name('issues.comments.index');
+        Route::post('issues/{issue}/comments', [IssueCommentController::class, 'store'])->name('issues.comments.store');
+        Route::patch('comments/{comment}', [IssueCommentController::class, 'update'])->name('comments.update');
+        Route::delete('comments/{comment}', [IssueCommentController::class, 'destroy'])->name('comments.destroy');
 
         Route::get('organizations/{organization}/teams', [TeamController::class, 'index']);
         Route::apiResource('teams', TeamController::class)
