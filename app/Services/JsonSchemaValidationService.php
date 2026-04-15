@@ -68,6 +68,16 @@ class JsonSchemaValidationService
             return implode('; ', array_filter($messages));
         }
 
-        return '['.$error->keyword().'] '.$error->message();
+        return '['.$error->keyword().'] '.$this->interpolateMessage($error->message(), $error->args());
+    }
+
+    private function interpolateMessage(string $message, array $args): string
+    {
+        foreach ($args as $key => $value) {
+            $formatted = is_array($value) ? implode(', ', $value) : (string) $value;
+            $message   = str_replace('{' . $key . '}', $formatted, $message);
+        }
+
+        return $message;
     }
 }
