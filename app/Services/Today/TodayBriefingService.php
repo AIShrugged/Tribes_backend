@@ -144,8 +144,7 @@ class TodayBriefingService
         // Future/waiting meeting: show open tasks from previous meeting in series
         if ($meetingState === 'ready') {
             $allTasks = Issue::withoutTrashed()
-                ->where('sourceable_type', CalendarEvent::class)
-                ->where('sourceable_id', $event->id)
+                ->forMeeting($event->id)
                 ->whereNotIn('status', ['cancelled'])
                 ->with('assignee')
                 ->get();
@@ -162,8 +161,7 @@ class TodayBriefingService
 
             if ($prevEvent) {
                 $allPrevTasks = Issue::withoutTrashed()
-                    ->where('sourceable_type', CalendarEvent::class)
-                    ->where('sourceable_id', $prevEvent->id)
+                    ->forMeeting($prevEvent->id)
                     ->whereNotIn('status', ['cancelled'])
                     ->with('assignee')
                     ->get();
