@@ -43,6 +43,7 @@ use App\Http\Controllers\API\v1\IssueAttachmentController;
 use App\Http\Controllers\API\v1\IssueCommentController;
 use App\Http\Controllers\API\v1\IssueAgentFlowController;
 use App\Http\Controllers\API\v1\IssueController;
+use App\Http\Controllers\API\v1\IssueStatsController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
 use App\Http\Controllers\API\v1\DashboardController;
 use App\Http\Controllers\API\v1\DemoController;
@@ -183,6 +184,7 @@ Route::group(['prefix' => 'v1'], function () {
             ->name('me.today.send-message');
 
         Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
+        Route::get('issues/stats', [IssueStatsController::class, 'index'])->name('issues.stats');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
         Route::post('issues', [IssueController::class, 'store'])->name('issues.store');
         Route::get('issues/{issue}', [IssueController::class, 'show'])->name('issues.show');
