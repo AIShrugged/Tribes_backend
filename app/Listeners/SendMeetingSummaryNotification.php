@@ -110,7 +110,7 @@ class SendMeetingSummaryNotification
             $lines[] = '';
         }
 
-        $issues = $summary->calendarEvent->issues;
+        $issues = $summary->calendarEvent->issuesForMeeting();
         if ($issues->isNotEmpty()) {
             $frontendUrl = rtrim(config('app.frontend_url'), '/');
             $lines[] = '<b>Задачи:</b>';

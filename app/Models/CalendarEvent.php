@@ -85,6 +85,14 @@ class CalendarEvent extends Model
         return $this->issues();
     }
 
+    /**
+     * Issues created from OR discussed at this meeting (includes updated via comments).
+     */
+    public function issuesForMeeting(): \Illuminate\Database\Eloquent\Collection
+    {
+        return Issue::withoutTrashed()->forMeeting($this->id)->get();
+    }
+
     public function agendas(): HasMany
     {
         return $this->hasMany(MeetingAgenda::class);
