@@ -89,24 +89,27 @@ class SendMeetingSummaryNotification
             $lines[] = '';
         }
 
-        if ($summary->summary) {
+        $hasKeyPoints = !empty($summary->key_points);
+        $hasDecisions = !empty($summary->decisions);
+
+        if ($hasKeyPoints || $hasDecisions) {
+            if ($hasKeyPoints) {
+                $lines[] = '<b>Ключевые тезисы:</b>';
+                foreach ($summary->key_points as $point) {
+                    $lines[] = '• ' . e($point);
+                }
+                $lines[] = '';
+            }
+
+            if ($hasDecisions) {
+                $lines[] = '<b>Решения:</b>';
+                foreach ($summary->decisions as $decision) {
+                    $lines[] = '• ' . e($decision);
+                }
+                $lines[] = '';
+            }
+        } elseif ($summary->summary) {
             $lines[] = $this->markdownToTelegramHtml($summary->summary);
-            $lines[] = '';
-        }
-
-        if (!empty($summary->key_points)) {
-            $lines[] = '<b>Ключевые тезисы:</b>';
-            foreach ($summary->key_points as $point) {
-                $lines[] = '• ' . e($point);
-            }
-            $lines[] = '';
-        }
-
-        if (!empty($summary->decisions)) {
-            $lines[] = '<b>Решения:</b>';
-            foreach ($summary->decisions as $decision) {
-                $lines[] = '• ' . e($decision);
-            }
             $lines[] = '';
         }
 
