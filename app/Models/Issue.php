@@ -76,6 +76,13 @@ class Issue extends Model
         });
     }
 
+    public function scopeForMeeting(Builder $query, int $calendarEventId): Builder
+    {
+        return $query
+            ->where('sourceable_type', CalendarEvent::class)
+            ->where('sourceable_id', $calendarEventId);
+    }
+
     public function scopeManual(Builder $query): Builder
     {
         return $query
