@@ -16,14 +16,22 @@ use Illuminate\Support\Facades\Cache;
 class DeleteChannelChatCommand extends Command
 {
     protected $signature = 'channel:delete-chat
-        {telegram_chat_id : Telegram chat ID to delete}
+        {--chat= : Telegram chat ID to delete (use --chat= to support negative IDs, e.g. --chat=-1001234567)}
         {--dry-run : Show what would be deleted without making changes}';
 
     protected $description = 'Delete a Telegram chat conversation and all related data';
 
     public function handle(): int
     {
-        $telegramChatId = (int) $this->argument('telegram_chat_id');
+        $chatOption = $this->option('chat');
+
+        if ($chatOption === null) {
+            $this->error('Please provide --chat=<telegram_chat_id>');
+
+            return self::FAILURE;
+        }
+
+        $telegramChatId = (int) $chatOption;
         $dryRun = (bool) $this->option('dry-run');
 
         $conversations = ChannelConversation::query()
