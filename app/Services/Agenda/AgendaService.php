@@ -43,7 +43,8 @@ class AgendaService
         $issues = $seriesEventIds->isNotEmpty()
             ? Issue::query()
                 ->withoutTrashed()
-                ->forMeetings($seriesEventIds)
+                ->where('sourceable_type', CalendarEvent::class)
+                ->whereIn('sourceable_id', $seriesEventIds)
                 ->with('assignee')
                 ->get()
             : collect();
@@ -374,7 +375,8 @@ class AgendaService
         if ($eventIds->isNotEmpty()) {
             $allIssues = Issue::query()
                 ->withoutTrashed()
-                ->forMeetings($eventIds)
+                ->where('sourceable_type', CalendarEvent::class)
+                ->whereIn('sourceable_id', $eventIds)
                 ->with('assignee')
                 ->get();
 
