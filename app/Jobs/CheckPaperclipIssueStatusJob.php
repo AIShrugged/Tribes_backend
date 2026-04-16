@@ -112,7 +112,9 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
     private function extractOutput(array $issue, string $issueId, PaperclipApiClient $client): string
     {
         if (! empty($issue['planDocument'])) {
-            return $issue['planDocument'];
+            $planDocument = $issue['planDocument'];
+
+            return is_array($planDocument) ? json_encode($planDocument, JSON_UNESCAPED_UNICODE) : (string) $planDocument;
         }
 
         $comments = $client->getIssueComments($issueId);
