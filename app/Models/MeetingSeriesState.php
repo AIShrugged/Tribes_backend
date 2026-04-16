@@ -37,6 +37,8 @@ class MeetingSeriesState extends Model
             ->sort()
             ->implode(',');
 
-        return md5($event->title . '|' . $organizationIds);
+        $seriesKey = $event->url ?? $event->title;
+
+        return md5($seriesKey . '|' . $organizationIds);
     }
 }
