@@ -180,6 +180,8 @@ class IssueAgentFlowProgressService
             return;
         }
 
+        $task->update(['enabled' => true, 'next_run_at' => now()]);
+
         $run = $this->scheduler->dispatchTaskNow($task);
         if (! $run) {
             $flow = IssueAgentFlow::query()->find($validationStep->issue_agent_flow_id);

@@ -59,7 +59,7 @@ class IssueAgentFlowService
                 ],
             ]);
 
-            $validatorProfile = AgentProfile::query()->where('key', 'task-validator')->first();
+            $hasValidator = AgentProfile::query()->where('key', 'task-validator')->exists();
 
             $plannerTask = AgentTask::create([
                 'user_id' => $user->id,
@@ -74,9 +74,9 @@ class IssueAgentFlowService
                 'output_mode' => 'plain',
                 'allowed_tools' => [],
                 'allowed_outbound_hosts' => [],
-                'enabled' => true,
+                'enabled' => ! $hasValidator,
                 'max_attempts' => 3,
-                'next_run_at' => now(),
+                'next_run_at' => $hasValidator ? null : now(),
                 'input_payload' => $this->buildPlanningInputPayload($issue, $flow, $profile),
                 'metadata' => [
                     'profile_metadata' => is_array($profile?->metadata) ? $profile->metadata : [],
@@ -99,6 +99,7 @@ class IssueAgentFlowService
             ]);
 
             // If task-validator profile exists, prepend a VALIDATION step
+            $validatorProfile = $hasValidator ? AgentProfile::query()->where('key', 'task-validator')->first() : null;
             if ($validatorProfile) {
                 $validatorTask = AgentTask::create([
                     'user_id' => $user->id,
