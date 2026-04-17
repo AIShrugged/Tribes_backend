@@ -75,8 +75,8 @@ class OrganizationRequest extends ApiResourceRequest
                 'description' => 'Resolved task types and their agent profile mappings.',
                 'example' => [
                     [
-                        'key' => 'backend',
-                        'name' => 'Backend',
+                        'key' => 'development',
+                        'name' => 'Development',
                         'base_type' => 'development',
                         'agent_profile_id' => 1,
                     ],
