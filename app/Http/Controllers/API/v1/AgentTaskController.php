@@ -177,11 +177,11 @@ class AgentTaskController extends Controller
     public function dispatch(AgentTaskRequest $request, int $agentTask, AgentTaskSchedulerService $scheduler): ApiResponse
     {
         $task = $this->findManagedTask($request->user(), $agentTask);
-        $run = $scheduler->dispatchTaskNow($task);
+        $run = $scheduler->dispatchTaskNow($task, force: true);
 
         if (! $run instanceof AgentTaskRun) {
             throw new AppException(
-                'Task is already running or disabled.',
+                'Task is already running.',
                 'AGENT_TASK_DISPATCH_UNAVAILABLE',
                 409,
             );

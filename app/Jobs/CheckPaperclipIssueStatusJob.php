@@ -12,6 +12,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Telegram\Bot\Api;
 
 class CheckPaperclipIssueStatusJob implements ShouldQueue
 {
@@ -60,11 +62,19 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
             'elapsed'            => $this->elapsedSeconds,
         ]);
 
-
         if ($status === 'done') {
             $this->syncActivity($activitySync, $run);
+            $this->syncAttachments($client, $run, $issueId);
             $output = $this->extractOutput($issue, $issueId, $client);
             $this->completeRun($run, $task, $output, $flowProgressService);
+
+            return;
+        }
+
+        if ($status === 'blocked') {
+            $this->syncActivity($activitySync, $run);
+            $blockedReason = $this->extractBlockedReason($issueId, $client);
+            $this->pauseRun($run, $task, $blockedReason, $flowProgressService);
 
             return;
         }
@@ -109,6 +119,27 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
         }
     }
 
+    private function syncAttachments(PaperclipApiClient $client, AgentTaskRun $run, string $issueId): void
+    {
+        try {
+            $attachments = $client->getIssueAttachments($issueId);
+
+            if (! empty($attachments)) {
+                $run->update([
+                    'metadata' => array_merge($run->metadata ?? [], [
+                        'paperclip_attachments' => $attachments,
+                    ]),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Paperclip: attachment sync failed', [
+                'agent_task_run_id'  => $run->id,
+                'paperclip_issue_id' => $issueId,
+                'error'              => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function extractOutput(array $issue, string $issueId, PaperclipApiClient $client): string
     {
         if (! empty($issue['planDocument'])) {
@@ -126,6 +157,23 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
         }
 
         return '';
+    }
+
+    private function extractBlockedReason(string $issueId, PaperclipApiClient $client): string
+    {
+        try {
+            $comments = $client->getIssueComments($issueId);
+
+            if (! empty($comments)) {
+                $last = end($comments);
+
+                return $last['body'] ?? 'Задача заблокирована в Paperclip.';
+            }
+        } catch (\Throwable) {
+            // ignore, fall through to default
+        }
+
+        return 'Задача заблокирована в Paperclip.';
     }
 
     private function completeRun(
@@ -162,6 +210,45 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
             $flowProgressService->handleTaskCompleted($task, $run);
         } catch (\Throwable $e) {
             Log::warning('Paperclip: flow progress failed after task completion', [
+                'agent_task_id'     => $task->id,
+                'agent_task_run_id' => $run->id,
+                'error'             => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function pauseRun(
+        AgentTaskRun $run,
+        AgentTask $task,
+        string $blockedReason,
+        IssueAgentFlowProgressService $flowProgressService,
+    ): void {
+        $run->update([
+            'status'        => AgentTaskRunStatus::PAUSED->value,
+            'error_message' => $blockedReason,
+            'finished_at'   => now(),
+        ]);
+
+        $task->update([
+            'enabled'        => false,
+            'locked_at'      => null,
+            'last_failed_at' => now(),
+            'last_error'     => $blockedReason,
+        ]);
+
+        Log::info('Paperclip issue blocked — task paused', [
+            'agent_task_id'      => $task->id,
+            'agent_task_run_id'  => $run->id,
+            'paperclip_issue_id' => $run->paperclip_issue_id,
+            'reason'             => Str::limit($blockedReason, 200),
+        ]);
+
+        $this->sendBlockedTelegramNotification($task, $run, $blockedReason);
+
+        try {
+            $flowProgressService->handleTaskFailed($task, $run);
+        } catch (\Throwable $e) {
+            Log::warning('Paperclip: flow progress failed after task pause', [
                 'agent_task_id'     => $task->id,
                 'agent_task_run_id' => $run->id,
                 'error'             => $e->getMessage(),
@@ -208,6 +295,58 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
                 'agent_task_id'     => $task->id,
                 'agent_task_run_id' => $run->id,
                 'error'             => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function sendBlockedTelegramNotification(AgentTask $task, AgentTaskRun $run, string $blockedReason): void
+    {
+        if (! $task->notification_telegram_chat_id) {
+            return;
+        }
+
+        try {
+            $lines = [
+                "\xE2\x8F\xB8 *Agent Task #{$task->id}: заблокирован*",
+                '',
+                "*Task:* {$task->name}",
+                "*Run:* #{$run->id}",
+                "*Paperclip issue:* {$run->paperclip_issue_id}",
+                '',
+                '*Причина:* ' . Str::limit($blockedReason, 600),
+                '',
+                '_Задача приостановлена. Устраните блокировку и запустите задачу повторно._',
+            ];
+
+            $text   = implode("\n", $lines);
+            $params = [
+                'chat_id'    => $task->notification_telegram_chat_id,
+                'text'       => $text,
+                'parse_mode' => 'Markdown',
+            ];
+
+            if ($task->notification_telegram_thread_id) {
+                $params['message_thread_id'] = $task->notification_telegram_thread_id;
+            }
+
+            $telegram = new Api(config('telegram.bot_token'));
+
+            try {
+                $telegram->sendMessage($params);
+            } catch (\Throwable $e) {
+                if (str_contains(mb_strtolower($e->getMessage()), "can't parse entities")
+                    || str_contains(mb_strtolower($e->getMessage()), 'cant parse entities')) {
+                    unset($params['parse_mode']);
+                    $telegram->sendMessage($params);
+                } else {
+                    throw $e;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Paperclip: failed to send blocked notification', [
+                'agent_task_id' => $task->id,
+                'chat_id'       => $task->notification_telegram_chat_id,
+                'error'         => $e->getMessage(),
             ]);
         }
     }
