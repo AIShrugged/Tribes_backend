@@ -104,6 +104,15 @@ class IssueAgentService
             $payload['pr_repository'] = $issue->pr_repository;
         }
 
+        // Pass repository config from issue type metadata so agents can auto-detect the right repo
+        $issueTypeMetadata = $issue->issueType?->metadata;
+        if (is_string($issueTypeMetadata)) {
+            $issueTypeMetadata = json_decode($issueTypeMetadata, true);
+        }
+        if (is_array($issueTypeMetadata)) {
+            $payload['issue_type_metadata'] = $issueTypeMetadata;
+        }
+
         return $payload;
     }
 

@@ -66,7 +66,7 @@ class MeetingTaskService
                 'assignee_name' => $item['assignee_name'] ?? null,
                 'assignee_id'   => isset($item['profile_id']) ? ($assigneeByProfileId[$item['profile_id']] ?? null) : null,
                 'due_date'      => $item['due_date'] ?? null,
-                'type' => Issue::normalizeType($item['type'] ?? null) ?? Issue::TYPE_BACKEND,
+                'type' => Issue::normalizeType($item['type'] ?? null) ?? Issue::TYPE_DEVELOPMENT,
                 'status'        => MeetingTaskStatus::OPEN->value,
             ]);
             }

@@ -18,19 +18,19 @@ class Issue extends Model
 {
     use SoftDeletes;
 
-    public const TYPE_FRONTEND = 'frontend';
-
-    public const TYPE_BACKEND = 'backend';
+    public const TYPE_DEVELOPMENT = 'development';
 
     public const TYPE_ORGANIZATION = 'organization';
 
-    public const TYPE_DEVELOPMENT = 'development';
+    /** @deprecated Use TYPE_DEVELOPMENT instead. Kept for backward compatibility with existing data. */
+    public const TYPE_FRONTEND = 'frontend';
+
+    /** @deprecated Use TYPE_DEVELOPMENT instead. Kept for backward compatibility with existing data. */
+    public const TYPE_BACKEND = 'backend';
 
     public const TYPES = [
-        self::TYPE_FRONTEND,
-        self::TYPE_BACKEND,
-        self::TYPE_ORGANIZATION,
         self::TYPE_DEVELOPMENT,
+        self::TYPE_ORGANIZATION,
     ];
 
     protected $table = 'issues';
@@ -65,7 +65,7 @@ class Issue extends Model
                 $issue->issue_type_id = $issueType->id;
                 $issue->type = $issueType->key;
             } elseif (blank($issue->type)) {
-                $issue->type = self::TYPE_ORGANIZATION;
+                $issue->type = self::TYPE_DEVELOPMENT;
             }
 
             if ($issue->status === 'done') {
@@ -173,8 +173,8 @@ class Issue extends Model
     public static function normalizeType(?string $type): ?string
     {
         return match ($type) {
-            self::TYPE_FRONTEND, self::TYPE_BACKEND, self::TYPE_ORGANIZATION => $type,
-            self::TYPE_DEVELOPMENT, 'bug' => self::TYPE_BACKEND,
+            self::TYPE_DEVELOPMENT, self::TYPE_ORGANIZATION => $type,
+            self::TYPE_FRONTEND, self::TYPE_BACKEND, 'bug' => self::TYPE_DEVELOPMENT,
             'task' => self::TYPE_ORGANIZATION,
             default => null,
         };
@@ -188,7 +188,7 @@ class Issue extends Model
             return $baseType === 'development';
         }
 
-        return in_array($this->type, [self::TYPE_FRONTEND, self::TYPE_BACKEND, self::TYPE_DEVELOPMENT], true);
+        return in_array($this->type, [self::TYPE_DEVELOPMENT, self::TYPE_FRONTEND, self::TYPE_BACKEND], true);
     }
 
     public function agentTask(): BelongsTo
