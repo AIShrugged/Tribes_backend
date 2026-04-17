@@ -26,7 +26,7 @@ class IssueAgentFlowService
     {
         if (! $issue->isDevelopment()) {
             throw new AppException(
-                'Development issue flow is only available for frontend or backend issues.',
+                'Development issue flow is only available for development issues.',
                 'ISSUE_AGENT_FLOW_UNSUPPORTED_TYPE',
                 422,
             );
@@ -180,17 +180,32 @@ class IssueAgentFlowService
         $assigneeBlock = $assignee ? "\nНазначено: {$assignee}" : '';
         $dueDate = $issue->due_date ? "\nДедлайн: {$issue->due_date->format('Y-m-d')}" : '';
 
+        $reposBlock = '';
+        $issueTypeMetadata = $issue->issueType?->metadata;
+        if (is_string($issueTypeMetadata)) {
+            $issueTypeMetadata = json_decode($issueTypeMetadata, true);
+        }
+        $repositories = $issueTypeMetadata['repositories'] ?? [];
+        if ($repositories) {
+            $repoLines = [];
+            foreach ($repositories as $repo) {
+                $desc = $repo['description'] ?? '';
+                $repoLines[] = "- {$repo['owner']}/{$repo['name']}" . ($desc ? " — {$desc}" : '');
+            }
+            $reposBlock = "\n\n## Доступные репозитории\n" . implode("\n", $repoLines) . "\n\nОпредели, в каком репозитории (или нескольких) нужно выполнять задачу, и укажи это в плане.";
+        }
+
         return <<<PROMPT
-        Ты planning-агент для issue flow по frontend/backend задаче. Сначала сформируй четкий план, который потом будет исполнен отдельными агентскими задачами по одной.
+        Ты planning-агент для issue flow по задаче разработки. Сформируй четкий план, который потом будет исполнен отдельными агентскими задачами по одной.
 
 ## Issue
 
 - ID: {$issue->id}
 - Title: {$issue->name}
-        - Type: {$issue->type}
+- Type: {$issue->type}
 - Status: {$issue->status}{$assigneeBlock}{$dueDate}
 
-{$description}
+{$description}{$reposBlock}
 
 ## Output Contract
 
@@ -388,6 +403,14 @@ PROMPT;
 
         if ($profile && is_array($profile->metadata)) {
             $payload['profile_metadata'] = $profile->metadata;
+        }
+
+        $issueTypeMetadata = $issue->issueType?->metadata;
+        if (is_string($issueTypeMetadata)) {
+            $issueTypeMetadata = json_decode($issueTypeMetadata, true);
+        }
+        if (is_array($issueTypeMetadata)) {
+            $payload['issue_type_metadata'] = $issueTypeMetadata;
         }
 
         return $payload;

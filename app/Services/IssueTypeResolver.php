@@ -4,37 +4,35 @@ namespace App\Services;
 
 use App\Models\Issue;
 use App\Models\OrganizationIssueType;
-use App\Models\Team;
 
 class IssueTypeResolver
 {
-    private const DEVELOPMENT_FALLBACK_KEY = 'backend';
-
     public function resolveForIssue(Issue $issue): ?OrganizationIssueType
     {
         return $this->resolve(
             organizationId: $issue->organization_id ? (int) $issue->organization_id : null,
-            teamId: $issue->team_id ? (int) $issue->team_id : null,
             key: $issue->type,
         );
     }
 
-    public function resolve(?int $organizationId, ?int $teamId, ?string $key): ?OrganizationIssueType
+    /**
+     * @param  int|null  $organizationId
+     * @param  int|string|null  $teamIdOrKey  Accepts key directly; legacy $teamId param is ignored.
+     * @param  string|null  $key  Issue type key (when called with 3 args for backward compat).
+     */
+    public function resolve(?int $organizationId, int|string|null $teamIdOrKey = null, ?string $key = null): ?OrganizationIssueType
     {
-        $normalizedKey = $this->normalizeKey($key);
-        if ($normalizedKey === null) {
-            return $this->resolveDefault($organizationId, $teamId);
-        }
+        // Backward compat: resolve($orgId, $teamId, $key) — ignore $teamId
+        $resolvedKey = $key ?? (is_string($teamIdOrKey) ? $teamIdOrKey : null);
 
-        if ($normalizedKey === 'development' || $normalizedKey === 'bug') {
-            $normalizedKey = $this->resolveDevelopmentKey($organizationId, $teamId);
-        } elseif ($normalizedKey === 'task') {
-            $normalizedKey = 'organization';
+        $normalizedKey = $this->normalizeKey($resolvedKey);
+        if ($normalizedKey === null) {
+            return $this->resolveDefault($organizationId);
         }
 
         return $this->findType($organizationId, $normalizedKey)
             ?? $this->findType(null, $normalizedKey)
-            ?? $this->resolveDefault($organizationId, $teamId);
+            ?? $this->resolveDefault($organizationId);
     }
 
     public function normalizeKey(?string $key): ?string
@@ -48,33 +46,16 @@ class IssueTypeResolver
         $key = mb_strtolower($key);
 
         return match ($key) {
-            'frontend', 'backend', 'organization', 'development', 'bug', 'task' => $key,
+            'development', 'frontend', 'backend', 'bug' => 'development',
+            'organization', 'task' => 'organization',
             default => $key,
         };
     }
 
-    public function resolveDevelopmentKey(?int $organizationId, ?int $teamId): string
+    public function resolveDefault(?int $organizationId): ?OrganizationIssueType
     {
-        $team = $teamId ? Team::query()->find($teamId) : null;
-        $haystack = mb_strtolower(trim((string) (($team?->slug ?? '').' '.($team?->name ?? ''))));
-
-        if ($haystack !== '' && (str_contains($haystack, 'front') || str_contains($haystack, 'фронт'))) {
-            return 'frontend';
-        }
-
-        if ($haystack !== '' && (str_contains($haystack, 'back') || str_contains($haystack, 'бэкенд') || str_contains($haystack, 'backend'))) {
-            return 'backend';
-        }
-
-        return self::DEVELOPMENT_FALLBACK_KEY;
-    }
-
-    public function resolveDefault(?int $organizationId, ?int $teamId): ?OrganizationIssueType
-    {
-        $key = $this->resolveDevelopmentKey($organizationId, $teamId);
-
-        return $this->findType($organizationId, $key)
-            ?? $this->findType(null, $key)
+        return $this->findType($organizationId, 'development')
+            ?? $this->findType(null, 'development')
             ?? $this->findType($organizationId, 'organization')
             ?? $this->findType(null, 'organization');
     }

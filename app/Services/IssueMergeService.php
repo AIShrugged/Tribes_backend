@@ -213,7 +213,7 @@ class IssueMergeService
                 $team->organization_id,
                 $team->id,
                 $item['type'] ?? null
-            )?->key ?? Issue::TYPE_BACKEND,
+            )?->key ?? Issue::TYPE_DEVELOPMENT,
             'status'          => MeetingTaskStatus::OPEN->value,
             'assignee_name'   => $item['assignee_name'] ?? null,
             'due_date'        => $this->parseDueDate($item['due_date'] ?? null),
