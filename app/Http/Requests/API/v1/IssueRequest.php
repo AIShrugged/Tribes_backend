@@ -30,6 +30,8 @@ class IssueRequest extends FormRequest
                 'search' => ['nullable', 'string', 'max:255'],
                 'id_from' => ['nullable', 'integer', 'min:1'],
                 'id_to' => ['nullable', 'integer', 'min:1'],
+                'archived' => ['nullable', 'boolean'],
+                'exclude_archived' => ['nullable', 'boolean'],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -86,6 +88,8 @@ class IssueRequest extends FormRequest
             'search' => $this->input('search'),
             'id_from' => $this->integer('id_from') ?: null,
             'id_to' => $this->integer('id_to') ?: null,
+            'archived' => $this->boolean('archived', false),
+            'exclude_archived' => $this->boolean('exclude_archived', false),
         ];
     }
 

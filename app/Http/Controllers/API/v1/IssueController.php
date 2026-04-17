@@ -66,6 +66,19 @@ class IssueController extends Controller
             $query->where('id', '<=', $filters['id_to']);
         }
 
+        // Archived = done AND close_date is 14+ days ago. Mutually exclusive with status filter.
+        if ($filters['archived']) {
+            $query->where('status', 'done')
+                ->whereNotNull('close_date')
+                ->where('close_date', '<=', now()->subDays(14));
+        } elseif ($filters['exclude_archived']) {
+            $query->where(function ($q) {
+                $q->where('status', '!=', 'done')
+                    ->orWhereNull('close_date')
+                    ->orWhere('close_date', '>', now()->subDays(14));
+            });
+        }
+
         $count = (clone $query)->count();
         $issues = $query->offset($request->getOffset())
             ->limit($request->getLimit())
