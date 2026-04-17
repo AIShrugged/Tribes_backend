@@ -5,30 +5,43 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
+    private function reposMetadata(): string
+    {
+        return json_encode([
+            'repositories' => [
+                ['provider' => 'github', 'owner' => 'AIShrugged', 'name' => 'Tribes_backend', 'description' => 'Laravel backend'],
+                ['provider' => 'github', 'owner' => 'AIShrugged', 'name' => 'Tribes_frontend', 'description' => 'Frontend app'],
+            ],
+        ]);
+    }
+
     public function up(): void
     {
         $now = now();
 
-        // 1. Create global 'development' type
-        DB::table('organization_issue_types')->insert([
-            'organization_id' => null,
-            'key' => 'development',
-            'name' => 'Development',
-            'base_type' => 'development',
-            'agent_profile_id' => DB::table('organization_issue_types')
-                ->where('key', 'backend')
-                ->whereNull('organization_id')
-                ->value('agent_profile_id'),
-            'metadata' => json_encode([
-                'repositories' => [
-                    ['provider' => 'github', 'owner' => 'AIShrugged', 'name' => 'Tribes_backend', 'description' => 'Laravel backend'],
-                    ['provider' => 'github', 'owner' => 'AIShrugged', 'name' => 'Tribes_frontend', 'description' => 'Frontend app'],
-                ],
-            ]),
-            'is_active' => true,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+        // 1. Create global 'development' type (skip if already exists)
+        if (! DB::table('organization_issue_types')->where('key', 'development')->whereNull('organization_id')->exists()) {
+            DB::table('organization_issue_types')->insert([
+                'organization_id' => null,
+                'key' => 'development',
+                'name' => 'Development',
+                'base_type' => 'development',
+                'agent_profile_id' => DB::table('organization_issue_types')
+                    ->where('key', 'backend')
+                    ->whereNull('organization_id')
+                    ->value('agent_profile_id'),
+                'metadata' => $this->reposMetadata(),
+                'is_active' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        // Ensure metadata is up-to-date on existing global development type
+        DB::table('organization_issue_types')
+            ->where('key', 'development')
+            ->whereNull('organization_id')
+            ->update(['metadata' => $this->reposMetadata(), 'updated_at' => $now]);
 
         $globalDevId = DB::table('organization_issue_types')
             ->where('key', 'development')
@@ -43,27 +56,30 @@ return new class extends Migration
             ->pluck('organization_id');
 
         foreach ($orgIds as $orgId) {
-            $agentProfileId = DB::table('organization_issue_types')
-                ->where('organization_id', $orgId)
-                ->where('key', 'backend')
-                ->value('agent_profile_id');
+            if (! DB::table('organization_issue_types')->where('key', 'development')->where('organization_id', $orgId)->exists()) {
+                $agentProfileId = DB::table('organization_issue_types')
+                    ->where('organization_id', $orgId)
+                    ->where('key', 'backend')
+                    ->value('agent_profile_id');
 
-            DB::table('organization_issue_types')->insert([
-                'organization_id' => $orgId,
-                'key' => 'development',
-                'name' => 'Development',
-                'base_type' => 'development',
-                'agent_profile_id' => $agentProfileId,
-                'metadata' => json_encode([
-                    'repositories' => [
-                        ['provider' => 'github', 'owner' => 'AIShrugged', 'name' => 'Tribes_backend', 'description' => 'Laravel backend'],
-                        ['provider' => 'github', 'owner' => 'AIShrugged', 'name' => 'Tribes_frontend', 'description' => 'Frontend app'],
-                    ],
-                ]),
-                'is_active' => true,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
+                DB::table('organization_issue_types')->insert([
+                    'organization_id' => $orgId,
+                    'key' => 'development',
+                    'name' => 'Development',
+                    'base_type' => 'development',
+                    'agent_profile_id' => $agentProfileId,
+                    'metadata' => $this->reposMetadata(),
+                    'is_active' => true,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            // Ensure metadata is up-to-date
+            DB::table('organization_issue_types')
+                ->where('key', 'development')
+                ->where('organization_id', $orgId)
+                ->update(['metadata' => $this->reposMetadata(), 'updated_at' => $now]);
 
             $orgDevId = DB::table('organization_issue_types')
                 ->where('key', 'development')
