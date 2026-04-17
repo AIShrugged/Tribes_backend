@@ -34,6 +34,13 @@ class AgendaService
         $previousEvent = $previousEvents->first();
         $previousSummary = $previousEvent?->meetingSummary;
 
+        if ($previousEvents->isEmpty()) {
+            Log::info('Agenda generation skipped: no previous meetings with summaries', [
+                'calendar_event_id' => $event->id,
+            ]);
+            return;
+        }
+
         // Issues linked to this meeting series (by sourceable CalendarEvent)
         $seriesEventIds = CalendarEvent::query()
             ->where(fn ($q) => $this->scopeSeries($q, $event))
