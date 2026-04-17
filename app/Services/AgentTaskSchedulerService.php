@@ -9,12 +9,16 @@ use Illuminate\Support\Facades\DB;
 
 class AgentTaskSchedulerService
 {
-    public function dispatchTaskNow(AgentTask $task)
+    public function dispatchTaskNow(AgentTask $task, bool $force = false)
     {
-        return DB::transaction(function () use ($task) {
+        return DB::transaction(function () use ($task, $force) {
             $task = AgentTask::query()->lockForUpdate()->find($task->id);
 
-            if (! $task || ! $task->enabled) {
+            if (! $task) {
+                return null;
+            }
+
+            if (! $force && ! $task->enabled) {
                 return null;
             }
 
@@ -24,6 +28,7 @@ class AgentTaskSchedulerService
 
             $task->update([
                 'locked_at' => now(),
+                'enabled'   => true,
                 'last_error' => null,
             ]);
 

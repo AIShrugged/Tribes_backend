@@ -31,7 +31,7 @@ class RecallBotService
         $response = $this->httpClient->post($url, [
             'deduplication_key' => $deduplicationKey,
             'bot_config'        => [
-                'bot_name'         => 'Spodial Notetaker',
+                'bot_name'         => 'Tribes Notetaker',
                 'recording_config' => [
                     'transcript' => [
                         'provider' => [

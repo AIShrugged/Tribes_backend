@@ -66,6 +66,18 @@ class PaperclipApiClient
     }
 
     /**
+     * Get attachments for an issue.
+     */
+    public function getIssueAttachments(string $issueId): array
+    {
+        $response = $this->request()->get("{$this->apiUrl}/api/issues/{$issueId}/attachments");
+
+        $this->assertOk($response, 'getIssueAttachments');
+
+        return $response->json() ?? [];
+    }
+
+    /**
      * Get comments for an issue, ordered by creation date ascending.
      */
     public function getIssueComments(string $issueId): array
