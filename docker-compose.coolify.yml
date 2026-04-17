@@ -18,7 +18,7 @@ services:
       GITHUB_DEFAULT_REPO: ${GITHUB_DEFAULT_REPO}
 
       DB_CONNECTION: pgsql
-      DB_HOST: postgres
+      DB_HOST: app-postgres
       DB_PORT: 5432
       DB_DATABASE: ${DB_DATABASE}
       DB_USERNAME: ${DB_USERNAME}
@@ -27,16 +27,16 @@ services:
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
       SESSION_DRIVER: redis
-      REDIS_HOST: redis
+      REDIS_HOST: app-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     networks:
       - default
       - docker_default
     depends_on:
-      postgres:
+      app-postgres:
         condition: service_healthy
-      redis:
+      app-redis:
         condition: service_started
     command: ["backend"]
     healthcheck:
@@ -65,7 +65,7 @@ services:
       GITHUB_DEFAULT_REPO: "${GITHUB_DEFAULT_REPO}"
 
       DB_CONNECTION: pgsql
-      DB_HOST: postgres
+      DB_HOST: app-postgres
       DB_PORT: 5432
       DB_DATABASE: "${DB_DATABASE}"
       DB_USERNAME: "${DB_USERNAME}"
@@ -74,7 +74,7 @@ services:
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
       SESSION_DRIVER: redis
-      REDIS_HOST: redis
+      REDIS_HOST: app-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
 
@@ -89,9 +89,9 @@ services:
       - default
       - docker_default
     depends_on:
-      postgres:
+      app-postgres:
         condition: service_healthy
-      redis:
+      app-redis:
         condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -117,7 +117,7 @@ services:
       GITHUB_DEFAULT_REPO: "${GITHUB_DEFAULT_REPO}"
 
       DB_CONNECTION: pgsql
-      DB_HOST: postgres
+      DB_HOST: app-postgres
       DB_PORT: 5432
       DB_DATABASE: "${DB_DATABASE}"
       DB_USERNAME: "${DB_USERNAME}"
@@ -126,7 +126,7 @@ services:
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
       SESSION_DRIVER: redis
-      REDIS_HOST: redis
+      REDIS_HOST: app-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
 
@@ -143,9 +143,9 @@ services:
       - default
       - docker_default
     depends_on:
-      postgres:
+      app-postgres:
         condition: service_healthy
-      redis:
+      app-redis:
         condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -172,7 +172,7 @@ services:
       GITHUB_DEFAULT_REPO: "${GITHUB_DEFAULT_REPO}"
 
       DB_CONNECTION: pgsql
-      DB_HOST: postgres
+      DB_HOST: app-postgres
       DB_PORT: 5432
       DB_DATABASE: "${DB_DATABASE}"
       DB_USERNAME: "${DB_USERNAME}"
@@ -181,16 +181,16 @@ services:
       QUEUE_CONNECTION: redis
       CACHE_STORE: redis
       SESSION_DRIVER: redis
-      REDIS_HOST: redis
+      REDIS_HOST: app-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     networks:
       - default
       - docker_default
     depends_on:
-      postgres:
+      app-postgres:
         condition: service_healthy
-      redis:
+      app-redis:
         condition: service_started
     command: ["schedule"]
     restart: unless-stopped
@@ -224,7 +224,7 @@ services:
       retries: 5
       start_period: 20s
 
-  redis:
+  app-redis:
     image: redis:7-alpine
     command: >
       sh -c 'if [ -n "$REDIS_PASSWORD" ]; then
@@ -236,7 +236,7 @@ services:
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     restart: unless-stopped
 
-  postgres:
+  app-postgres:
     image: postgres:16
     restart: always
     environment:
