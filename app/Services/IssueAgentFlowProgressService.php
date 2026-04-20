@@ -977,6 +977,10 @@ PROMPT;
                 throw new \RuntimeException('Planner step definitions require title and prompt.');
             }
 
+            // Sanitize UTF-8 to prevent json_encode failures when saving to DB
+            $title = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
+            $prompt = mb_convert_encoding($prompt, 'UTF-8', 'UTF-8');
+
             $normalizedSteps[] = [
                 'title' => $title,
                 'prompt' => $prompt,
@@ -1001,6 +1005,8 @@ PROMPT;
      */
     private function parsePlanFromMarkdown(string $output): ?array
     {
+        // Sanitize: ensure valid UTF-8 to prevent json_encode failures downstream
+        $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
         // Extract goal from first heading or ## Goal section
         $goal = '';
         if (preg_match('/^## Goal\s*\n+(.+?)(?=\n##|\z)/ms', $output, $goalMatch)) {
