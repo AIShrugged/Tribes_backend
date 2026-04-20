@@ -5,6 +5,9 @@ namespace App\Jobs;
 use App\Enums\AgentTaskRunStatus;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Models\Issue;
+use App\Models\IssueAgentFlow;
+use App\Models\IssueComment;
 use App\Services\IssueAgentFlowProgressService;
 use App\Services\PaperclipActivitySyncService;
 use App\Services\PaperclipApiClient;
@@ -66,6 +69,7 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
             $this->syncActivity($activitySync, $run);
             $this->syncAttachments($client, $run, $issueId);
             $output = $this->extractOutput($issue, $issueId, $client);
+            $this->syncPrUrl($task, $run, $output, $client, $issueId);
             $this->completeRun($run, $task, $output, $flowProgressService);
 
             return;
@@ -117,6 +121,88 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
                 'error'              => $e->getMessage(),
             ]);
         }
+    }
+
+    private function syncPrUrl(AgentTask $task, AgentTaskRun $run, string $output, PaperclipApiClient $client, string $paperclipIssueId): void
+    {
+        try {
+            // Try to find PR URL in output first, then in comments
+            $prUrl = $this->extractPrUrlFromText($output);
+
+            if (! $prUrl) {
+                $comments = $client->getIssueComments($paperclipIssueId);
+                foreach (array_reverse($comments) as $comment) {
+                    $prUrl = $this->extractPrUrlFromText($comment['body'] ?? '');
+                    if ($prUrl) {
+                        break;
+                    }
+                }
+            }
+
+            if (! $prUrl) {
+                return;
+            }
+
+            // Parse repo and PR number from URL
+            if (! preg_match('#https://github\.com/([^/]+/[^/]+)/pull/(\d+)#', $prUrl, $matches)) {
+                return;
+            }
+
+            $repository = $matches[1];
+            $prNumber = (int) $matches[2];
+
+            // Find the Tribes issue linked to this task via IssueAgentFlow
+            $flowId = $task->metadata['issue_agent_flow_id'] ?? null;
+            $issueId = $task->metadata['issue_id'] ?? null;
+
+            $issue = null;
+            if ($issueId) {
+                $issue = Issue::find($issueId);
+            } elseif ($flowId) {
+                $flow = IssueAgentFlow::find($flowId);
+                $issue = $flow?->issue;
+            }
+
+            if (! $issue) {
+                return;
+            }
+
+            // Update Issue with PR info
+            $issue->update([
+                'pr_url' => $prUrl,
+                'pr_number' => $prNumber,
+                'pr_repository' => $repository,
+            ]);
+
+            // Create a comment on the issue
+            IssueComment::create([
+                'issue_id' => $issue->id,
+                'user_id' => $task->user_id,
+                'content' => "PR создан агентом Paperclip: [{$repository}#{$prNumber}]({$prUrl})",
+            ]);
+
+            Log::info('Paperclip: PR URL synced to issue', [
+                'issue_id' => $issue->id,
+                'pr_url' => $prUrl,
+                'pr_repository' => $repository,
+                'pr_number' => $prNumber,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Paperclip: failed to sync PR URL', [
+                'agent_task_id' => $task->id,
+                'agent_task_run_id' => $run->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function extractPrUrlFromText(string $text): ?string
+    {
+        if (preg_match('#https://github\.com/[^/]+/[^/]+/pull/\d+#', $text, $matches)) {
+            return $matches[0];
+        }
+
+        return null;
     }
 
     private function syncAttachments(PaperclipApiClient $client, AgentTaskRun $run, string $issueId): void
