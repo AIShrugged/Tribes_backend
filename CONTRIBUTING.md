@@ -1,41 +1,37 @@
-# Contributing to Tribes Backend
+# Contributing
 
-Thank you for your interest in contributing! Please follow these guidelines.
+Thank you for contributing to Tribes_backend. Please follow these guidelines.
 
 ## Getting Started
 
-- **Stack**: Laravel 12, PHP 8.3, Docker
-- **Setup**: Clone the repo, copy `.env.example` to `.env`, then run:
+This project uses Laravel 12, PHP 8.3, and Docker.
+
+To start the development environment:
 
 ```bash
 docker compose up -d
 ```
 
-This starts all required services (PHP, MySQL, Redis, etc.) via Docker.
-
 ## Branch Naming
 
-Use the following conventions when creating branches:
+Use the following conventions:
 
-- `feature/issue-{id}` — for new features (e.g. `feature/issue-42`)
-- `fix/issue-{id}` — for bug fixes (e.g. `fix/issue-99`)
+- Feature work: `feature/issue-{id}`
+- Bug fixes: `fix/issue-{id}`
 
-Always branch off from `dev`.
+Replace `{id}` with the relevant issue number.
 
 ## Pull Requests
 
-- Target the `dev` branch for all PRs.
-- Include a short description of what the PR does and why.
-- Reference the relevant issue number (e.g. `Closes #337`).
-- Ensure all tests pass before requesting review.
+- Target the `dev` branch for all pull requests.
+- Include a short description of your changes.
+- Reference the issue number in the PR description (e.g., "Closes #337").
 
 ## Code Style
 
 - Follow the [PSR-12](https://www.php-fig.org/psr/psr-12/) coding standard.
-- Run Laravel Pint before committing:
+- Run Pint before committing:
 
 ```bash
 ./vendor/bin/pint
 ```
-
-Fix any issues reported before pushing your branch.
