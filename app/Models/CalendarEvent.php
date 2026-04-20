@@ -112,13 +112,24 @@ class CalendarEvent extends Model
     }
 
     /**
-     * Get any Recall external_id from the pivot (for API calls to Recall).
+     * Get the Recall external_id for API calls.
+     *
+     * Prefers the model's own external_id field. Falls back to the pivot
+     * record for a source that has required_bot=true, so that when multiple
+     * sources share the same meeting we use the one that actually triggered
+     * the bot requirement rather than an arbitrary pivot row.
      */
     public function getRecallExternalId(): ?string
     {
+        if (!empty($this->external_id)) {
+            return $this->external_id;
+        }
+
         return DB::table('calendar_event_source')
             ->where('calendar_event_id', $this->id)
+            ->where('required_bot', true)
             ->whereNotNull('external_id')
+            ->orderBy('id')
             ->value('external_id');
     }
 }
