@@ -231,6 +231,11 @@ class CheckPaperclipIssueStatusJob implements ShouldQueue
         if (! empty($issue['planDocument'])) {
             $planDocument = $issue['planDocument'];
 
+            // planDocument may be a wrapper object with a 'body' key containing the actual content
+            if (is_array($planDocument) && ! empty($planDocument['body'])) {
+                return (string) $planDocument['body'];
+            }
+
             return is_array($planDocument) ? json_encode($planDocument, JSON_UNESCAPED_UNICODE) : (string) $planDocument;
         }
 
