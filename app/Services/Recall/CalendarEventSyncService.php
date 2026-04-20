@@ -95,7 +95,7 @@ class CalendarEventSyncService
 
         $this->syncAttendees($calendarEvent, $attendees);
 
-        CalendarEventChanged::dispatch($calendarEvent);
+        CalendarEventChanged::dispatch($calendarEvent, false);
 
         return $calendarEvent;
     }

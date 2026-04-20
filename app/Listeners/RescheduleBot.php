@@ -20,8 +20,9 @@ class RescheduleBot
             'bot_id' => $event->calendarEvent->bot_id,
             'required_bot' => $event->calendarEvent->isRequiredBot(),
             'bot_is_active' => $event->calendarEvent->bot?->is_active,
+            'force_reschedule' => $event->forceReschedule,
         ]);
 
-        $this->botSchedulingService->handleRequirement($event->calendarEvent);
+        $this->botSchedulingService->handleRequirement($event->calendarEvent, $event->forceReschedule);
     }
 }
