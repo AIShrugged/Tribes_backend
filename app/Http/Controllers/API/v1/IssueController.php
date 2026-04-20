@@ -42,6 +42,10 @@ class IssueController extends Controller
             $query->where('assignee_id', $filters['assignee_id']);
         }
 
+        if ($filters['unassigned']) {
+            $query->whereNull('assignee_id');
+        }
+
         if ($filters['organization_id']) {
             $query->where('organization_id', $filters['organization_id']);
         }
