@@ -43,6 +43,7 @@ class BotController extends Controller
      *   "status": 200,
      *   "meta": {}
      * }
+     * @response 403 scenario="Forbidden" {"message": "Only the meeting organizer can manage the bot."}
      * @response 404 scenario="Not Found" {"message": "No query results for model [CalendarEvent] 5"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
@@ -50,6 +51,12 @@ class BotController extends Controller
     {
         $calendarEvent = CalendarEvent::owned(Auth::id())
             ->findOrFail($request->getCalendarEventId());
+
+        abort_unless(
+            $calendarEvent->creator_user_id === Auth::id(),
+            403,
+            'Only the meeting organizer can manage the bot.',
+        );
 
         // Update required_bot for the current user's source in the pivot
         $source = $calendarEvent->sources()
