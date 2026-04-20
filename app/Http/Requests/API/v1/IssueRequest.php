@@ -32,6 +32,7 @@ class IssueRequest extends FormRequest
                 'id_to' => ['nullable', 'integer', 'min:1'],
                 'archived' => ['nullable', 'boolean'],
                 'exclude_archived' => ['nullable', 'boolean'],
+                'unassigned' => ['nullable', 'boolean'],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -71,6 +72,7 @@ class IssueRequest extends FormRequest
                 'sort' => $this->query('sort'),
                 'order' => $this->query('order'),
                 'search' => $this->query('search'),
+                'unassigned' => $this->query('unassigned'),
             ]);
         }
     }
@@ -90,6 +92,7 @@ class IssueRequest extends FormRequest
             'id_to' => $this->integer('id_to') ?: null,
             'archived' => $this->boolean('archived', false),
             'exclude_archived' => $this->boolean('exclude_archived', false),
+            'unassigned' => $this->boolean('unassigned', false),
         ];
     }
 
