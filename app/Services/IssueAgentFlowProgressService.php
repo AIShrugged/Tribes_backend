@@ -946,6 +946,15 @@ PROMPT;
     private function parsePlan(string $output): array
     {
         $decoded = $this->decodePlannerOutput($output);
+
+        // Fallback: parse steps from markdown if JSON extraction failed
+        if (! is_array($decoded) || empty($decoded['steps'])) {
+            $markdownPlan = $this->parsePlanFromMarkdown($output);
+            if ($markdownPlan !== null) {
+                $decoded = $markdownPlan;
+            }
+        }
+
         if (! is_array($decoded)) {
             throw new \RuntimeException('Planner output is not valid JSON.');
         }
@@ -984,6 +993,58 @@ PROMPT;
             'goal' => trim((string) ($decoded['goal'] ?? '')),
             'steps' => $normalizedSteps,
         ];
+    }
+
+    /**
+     * Parse a plan from markdown format when JSON is not available.
+     * Looks for ### Step N — Title patterns and extracts content as prompts.
+     */
+    private function parsePlanFromMarkdown(string $output): ?array
+    {
+        // Extract goal from first heading or ## Goal section
+        $goal = '';
+        if (preg_match('/^## Goal\s*\n+(.+?)(?=\n##|\z)/ms', $output, $goalMatch)) {
+            $goal = trim($goalMatch[1]);
+        } elseif (preg_match('/^# (.+)/m', $output, $titleMatch)) {
+            $goal = trim($titleMatch[1]);
+        }
+
+        // Split by ### Step headings (various formats: "### Step 1 —", "### Step 1:", "### 1.")
+        $stepPattern = '/^###\s+(?:Step\s+)?\d+\s*[—\-:\.]\s*(.+)$/m';
+        if (! preg_match_all($stepPattern, $output, $matches, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        $steps = [];
+        $titles = $matches[1];
+        $fullMatches = $matches[0];
+
+        for ($i = 0; $i < count($fullMatches); $i++) {
+            $title = trim($titles[$i][0]);
+            $startPos = $fullMatches[$i][1] + strlen($fullMatches[$i][0]);
+            $endPos = isset($fullMatches[$i + 1]) ? $fullMatches[$i + 1][1] : strlen($output);
+            $body = trim(substr($output, $startPos, $endPos - $startPos));
+
+            // Extract acceptance criteria if present
+            $criteria = [];
+            if (preg_match('/\*\*Acceptance criteria[:\*]*\*?\*?\s*\n((?:[-*]\s+.+\n?)+)/i', $body, $critMatch)) {
+                preg_match_all('/[-*]\s+(.+)/', $critMatch[1], $critItems);
+                $criteria = array_map('trim', $critItems[1] ?? []);
+            }
+
+            $steps[] = [
+                'title' => $title,
+                'prompt' => $body,
+                'acceptance_criteria' => $criteria,
+                'output_mode' => 'plain',
+            ];
+        }
+
+        if ($steps === []) {
+            return null;
+        }
+
+        return ['goal' => $goal, 'steps' => $steps];
     }
 
     private function decodeJsonOutput(string $output): ?array
