@@ -288,12 +288,18 @@ class IssueAgentFlowProgressService
             foreach (array_values($steps) as $index => $stepDefinition) {
                 $position = $executionOffset + $index;
 
+                // Ensure all string values are valid UTF-8 for JSON storage
+                $sanitizedDefinition = json_decode(
+                    json_encode($stepDefinition, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE),
+                    true
+                ) ?? $stepDefinition;
+
                 $createdStep = $flow->steps()->create([
                     'position' => $position,
                     'kind' => IssueAgentFlowStepKind::EXECUTION->value,
-                    'title' => $stepDefinition['title'],
-                    'prompt' => $stepDefinition['prompt'],
-                    'definition' => $stepDefinition,
+                    'title' => $sanitizedDefinition['title'] ?? $stepDefinition['title'],
+                    'prompt' => $sanitizedDefinition['prompt'] ?? $stepDefinition['prompt'],
+                    'definition' => $sanitizedDefinition,
                     'input_payload' => [
                         'flow' => [
                             'issue_agent_flow_id' => $flow->id,
