@@ -14,6 +14,7 @@ use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
+use App\Services\Agenda\AgendaService;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
 use App\Models\Source;
@@ -229,8 +230,10 @@ class TodayBriefingService
             ->where('status', AgendaStatus::DONE)
             ->first();
 
-        if ($general && $general->content) {
-            return $general->content;
+        if ($general) {
+            return $general->isGeneral() && !empty($general->raw_json)
+                ? AgendaService::renderForWeb($general->raw_json, $event)
+                : $general->content;
         }
 
         // 2. Try personal upcoming agenda — the latest one for this user.
