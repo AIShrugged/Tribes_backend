@@ -976,6 +976,101 @@ class AgendaService
         return implode("\n", $lines);
     }
 
+    public static function renderForWeb(array $data, CalendarEvent $event): string
+    {
+        $lines = [];
+
+        $date = Carbon::parse($event->starts_at)->format('d.m.Y');
+        $time = Carbon::parse($event->starts_at)->format('H:i');
+        $lines[] = "📅 {$event->title}";
+        $lines[] = "🕐 {$date} · {$time}";
+
+        if (!empty($data['meeting_goal'])) {
+            $lines[] = '';
+            $lines[] = '🎯 Цель: ' . $data['meeting_goal'];
+        }
+
+        // 1. Discussion topics
+        if (!empty($data['discussion_topics'])) {
+            $lines[] = '';
+            $lines[] = '🗂 Темы для обсуждения';
+            foreach ($data['discussion_topics'] as $topic) {
+                $title = $topic['title'] ?? $topic;
+                $desc  = $topic['description'] ?? '';
+                $lines[] = "● {$title}";
+                if ($desc) {
+                    $lines[] = "  {$desc}";
+                }
+            }
+        }
+
+        // 2. Main problem
+        if (!empty($data['main_problem'])) {
+            $lines[] = '';
+            $lines[] = '⚠️ Главная проблематика';
+            $lines[] = $data['main_problem'];
+        }
+
+        // 3. Previous meeting topics
+        if (!empty($data['prev_topics'])) {
+            $lines[] = '';
+            $lines[] = '🔙 Темы прошлого митинга';
+            foreach ($data['prev_topics'] as $topic) {
+                $topic = trim(str_replace(['**', '*'], '', $topic));
+                $lines[] = "● {$topic}";
+            }
+        }
+
+        // 4. Tasks from previous meeting
+        if (!empty($data['commitments_check'])) {
+            $done  = $data['commitments_done'] ?? 0;
+            $total = $data['commitments_total'] ?? count($data['commitments_check']);
+            $pct   = $total > 0 ? round($done / $total * 100) : 0;
+
+            $lines[] = '';
+            $lines[] = "📋 Задачи с прошлого митинга — {$done} из {$total} ({$pct}%)";
+            foreach ($data['commitments_check'] as $c) {
+                $statusIcon = match ($c['status']) {
+                    'готово'   => '✅',
+                    'в работе' => '🔄',
+                    'отменено' => '❌',
+                    default    => '⏳',
+                };
+                $deadline = $c['deadline'] ? " ({$c['deadline']})" : '';
+                $lines[]  = "{$statusIcon} {$c['person']} — {$c['commitment']}{$deadline}";
+            }
+        }
+
+        // 5. Tasks between meetings
+        if (!empty($data['tasks_between'])) {
+            $btTotal = count($data['tasks_between']);
+            $btDone  = count(array_filter($data['tasks_between'], fn ($t) => $t['status'] === 'done'));
+
+            $lines[] = '';
+            $lines[] = "🔵 Задачи между митингами — {$btDone} из {$btTotal}";
+            foreach ($data['tasks_between'] as $t) {
+                $icon    = $t['status'] === 'done' ? '✅' : '🔵';
+                $lines[] = "{$icon} {$t['assignee']} — {$t['name']}";
+            }
+        }
+
+        // 6. Backlog
+        if (!empty($data['backlog_stats'])) {
+            $bs        = $data['backlog_stats'];
+            $openDelta = $bs['delta_open'] ? " (+{$bs['delta_open']})" : '';
+            $doneDelta = $bs['delta_done'] ? " (+{$bs['delta_done']})" : '';
+            $lines[]   = '';
+            $lines[]   = '📊 Прогресс по бэклогу';
+            $lines[]   = "Всего: {$bs['total']} | Открыто: {$bs['open']}{$openDelta} | В работе: {$bs['in_progress']} | Закрыто: {$bs['done']}{$doneDelta}";
+            if ($bs['total'] > 0) {
+                $pct     = round($bs['done'] / $bs['total'] * 100);
+                $lines[] = "Прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
     public static function renderForTelegram(array $data, CalendarEvent $event): string
     {
         $lines = [];
