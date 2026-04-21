@@ -3,7 +3,6 @@
 namespace App\Observers;
 
 use App\Enums\AgentScheduleType;
-use App\Enums\AgentTaskExecutionMode;
 use App\Enums\MeetingTaskStatus;
 use App\Models\AgentTask;
 use App\Models\DailyNudge;
@@ -56,33 +55,10 @@ class IssueObserver
 
     private function handleReopen(Issue $issue): void
     {
+        $sourceTask = $issue->agentTask()->first();
         $prompt = $this->buildReopenPrompt($issue);
 
-        $agentTask = AgentTask::create([
-            'user_id' => $issue->user_id,
-            'organization_id' => $issue->organization_id,
-            'team_id' => $issue->team_id,
-            'name' => "Reopen Issue #{$issue->id}: {$issue->name}",
-            'prompt' => $prompt,
-            'agent_task_type' => 'background',
-            'schedule_type' => AgentScheduleType::ONE_OFF->value,
-            'execution_mode' => AgentTaskExecutionMode::ISOLATED->value,
-            'enabled' => true,
-            'max_attempts' => 3,
-            'next_run_at' => now(),
-            'allowed_tools' => self::ALLOWED_TOOLS,
-            'input_payload' => $this->buildInputPayload($issue),
-            'metadata' => [
-                'issue_id' => $issue->id,
-                'reopen' => true,
-                'previous_agent_task_id' => $issue->agent_task_id,
-                'max_iterations' => 25,
-                'timeout_seconds' => 3600,
-                'network_policy' => [
-                    'restrict_hosts' => false,
-                ],
-            ],
-        ]);
+        $agentTask = AgentTask::create($this->buildReopenTaskData($issue, $sourceTask, $prompt));
 
         $issue->updateQuietly(['agent_task_id' => $agentTask->id]);
 
@@ -92,6 +68,37 @@ class IssueObserver
             'issue_id' => $issue->id,
             'agent_task_id' => $agentTask->id,
         ]);
+    }
+
+    private function buildReopenTaskData(Issue $issue, ?AgentTask $sourceTask, string $prompt): array
+    {
+        $metadata = is_array($sourceTask?->metadata) ? $sourceTask->metadata : [];
+
+        return [
+            'user_id' => $issue->user_id,
+            'organization_id' => $issue->organization_id,
+            'team_id' => $issue->team_id,
+            'name' => "Reopen Issue #{$issue->id}: {$issue->name}",
+            'prompt' => $prompt,
+            'agent_profile_id' => $sourceTask?->agent_profile_id,
+            'schedule_type' => AgentScheduleType::ONE_OFF->value,
+            'execution_mode' => $sourceTask?->execution_mode?->value,
+            'sandbox_profile' => $sourceTask?->sandbox_profile,
+            'agent_task_type' => $sourceTask?->agent_task_type ?? 'background',
+            'output_mode' => $sourceTask?->output_mode ?? 'plain',
+            'enabled' => true,
+            'max_attempts' => $sourceTask?->max_attempts ?? 3,
+            'next_run_at' => now(),
+            'allowed_tools' => $sourceTask?->allowed_tools ?? self::ALLOWED_TOOLS,
+            'allowed_outbound_hosts' => $sourceTask?->allowed_outbound_hosts ?? [],
+            'input_payload' => $this->buildInputPayload($issue),
+            'metadata' => [
+                ...$metadata,
+                'issue_id' => $issue->id,
+                'reopen' => true,
+                'previous_agent_task_id' => $sourceTask?->id ?? $issue->agent_task_id,
+            ],
+        ];
     }
 
     private function buildInputPayload(Issue $issue): array

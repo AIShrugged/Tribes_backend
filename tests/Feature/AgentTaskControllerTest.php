@@ -258,7 +258,26 @@ class AgentTaskControllerTest extends TestCase
             'status' => 'queued',
         ]);
 
-        Queue::assertPushed(RunAgentTaskJob::class);
+        AgentTaskRun::findOrFail($dispatchedRunId)->update([
+            'status' => 'completed',
+            'finished_at' => now(),
+            'output' => 'done',
+        ]);
+
+        $task->update([
+            'enabled' => false,
+            'locked_at' => null,
+        ]);
+
+        $secondDispatchResponse = $this->actingAs($user)
+            ->postJson("/api/v1/agent-tasks/{$task->id}/dispatch")
+            ->assertStatus(201)
+            ->assertJsonPath('data.agent_task_id', $task->id)
+            ->assertJsonPath('data.status', 'queued');
+
+        $this->assertNotSame($dispatchedRunId, $secondDispatchResponse->json('data.id'));
+
+        Queue::assertPushed(RunAgentTaskJob::class, 2);
     }
 
     #[Test]

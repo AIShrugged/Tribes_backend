@@ -288,6 +288,29 @@ class IssueExtractionPipelineTest extends TestCase
     {
         Queue::fake();
 
+        $sourceTask = AgentTask::create([
+            'user_id' => $this->user->id,
+            'organization_id' => $this->organization->id,
+            'team_id' => $this->team->id,
+            'name' => 'Original implementation task',
+            'prompt' => 'Do the first pass.',
+            'schedule_type' => 'one_off',
+            'execution_mode' => 'paperclip',
+            'sandbox_profile' => 'paperclip-sandbox:v1',
+            'agent_task_type' => 'background',
+            'output_mode' => 'json',
+            'allowed_tools' => ['github_get_pull_request_comments', 'update_task_status'],
+            'allowed_outbound_hosts' => ['api.github.com'],
+            'enabled' => false,
+            'next_run_at' => now()->subHour(),
+            'metadata' => [
+                'custom_flag' => true,
+                'network_policy' => [
+                    'restrict_hosts' => true,
+                ],
+            ],
+        ]);
+
         $issue = Issue::create([
             'user_id' => $this->user->id,
             'organization_id' => $this->organization->id,
@@ -295,6 +318,7 @@ class IssueExtractionPipelineTest extends TestCase
             'name' => 'Fix login bug',
             'type' => 'backend',
             'status' => MeetingTaskStatus::REVIEW->value,
+            'agent_task_id' => $sourceTask->id,
             'pr_url' => 'https://github.com/org/repo/pull/42',
             'pr_number' => 42,
             'pr_repository' => 'org/repo',
@@ -309,6 +333,13 @@ class IssueExtractionPipelineTest extends TestCase
         $this->assertNotNull($agentTask);
         $this->assertEquals($issue->id, $agentTask->metadata['issue_id']);
         $this->assertTrue($agentTask->metadata['reopen']);
+        $this->assertSame($sourceTask->id, $agentTask->metadata['previous_agent_task_id']);
+        $this->assertSame('paperclip', $agentTask->execution_mode?->value);
+        $this->assertSame('paperclip-sandbox:v1', $agentTask->sandbox_profile);
+        $this->assertSame('json', $agentTask->output_mode);
+        $this->assertSame(['github_get_pull_request_comments', 'update_task_status'], $agentTask->allowed_tools);
+        $this->assertSame(['api.github.com'], $agentTask->allowed_outbound_hosts);
+        $this->assertTrue($agentTask->metadata['custom_flag']);
         $this->assertStringContains('github_get_pull_request_comments', $agentTask->prompt);
         $this->assertStringContains('org/repo', $agentTask->prompt);
     }
