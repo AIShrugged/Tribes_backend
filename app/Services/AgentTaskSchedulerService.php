@@ -22,8 +22,22 @@ class AgentTaskSchedulerService
                 return null;
             }
 
-            if ($task->locked_at && $task->locked_at->gt(now()->subSeconds((int) config('agent.agent_tasks.lock_ttl_seconds', 600)))) {
+            $activeRunExists = $task->runs()
+                ->whereIn('status', [AgentTaskRunStatus::QUEUED->value, AgentTaskRunStatus::PROCESSING->value])
+                ->exists();
+
+            if ($activeRunExists) {
                 return null;
+            }
+
+            if ($task->locked_at && $task->locked_at->gt(now()->subSeconds((int) config('agent.agent_tasks.lock_ttl_seconds', 600)))) {
+                if (! $force) {
+                    return null;
+                }
+
+                $task->update([
+                    'locked_at' => null,
+                ]);
             }
 
             $task->update([
