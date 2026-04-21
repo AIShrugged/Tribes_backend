@@ -143,6 +143,7 @@ class IssueAgentFlowService
                     'agent_task_id' => $validatorTask->id,
                     'issue_agent_flow_id' => $flow->id,
                     'status' => 'in_progress',
+                    'last_agent_execution_mode' => $validatorTask->effectiveExecutionMode()->value,
                 ]);
 
                 return [$flow, $validatorTask, $validationStep];
@@ -155,6 +156,7 @@ class IssueAgentFlowService
                 'agent_task_id' => $plannerTask->id,
                 'issue_agent_flow_id' => $flow->id,
                 'status' => 'in_progress',
+                'last_agent_execution_mode' => $plannerTask->effectiveExecutionMode()->value,
             ]);
 
             return [$flow, $plannerTask, $planningStep];

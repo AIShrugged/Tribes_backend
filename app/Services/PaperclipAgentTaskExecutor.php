@@ -117,7 +117,7 @@ Body:
   "artifacts": [
     {
       "filename": "result.md",
-      "content": "plain text or base64",
+      "content_base64": "base64 file content or plain text content",
       "mime_type": "text/markdown"
     }
   ]
@@ -130,9 +130,11 @@ Rules:
 - Use `blocked` when you cannot proceed because of a missing input, permission, or decision.
 - Use `failed` when the task cannot be completed.
 - Always include the latest meaningful comment in `last_comment`.
+- Always include `artifacts`, even if it is an empty array.
 - Include any final artifacts or files in `artifacts` when available.
 - If an artifact contains file content, include `filename` and either `content_base64` or `content`.
 - For binary files, prefer `content_base64`.
+- For text files, you may send `content` or `content_base64`, but `content_base64` is preferred for consistency.
 - This callback must include the latest comment even if the issue status is already clear from context.
 - Replace `{issue_id}` with the current Paperclip issue id.
 PROMPT;

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Observers\IssueObserver;
+use App\Enums\AgentTaskExecutionMode;
 use App\Services\IssueTypeResolver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,9 +42,11 @@ class Issue extends Model
     {
         return [
             'issue_type_id' => 'integer',
+            'paperclip_user_id' => 'integer',
             'due_date' => 'date',
             'registration_date' => 'datetime',
             'close_date' => 'datetime',
+            'last_agent_execution_mode' => 'string',
         ];
     }
 
@@ -131,6 +134,11 @@ class Issue extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function paperclipUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'paperclip_user_id');
+    }
+
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
@@ -199,5 +207,22 @@ class Issue extends Model
     public function agentFlow(): HasOne
     {
         return $this->hasOne(IssueAgentFlow::class);
+    }
+
+    public function lastAgentExecutionMode(): ?AgentTaskExecutionMode
+    {
+        $mode = $this->last_agent_execution_mode;
+
+        if (! is_string($mode) || $mode === '') {
+            return null;
+        }
+
+        return AgentTaskExecutionMode::tryFrom($mode);
+    }
+
+    public function wasLastExecutedByPaperclip(): bool
+    {
+        return $this->lastAgentExecutionMode() === AgentTaskExecutionMode::PAPERCLIP
+            || $this->paperclip_user_id !== null;
     }
 }
