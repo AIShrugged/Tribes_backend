@@ -187,7 +187,7 @@ class UpcomingAgendaService
         if (! empty($data['follow_up_items'])) {
             $lines[] = '✅ Follow-up:';
             foreach ($data['follow_up_items'] as $item) {
-                $lines[] = "- {$item}";
+                $lines[] = "● {$item}";
             }
             $lines[] = '';
         }
@@ -195,7 +195,7 @@ class UpcomingAgendaService
         if (! empty($data['open_questions'])) {
             $lines[] = '❓ Открытые вопросы:';
             foreach ($data['open_questions'] as $q) {
-                $lines[] = "- {$q}";
+                $lines[] = "● {$q}";
             }
             $lines[] = '';
         }
@@ -203,7 +203,7 @@ class UpcomingAgendaService
         if (! empty($data['focus_areas'])) {
             $lines[] = '🔍 Фокус на следующей встрече:';
             foreach ($data['focus_areas'] as $area) {
-                $lines[] = "- {$area}";
+                $lines[] = "● {$area}";
             }
         }
 
