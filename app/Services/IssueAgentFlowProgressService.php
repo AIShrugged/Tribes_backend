@@ -288,12 +288,18 @@ class IssueAgentFlowProgressService
             foreach (array_values($steps) as $index => $stepDefinition) {
                 $position = $executionOffset + $index;
 
+                // Ensure all string values are valid UTF-8 for JSON storage
+                $sanitizedDefinition = json_decode(
+                    json_encode($stepDefinition, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE),
+                    true
+                ) ?? $stepDefinition;
+
                 $createdStep = $flow->steps()->create([
                     'position' => $position,
                     'kind' => IssueAgentFlowStepKind::EXECUTION->value,
-                    'title' => $stepDefinition['title'],
-                    'prompt' => $stepDefinition['prompt'],
-                    'definition' => $stepDefinition,
+                    'title' => $sanitizedDefinition['title'] ?? $stepDefinition['title'],
+                    'prompt' => $sanitizedDefinition['prompt'] ?? $stepDefinition['prompt'],
+                    'definition' => $sanitizedDefinition,
                     'input_payload' => [
                         'flow' => [
                             'issue_agent_flow_id' => $flow->id,
@@ -977,6 +983,10 @@ PROMPT;
                 throw new \RuntimeException('Planner step definitions require title and prompt.');
             }
 
+            // Sanitize UTF-8 to prevent json_encode failures when saving to DB
+            $title = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
+            $prompt = mb_convert_encoding($prompt, 'UTF-8', 'UTF-8');
+
             $normalizedSteps[] = [
                 'title' => $title,
                 'prompt' => $prompt,
@@ -1001,6 +1011,8 @@ PROMPT;
      */
     private function parsePlanFromMarkdown(string $output): ?array
     {
+        // Sanitize: ensure valid UTF-8 to prevent json_encode failures downstream
+        $output = mb_convert_encoding($output, 'UTF-8', 'UTF-8');
         // Extract goal from first heading or ## Goal section
         $goal = '';
         if (preg_match('/^## Goal\s*\n+(.+?)(?=\n##|\z)/ms', $output, $goalMatch)) {
