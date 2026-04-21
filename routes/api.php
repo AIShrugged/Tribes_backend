@@ -44,6 +44,7 @@ use App\Http\Controllers\API\v1\IssueCommentController;
 use App\Http\Controllers\API\v1\IssueAgentFlowController;
 use App\Http\Controllers\API\v1\IssueController;
 use App\Http\Controllers\API\v1\IssueStatsController;
+use App\Http\Controllers\API\v1\PaperclipIssueStatusController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
 use App\Http\Controllers\API\v1\DashboardController;
 use App\Http\Controllers\API\v1\DemoController;
@@ -87,6 +88,7 @@ Route::group(['prefix' => 'v1'], function () {
         ->name('attachments.download');
     Route::post('internal/agent-task-runs/{run}/tool-calls', [SandboxToolGatewayController::class, 'store']);
     Route::post('internal/agent-task-runs/{run}/llm-completions', [SandboxToolGatewayController::class, 'complete']);
+    Route::post('internal/paperclip/issues/{paperclipIssueId}/status', [PaperclipIssueStatusController::class, 'store']);
 
     Route::get('invites/accept/{token}', [TeamInviteController::class, 'accept'])
         ->name('invites.accept');

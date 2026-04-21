@@ -8,11 +8,15 @@ use App\Jobs\RunAgentTaskJob;
 use App\Models\AgentActivityLog;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Models\Issue;
+use App\Models\Organization;
 use App\Models\User;
+use App\Services\PaperclipCallbackTokenService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -115,10 +119,149 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
 
             return $body['title'] === $task->name
                 && str_contains($body['description'], $task->prompt)
+                && str_contains($body['description'], '/api/v1/internal/paperclip/issues/{issue_id}/status')
+                && str_contains($body['description'], 'X-Paperclip-Run-Token:')
+                && str_contains($body['description'], 'last_comment')
+                && str_contains($body['description'], 'artifacts')
                 && $body['assigneeAgentId'] === 'agent-test'
                 && $body['status'] === 'todo'
                 && ! isset($body['callbackUrl']);
         });
+    }
+
+    #[Test]
+    public function paperclip_callback_completes_run_and_stores_artifacts(): void
+    {
+        $owner = User::factory()->create();
+        $organization = Organization::create([
+            'name' => 'Paperclip Org',
+            'slug' => 'paperclip-org',
+        ]);
+
+        $issue = Issue::create([
+            'user_id' => $owner->id,
+            'organization_id' => $organization->id,
+            'team_id' => null,
+            'name' => 'Paperclip issue',
+            'description' => 'Issue for Paperclip sync',
+            'type' => 'development',
+            'status' => 'in_progress',
+        ]);
+
+        [$task, $run] = $this->createPaperclipTaskAndRun(issueId: $issue->id);
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+
+        $token = $this->app->make(PaperclipCallbackTokenService::class)->issue($run);
+
+        $response = $this->postJson(
+            '/api/v1/internal/paperclip/issues/'.self::ISSUE_ID.'/status',
+            [
+                'status' => 'done',
+                'last_comment' => 'Final result from Paperclip.',
+                'artifacts' => [
+                    ['id' => 'artifact-1', 'filename' => 'report.md'],
+                    ['id' => 'artifact-2', 'filename' => 'diagram.png'],
+                ],
+            ],
+            ['X-Paperclip-Run-Token' => $token],
+        );
+
+        $response->assertSuccessful()
+            ->assertJsonPath('data.applied', true)
+            ->assertJsonPath('data.status', AgentTaskRunStatus::COMPLETED->value);
+
+        $run = $run->fresh();
+        $task = $task->fresh();
+        $issue = $issue->fresh();
+        $attachment = $issue->attachments()->first();
+        $comment = $issue->comments()->first();
+
+        $this->assertSame(AgentTaskRunStatus::COMPLETED->value, $run->status->value);
+        $this->assertSame('Final result from Paperclip.', $run->output);
+        $this->assertSame('done', $issue->status);
+        $this->assertNotNull($comment);
+        $this->assertStringContainsString('Final result from Paperclip.', $comment->content);
+        $this->assertNotNull($attachment);
+        $this->assertTrue(Storage::disk('local')->exists($attachment->file_path));
+        $this->assertSame('report.md', data_get($run->metadata, 'paperclip_attachments.0.filename'));
+        $this->assertSame('diagram.png', data_get($run->metadata, 'paperclip_attachments.1.filename'));
+        $this->assertFalse($task->enabled);
+        $this->assertNotNull($task->last_completed_at);
+    }
+
+    #[Test]
+    public function paperclip_callback_rejects_invalid_token(): void
+    {
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+        $this->app->make(PaperclipCallbackTokenService::class)->issue($run);
+
+        $response = $this->postJson(
+            '/api/v1/internal/paperclip/issues/'.self::ISSUE_ID.'/status',
+            [
+                'status' => 'failed',
+                'last_comment' => 'Something went wrong.',
+            ],
+            ['X-Paperclip-Run-Token' => 'invalid-token'],
+        );
+
+        $response->assertStatus(401);
+
+        $this->assertSame(AgentTaskRunStatus::PROCESSING->value, $run->fresh()->status->value);
+    }
+
+    #[Test]
+    public function paperclip_callback_pauses_issue_when_blocked_and_adds_comment(): void
+    {
+        $issue = $this->createPaperclipIssue('Paperclip issue blocked', 'in_progress', 'paperclip-org-2');
+
+        [$task, $run] = $this->createPaperclipTaskAndRun(issueId: $issue->id);
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+        $token = $this->app->make(PaperclipCallbackTokenService::class)->issue($run);
+
+        $this->postJson(
+            '/api/v1/internal/paperclip/issues/'.self::ISSUE_ID.'/status',
+            [
+                'status' => 'blocked',
+                'last_comment' => 'Need approval from security.',
+            ],
+            ['X-Paperclip-Run-Token' => $token],
+        )->assertSuccessful();
+
+        $issue = $issue->fresh();
+        $comment = $issue->comments()->first();
+
+        $this->assertSame(AgentTaskRunStatus::PAUSED->value, $run->fresh()->status->value);
+        $this->assertSame('paused', $issue->status);
+        $this->assertNotNull($comment);
+        $this->assertStringContainsString('Need approval from security.', $comment->content);
+    }
+
+    #[Test]
+    public function paperclip_callback_marks_issue_open_when_failed(): void
+    {
+        $issue = $this->createPaperclipIssue('Paperclip issue failed', 'in_progress', 'paperclip-org-3');
+
+        [$task, $run] = $this->createPaperclipTaskAndRun(issueId: $issue->id);
+        $run->update(['paperclip_issue_id' => self::ISSUE_ID, 'status' => 'processing']);
+        $token = $this->app->make(PaperclipCallbackTokenService::class)->issue($run);
+
+        $this->postJson(
+            '/api/v1/internal/paperclip/issues/'.self::ISSUE_ID.'/status',
+            [
+                'status' => 'failed',
+                'last_comment' => 'Unhandled exception while running.',
+            ],
+            ['X-Paperclip-Run-Token' => $token],
+        )->assertSuccessful();
+
+        $issue = $issue->fresh();
+        $comment = $issue->comments()->first();
+
+        $this->assertSame(AgentTaskRunStatus::FAILED->value, $run->fresh()->status->value);
+        $this->assertSame('open', $issue->status);
+        $this->assertNotNull($comment);
+        $this->assertStringContainsString('Unhandled exception while running.', $comment->content);
     }
 
     // -------------------------------------------------------------------------
@@ -571,9 +714,14 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
 
     // -------------------------------------------------------------------------
 
-    private function createPaperclipTaskAndRun(string $name = 'Paperclip task', string $prompt = 'Do something'): array
+    private function createPaperclipTaskAndRun(string $name = 'Paperclip task', string $prompt = 'Do something', ?int $issueId = null): array
     {
         $user = User::factory()->create();
+
+        $metadata = [];
+        if ($issueId) {
+            $metadata['issue_id'] = $issueId;
+        }
 
         $task = AgentTask::create([
             'user_id'         => $user->id,
@@ -587,6 +735,7 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
             'enabled'         => true,
             'locked_at'       => now(),
             'max_attempts'    => 1,
+            'metadata'        => $metadata,
         ]);
 
         $run = AgentTaskRun::create([
@@ -596,5 +745,24 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
         ]);
 
         return [$task, $run];
+    }
+
+    private function createPaperclipIssue(string $name, string $status, string $slug): Issue
+    {
+        $owner = User::factory()->create();
+        $organization = Organization::create([
+            'name' => $name.' Org',
+            'slug' => $slug,
+        ]);
+
+        return Issue::create([
+            'user_id' => $owner->id,
+            'organization_id' => $organization->id,
+            'team_id' => null,
+            'name' => $name,
+            'description' => 'Issue for Paperclip sync',
+            'type' => 'development',
+            'status' => $status,
+        ]);
     }
 }
