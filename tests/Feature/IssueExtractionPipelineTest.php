@@ -295,8 +295,8 @@ class IssueExtractionPipelineTest extends TestCase
             'name' => 'Original implementation task',
             'prompt' => 'Do the first pass.',
             'schedule_type' => 'one_off',
-            'execution_mode' => 'paperclip',
-            'sandbox_profile' => 'paperclip-sandbox:v1',
+            'execution_mode' => 'isolated',
+            'sandbox_profile' => 'isolated-sandbox:v1',
             'agent_task_type' => 'background',
             'output_mode' => 'json',
             'allowed_tools' => ['github_get_pull_request_comments', 'update_task_status'],
@@ -319,6 +319,7 @@ class IssueExtractionPipelineTest extends TestCase
             'type' => 'backend',
             'status' => MeetingTaskStatus::REVIEW->value,
             'agent_task_id' => $sourceTask->id,
+            'last_agent_execution_mode' => 'paperclip',
             'pr_url' => 'https://github.com/org/repo/pull/42',
             'pr_number' => 42,
             'pr_repository' => 'org/repo',
@@ -335,13 +336,13 @@ class IssueExtractionPipelineTest extends TestCase
         $this->assertTrue($agentTask->metadata['reopen']);
         $this->assertSame($sourceTask->id, $agentTask->metadata['previous_agent_task_id']);
         $this->assertSame('paperclip', $agentTask->execution_mode?->value);
-        $this->assertSame('paperclip-sandbox:v1', $agentTask->sandbox_profile);
-        $this->assertSame('json', $agentTask->output_mode);
-        $this->assertSame(['github_get_pull_request_comments', 'update_task_status'], $agentTask->allowed_tools);
-        $this->assertSame(['api.github.com'], $agentTask->allowed_outbound_hosts);
+        $this->assertSame([], $agentTask->allowed_tools);
+        $this->assertSame([], $agentTask->allowed_outbound_hosts);
         $this->assertTrue($agentTask->metadata['custom_flag']);
-        $this->assertStringContains('github_get_pull_request_comments', $agentTask->prompt);
-        $this->assertStringContains('org/repo', $agentTask->prompt);
+        $this->assertStringContainsString('last_comment', $agentTask->prompt);
+        $this->assertStringContainsString('content_base64', $agentTask->prompt);
+        $this->assertStringContainsString('github_get_pull_request_comments', $agentTask->prompt);
+        $this->assertStringContainsString('org/repo', $agentTask->prompt);
     }
 
     #[Test]

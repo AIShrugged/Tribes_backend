@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AgentTaskRun;
+use App\Enums\AgentTaskExecutionMode;
 use App\Models\Issue;
 use App\Models\IssueAttachment;
 use App\Models\IssueComment;
@@ -19,6 +20,13 @@ class PaperclipIssueSyncService
         ?string $comment,
         array $artifacts = [],
     ): void {
+        $paperclipUserId = $run->task?->user_id;
+
+        $issue->update([
+            'last_agent_execution_mode' => AgentTaskExecutionMode::PAPERCLIP->value,
+            'paperclip_user_id' => $paperclipUserId ?? $issue->paperclip_user_id,
+        ]);
+
         $this->syncStatus($issue, $runStatus);
         $this->syncComment($issue, $run, $runStatus, $comment);
         $this->syncAttachments($issue, $artifacts);
@@ -50,7 +58,7 @@ class PaperclipIssueSyncService
             return;
         }
 
-        $paperclipUserId = (int) ($issue->user_id ?? $run->task?->user_id ?? 0);
+        $paperclipUserId = (int) ($issue->paperclip_user_id ?? $run->task?->user_id ?? $issue->user_id ?? 0);
 
         $prefix = match ($runStatus) {
             'done' => 'Paperclip завершил задачу.',
