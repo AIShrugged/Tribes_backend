@@ -11,4 +11,8 @@ return [
         'intervals'   => [1, 2, 5, 10, 10, 10],
         'max_seconds' => 1800,
     ],
+
+    'callback' => [
+        'token_ttl_seconds' => env('PAPERCLIP_CALLBACK_TOKEN_TTL_SECONDS', 86400),
+    ],
 ];
