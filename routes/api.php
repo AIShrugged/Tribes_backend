@@ -50,6 +50,7 @@ use App\Http\Controllers\API\v1\DemoController;
 use App\Http\Controllers\API\v1\PersonController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\UserController;
+use App\Http\Controllers\API\v1\UserPreferencesController;
 use App\Http\Controllers\API\v1\WorkspaceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -93,9 +94,13 @@ Route::group(['prefix' => 'v1'], function () {
     Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::group(['prefix' => 'users'], function () {
             Route::get('/me', function (Request $request) {
-                return $request->user();
+                $user = $request->user();
+                return array_merge($user->toArray(), [
+                    'preferences' => $user->preferences,
+                ]);
             });
             Route::patch('/me', [UserController::class, 'update']);
+            Route::put('/me/preferences', [UserPreferencesController::class, 'update']);
 
             Route::group(['prefix' => 'me'], function () {
                 Route::get('identities', [UserIdentityController::class, 'index']);
