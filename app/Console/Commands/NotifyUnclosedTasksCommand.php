@@ -6,6 +6,7 @@ use App\Models\Issue;
 use App\Models\Source;
 use App\Models\User;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -19,20 +20,34 @@ class NotifyUnclosedTasksCommand extends Command
     {
         $userIdsWithMeetingsToday = Source::whereHas('calendarEvents', function ($q) {
             $q->whereDate('starts_at', now()->toDateString());
-        })->pluck('user_id')->unique();
+        })->pluck('user_id');
 
         if ($userIdsWithMeetingsToday->isEmpty()) {
             return;
         }
 
+        $teamIdsWithMeetings = DB::table('team_user')
+            ->whereIn('user_id', $userIdsWithMeetingsToday)
+            ->pluck('team_id')
+            ->unique();
+
+        if ($teamIdsWithMeetings->isEmpty()) {
+            return;
+        }
+
         $users = User::with('telegramUser')
             ->whereHas('telegramUser')
-            ->whereIn('id', $userIdsWithMeetingsToday)
+            ->whereHas('teams', fn ($q) => $q->whereIn('teams.id', $teamIdsWithMeetings))
             ->get();
 
         foreach ($users as $user) {
-            $issues = Issue::where('user_id', $user->id)
-                ->whereNotIn('status', ['done'])
+            $issues = Issue::where(function ($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->orWhere('assignee_id', $user->id);
+                })
+                ->whereNotIn('status', ['done', 'closed'])
+                ->whereNotNull('due_date')
+                ->whereDate('due_date', '<=', now()->toDateString())
                 ->get();
 
             if ($issues->isEmpty()) {
