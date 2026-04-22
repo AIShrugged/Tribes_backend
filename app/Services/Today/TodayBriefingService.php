@@ -152,7 +152,7 @@ class TodayBriefingService
 
             $totalTasks = $allTasks->count();
             $doneTasks = $allTasks->where('status', 'done')->count();
-            $prevTasks = $allTasks->whereNotIn('status', ['done']);
+            $prevTasks = $allTasks;
         } else {
             $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
 
@@ -169,7 +169,7 @@ class TodayBriefingService
 
                 $totalTasks = $allPrevTasks->count();
                 $doneTasks = $allPrevTasks->where('status', 'done')->count();
-                $prevTasks = $allPrevTasks->whereNotIn('status', ['done']);
+                $prevTasks = $allPrevTasks;
             }
         }
 
