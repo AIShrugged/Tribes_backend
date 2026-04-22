@@ -173,8 +173,8 @@ class TodayBriefingService
             }
         }
 
-        // Agenda content: personal upcoming agenda for user, or general meeting agenda
-        $agendaContent = $this->loadAgendaContent($event, $user);
+        // Agenda content: only for future/ready meetings — not for past meetings without a briefing
+        $agendaContent = $meetingState !== 'waiting' ? $this->loadAgendaContent($event, $user) : null;
 
         return new TodayEventDTO(
             id: $event->id,

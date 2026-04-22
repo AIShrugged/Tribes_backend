@@ -96,6 +96,10 @@ class UpcomingAgendaService
 
             $data = json_decode($matches[0], true);
 
+            if (! is_array($data)) {
+                throw new \RuntimeException('LLM returned invalid JSON: ' . substr($matches[0], 0, 200));
+            }
+
             $agenda->update([
                 'status' => AgendaStatus::DONE->value,
                 'raw_json' => $data,
@@ -111,7 +115,10 @@ class UpcomingAgendaService
                 ],
             );
         } catch (\Throwable $e) {
-            $agenda->update(['status' => AgendaStatus::FAILED->value]);
+            $agenda->update([
+                'status' => AgendaStatus::FAILED->value,
+                'raw_json' => ['error' => $e->getMessage()],
+            ]);
             Log::error('Upcoming agenda generation failed', [
                 'user_id' => $user->id,
                 'calendar_event_id' => $event->id,
