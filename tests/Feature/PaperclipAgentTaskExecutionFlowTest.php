@@ -120,6 +120,7 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
             return $body['title'] === $task->name
                 && str_contains($body['description'], $task->prompt)
                 && str_contains($body['description'], '/api/v1/internal/paperclip/issues/{issue_id}/status')
+                && str_contains($body['description'], 'current Paperclip issue id')
                 && str_contains($body['description'], 'X-Paperclip-Run-Token:')
                 && str_contains($body['description'], 'last_comment')
                 && str_contains($body['description'], 'artifacts')
