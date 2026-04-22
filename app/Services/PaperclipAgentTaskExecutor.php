@@ -102,6 +102,7 @@ class PaperclipAgentTaskExecutor
 
 This callback is mandatory.
 It updates both the Tribes agent run and the linked Tribes issue.
+Use the Paperclip issue id for this callback URL. Replace `{issue_id}` with the current Paperclip issue id for this task, not the Tribes `agent_task_id`.
 
 After you reach a final state, send a POST request to:
 {$appUrl}/api/v1/internal/paperclip/issues/{issue_id}/status
