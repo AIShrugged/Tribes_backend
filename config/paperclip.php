@@ -15,4 +15,9 @@ return [
     'callback' => [
         'token_ttl_seconds' => env('PAPERCLIP_CALLBACK_TOKEN_TTL_SECONDS', 86400),
     ],
+
+    // User ID of the NotTaker bot account that authors automated comments
+    // (transcript updates, Paperclip agent runs). Set NOTETAKER_BOT_USER_ID
+    // in .env to the ID of the dedicated bot user.
+    'notetaker_bot_user_id' => env('NOTETAKER_BOT_USER_ID'),
 ];
