@@ -58,7 +58,8 @@ class PaperclipIssueSyncService
             return;
         }
 
-        $paperclipUserId = (int) ($issue->paperclip_user_id ?? $run->task?->user_id ?? $issue->user_id ?? 0);
+        $botUserId = (int) config('paperclip.notetaker_bot_user_id', 0);
+        $paperclipUserId = $botUserId ?: (int) ($issue->paperclip_user_id ?: 0);
 
         $prefix = match ($runStatus) {
             'done' => 'Paperclip завершил задачу.',
