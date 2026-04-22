@@ -30,7 +30,17 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Best-effort rollback — restores the most common case.
+        // NOTE: This rollback is intentionally lossy.
+        //
+        // The `up()` migration maps multiple distinct OpenRouter model IDs
+        // (google/gemini-3-pro-preview, google/gemini-3.1-pro-preview,
+        // anthropic/claude-3.5-sonnet, anthropic/claude-sonnet-4.6) all to the
+        // same Anthropic value (claude-sonnet-4-6). The original per-row model
+        // cannot be recovered without a separate backup. This rollback restores
+        // the most common pre-migration values as a best effort only.
+        //
+        // If you need a lossless rollback, restore from a database snapshot taken
+        // before running this migration.
         DB::table('settings')
             ->where('key', 'like', 'model.%')
             ->where('value', 'claude-sonnet-4-6')

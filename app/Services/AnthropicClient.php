@@ -80,7 +80,11 @@ class AnthropicClient
             $data['system'] = $systemPrompt;
         }
 
-        // Anthropic does not support `response_format`; callers should instruct JSON in their prompts.
+        if ($forceJsonResponse) {
+            // Anthropic has no response_format parameter; enforce JSON via the system prompt.
+            $jsonInstruction = 'Respond with valid JSON only. Do not include any text outside the JSON structure.';
+            $data['system'] = ($systemPrompt !== null ? $systemPrompt . "\n\n" : '') . $jsonInstruction;
+        }
 
         $body = self::makeRequest($data);
 
@@ -132,7 +136,7 @@ class AnthropicClient
     ): array {
         $data = [
             'model'      => $model,
-            'messages'   => $messages,
+            'messages'   => self::convertMessagesToAnthropic($messages),
             'max_tokens' => $maxTokens,
         ];
 
@@ -199,6 +203,74 @@ class AnthropicClient
         Log::info('Anthropic API response', ['stop_reason' => $body['stop_reason'] ?? null]);
 
         return $body;
+    }
+
+    /**
+     * Convert an OpenAI-format message list to Anthropic format before sending.
+     *
+     * Two conversions are required:
+     *
+     * 1. tool result messages:
+     *    OpenAI:    {role: "tool", tool_call_id: "...", content: "..."}
+     *    Anthropic: {role: "user", content: [{type: "tool_result", tool_use_id: "...", content: "..."}]}
+     *
+     * 2. assistant messages that contain tool_calls:
+     *    OpenAI:    {role: "assistant", content: null, tool_calls: [{id, type, function: {name, arguments}}]}
+     *    Anthropic: {role: "assistant", content: [{type: "tool_use", id: "...", name: "...", input: {...}}]}
+     */
+    private static function convertMessagesToAnthropic(array $messages): array
+    {
+        $converted = [];
+
+        foreach ($messages as $msg) {
+            // Tool result: OpenAI role="tool" → Anthropic role="user" with tool_result block.
+            if (($msg['role'] ?? '') === 'tool') {
+                $converted[] = [
+                    'role'    => 'user',
+                    'content' => [
+                        [
+                            'type'        => 'tool_result',
+                            'tool_use_id' => $msg['tool_call_id'] ?? '',
+                            'content'     => $msg['content'] ?? '',
+                        ],
+                    ],
+                ];
+                continue;
+            }
+
+            // Assistant message with tool_calls: convert to Anthropic tool_use content blocks.
+            if (($msg['role'] ?? '') === 'assistant' && !empty($msg['tool_calls'])) {
+                $contentBlocks = [];
+
+                // Preserve any text content alongside the tool calls.
+                if (!empty($msg['content'])) {
+                    $contentBlocks[] = ['type' => 'text', 'text' => $msg['content']];
+                }
+
+                foreach ($msg['tool_calls'] as $tc) {
+                    $input = [];
+                    if (isset($tc['function']['arguments'])) {
+                        $decoded = json_decode($tc['function']['arguments'], true);
+                        $input   = is_array($decoded) ? $decoded : [];
+                    }
+
+                    $contentBlocks[] = [
+                        'type'  => 'tool_use',
+                        'id'    => $tc['id'],
+                        'name'  => $tc['function']['name'] ?? '',
+                        'input' => $input,
+                    ];
+                }
+
+                $converted[] = ['role' => 'assistant', 'content' => $contentBlocks];
+                continue;
+            }
+
+            // All other messages pass through unchanged.
+            $converted[] = $msg;
+        }
+
+        return $converted;
     }
 
     /**

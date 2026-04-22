@@ -227,13 +227,23 @@ class ChatAgentServiceTest extends TestCase
         $this->makeService()->processMessage($this->user, new Collection, 'Use tool');
 
         $this->assertNotNull($secondCallMessages);
-        $toolMessages = array_filter($secondCallMessages, fn ($m) => ($m['role'] ?? '') === 'tool');
-        $this->assertNotEmpty($toolMessages);
 
-        $toolMessage = array_values($toolMessages)[0];
-        $this->assertEquals('call_abc', $toolMessage['tool_call_id']);
+        // AnthropicClient converts OpenAI tool results to Anthropic format before sending.
+        // Anthropic format: {role: "user", content: [{type: "tool_result", tool_use_id: "...", content: "..."}]}
+        $toolResultMessages = array_filter(
+            $secondCallMessages,
+            fn ($m) => ($m['role'] ?? '') === 'user'
+                && isset($m['content'][0]['type'])
+                && $m['content'][0]['type'] === 'tool_result'
+        );
+        $this->assertNotEmpty($toolResultMessages, 'Expected at least one tool_result message in Anthropic format');
 
-        $decoded = json_decode($toolMessage['content'], true);
+        $toolResultMessage = array_values($toolResultMessages)[0];
+        $toolResultBlock   = $toolResultMessage['content'][0];
+        $this->assertEquals('tool_result', $toolResultBlock['type']);
+        $this->assertEquals('call_abc', $toolResultBlock['tool_use_id']);
+
+        $decoded = json_decode($toolResultBlock['content'], true);
         $this->assertEquals('важные данные', $decoded['data'] ?? null);
     }
 
