@@ -46,7 +46,7 @@ class ChatAgentServiceTest extends TestCase
     public function it_returns_llm_response_as_string(): void
     {
         Http::fake([
-            'openrouter.ai/*' => Http::response($this->makeTextResponse('Ответ на вопрос'), 200),
+            'api.anthropic.com/*' => Http::response($this->makeTextResponse('Ответ на вопрос'), 200),
         ]);
 
         $result = $this->makeService()->processMessage(
@@ -243,7 +243,7 @@ class ChatAgentServiceTest extends TestCase
         // Никаких инструментов не зарегистрировано
 
         Http::fake([
-            'openrouter.ai/*' => Http::sequence()
+            'api.anthropic.com/*' => Http::sequence()
                 ->push($this->makeToolCallResponse('nonexistent_tool', []), 200)
                 ->push($this->makeTextResponse('Ответ после ошибки инструмента'), 200),
         ]);
@@ -292,7 +292,7 @@ class ChatAgentServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'openrouter.ai/*' => Http::sequence()
+            'api.anthropic.com/*' => Http::sequence()
                 ->push($this->makeToolCallResponse('search_agent_memories', [
                     'profile_key' => 'github-reviewer',
                     'provider' => 'github',
@@ -315,7 +315,7 @@ class ChatAgentServiceTest extends TestCase
     public function it_handles_llm_http_error_gracefully(): void
     {
         Http::fake([
-            'openrouter.ai/*' => Http::response(['error' => 'Server Error'], 500),
+            'api.anthropic.com/*' => Http::response(['error' => 'Server Error'], 500),
         ]);
 
         $result = $this->makeService()->processMessage(
@@ -389,34 +389,31 @@ class ChatAgentServiceTest extends TestCase
     private function makeTextResponse(string $content): array
     {
         return [
-            'choices' => [[
-                'message' => [
-                    'role' => 'assistant',
-                    'content' => $content,
-                ],
-                'finish_reason' => 'stop',
-            ]],
+            'id'          => 'msg_test',
+            'type'        => 'message',
+            'role'        => 'assistant',
+            'content'     => [['type' => 'text', 'text' => $content]],
+            'stop_reason' => 'end_turn',
+            'model'       => 'claude-sonnet-4-6',
+            'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
         ];
     }
 
     private function makeToolCallResponse(string $toolName, array $args, string $callId = 'call_test_123'): array
     {
         return [
-            'choices' => [[
-                'message' => [
-                    'role' => 'assistant',
-                    'content' => null,
-                    'tool_calls' => [[
-                        'id' => $callId,
-                        'type' => 'function',
-                        'function' => [
-                            'name' => $toolName,
-                            'arguments' => json_encode($args),
-                        ],
-                    ]],
-                ],
-                'finish_reason' => 'tool_calls',
+            'id'          => 'msg_test',
+            'type'        => 'message',
+            'role'        => 'assistant',
+            'content'     => [[
+                'type'  => 'tool_use',
+                'id'    => $callId,
+                'name'  => $toolName,
+                'input' => $args,
             ]],
+            'stop_reason' => 'tool_use',
+            'model'       => 'claude-sonnet-4-6',
+            'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
         ];
     }
 

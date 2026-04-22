@@ -156,7 +156,7 @@ class SandboxToolGatewayControllerTest extends TestCase
         $token = $this->app->make(AgentTaskRunTokenService::class)->issue($run);
 
         Http::fake([
-            'openrouter.ai/*' => Http::response([
+            'api.anthropic.com/*' => Http::response([
                 'choices' => [[
                     'message' => [
                         'role' => 'assistant',

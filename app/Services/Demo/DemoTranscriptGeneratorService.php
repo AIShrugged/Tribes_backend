@@ -34,7 +34,7 @@ class DemoTranscriptGeneratorService
         try {
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
-                model: Setting::get('model.demo', config('ai.providers.openrouter.models.demo')),
+                model: Setting::get('model.demo', config('ai.providers.anthropic.models.demo')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

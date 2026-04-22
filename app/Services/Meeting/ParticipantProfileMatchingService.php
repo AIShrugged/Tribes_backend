@@ -39,7 +39,7 @@ class ParticipantProfileMatchingService
         try {
             $json = $this->llm->chat(
                 messages: [new MessageDTO('user', $this->buildPrompt($participants, $profiles))],
-                model: Setting::get('model.meeting_tasks', config('ai.providers.openrouter.models.meeting_tasks')),
+                model: Setting::get('model.meeting_tasks', config('ai.providers.anthropic.models.meeting_tasks')),
                 maxTokens: 2048,
                 forceJsonResponse: true,
             );

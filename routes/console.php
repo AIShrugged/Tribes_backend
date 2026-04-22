@@ -34,21 +34,8 @@ Schedule::command('tasks:process-telegram')
     ->name('tasks:process-telegram')
     ->withoutOverlapping();
 
-// OpenRouter balance monitoring
-Schedule::command('openrouter:check-balance --morning')
-    ->dailyAt('09:00')
-    ->name('openrouter:check-balance:morning')
-    ->withoutOverlapping();
-
-Schedule::command('openrouter:check-balance')
-    ->dailyAt('15:00')
-    ->name('openrouter:check-balance:afternoon')
-    ->withoutOverlapping();
-
-Schedule::command('openrouter:check-balance')
-    ->dailyAt('19:00')
-    ->name('openrouter:check-balance:evening')
-    ->withoutOverlapping();
+// NOTE: OpenRouter balance monitoring has been removed.
+// Monitor Anthropic API usage at https://console.anthropic.com.
 
 Schedule::command('meetings:send-pre-briefs')
     ->everyTenMinutes()

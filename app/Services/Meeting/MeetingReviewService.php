@@ -42,7 +42,7 @@ class MeetingReviewService
 
             $json = $this->llm->chat(
                 messages: [new MessageDTO('user', $this->buildPrompt($transcript, $participation, $meta, $history))],
-                model: Setting::get('model.meeting_review', config('ai.providers.openrouter.models.meeting_review')),
+                model: Setting::get('model.meeting_review', config('ai.providers.anthropic.models.meeting_review')),
                 maxTokens: 8192,
                 forceJsonResponse: true,
             );

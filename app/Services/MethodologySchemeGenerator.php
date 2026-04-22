@@ -22,6 +22,6 @@ class MethodologySchemeGenerator
             new MessageDTO('user', $prompt->make($methodology))
         ];
 
-        return $this->llm->chat($messages, Setting::get('model.scheme', config('ai.providers.openrouter.models.scheme')), 8096, true);
+        return $this->llm->chat($messages, Setting::get('model.scheme', config('ai.providers.anthropic.models.scheme')), 8096, true);
     }
 }

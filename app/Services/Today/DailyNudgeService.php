@@ -66,7 +66,7 @@ class DailyNudgeService
 
             $response = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
-                model: config('ai.providers.openrouter.models.today_nudge', 'google/gemini-3.1-pro-preview'),
+                model: config('ai.providers.anthropic.models.today_nudge', 'claude-sonnet-4-6'),
                 maxTokens: 4096,
             );
 

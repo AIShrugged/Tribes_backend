@@ -132,7 +132,7 @@ class InsightEvolutionService
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
+                model:             Setting::get('model.insight', config('ai.providers.anthropic.models.insight')),
                 maxTokens:         2048,
                 forceJsonResponse: true,
             );

@@ -10,18 +10,17 @@ use App\Services\Chat\FollowupAccessService;
 use App\Services\Chat\FollowupHtmlRenderer;
 use App\Services\Chat\SqlQueryExecutor;
 use App\Services\Chat\Visualization\SvgChartRenderer;
+use App\Services\AnthropicClient;
 use App\Services\Chat\WandaPromptBuilder;
 use App\Services\Chat\WandaResponseParser;
 use App\Models\Chat;
 use App\Models\ChannelMessage;
 use App\Models\Setting;
 use App\Models\User;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class ReportHandler
 {
-    private const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
     private const MAX_DATA_FOR_INTERPRETATION = 8192;
 
     public function __construct(
@@ -185,31 +184,14 @@ PROMPT);
 
     private function callLLM(array $messages): string
     {
-        $payloadMessages = array_map(function ($message) {
-            return [
-                'role'    => $message->role,
-                'content' => $message->content,
-            ];
-        }, $messages);
+        $model = Setting::get('model.wanda', config('ai.providers.anthropic.models.wanda'));
 
-        $response = Http::timeout(120)
-            ->withHeaders([
-                'Authorization' => 'Bearer ' . config('ai.providers.openrouter.api_token'),
-                'Content-Type'  => 'application/json',
-            ])
-            ->post(self::OPENROUTER_URL, [
-                'model'      => Setting::get('model.wanda', config('ai.providers.openrouter.models.wanda')),
-                'messages'   => $payloadMessages,
-                'max_tokens' => 4096,
-            ]);
+        Log::info('Wanda LLM request', ['model' => $model, 'messages_count' => count($messages)]);
 
-        Log::info('Wanda LLM response', ['status' => $response->status()]);
-
-        if (!$response->successful()) {
-            Log::error('Wanda LLM error', ['body' => $response->body()]);
-            throw new \Exception('LLM request failed: ' . $response->status());
-        }
-
-        return $response->json('choices.0.message.content') ?? '';
+        return AnthropicClient::chat(
+            messages: $messages,
+            model: $model,
+            maxTokens: 4096,
+        );
     }
 }
