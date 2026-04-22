@@ -3,6 +3,7 @@
 namespace App\Http\Requests\API\v1;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateUserPreferencesRequest extends FormRequest
 {
@@ -21,11 +22,12 @@ class UpdateUserPreferencesRequest extends FormRequest
             'menu.secondary'            => ['nullable', 'array'],
             'menu.secondary.*.id'       => ['required', 'string'],
             'menu.secondary.*.visible'  => ['required', 'boolean'],
+            'theme'                     => ['nullable', 'string', Rule::in(['light', 'dark'])],
         ];
     }
 
     public function getPreferences(): array
     {
-        return $this->only(['menu']);
+        return $this->only(['menu', 'theme']);
     }
 }
