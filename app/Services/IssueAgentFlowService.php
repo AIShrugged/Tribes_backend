@@ -200,6 +200,8 @@ class IssueAgentFlowService
         return <<<PROMPT
         Ты planning-агент для issue flow по задаче разработки. Сформируй четкий план, который потом будет исполнен отдельными агентскими задачами по одной.
 
+IMPORTANT: Your role is ONLY to produce the execution plan as a JSON object. The plan you return will automatically trigger a series of execution agents — one per step. Do NOT treat returning the plan as completing the task. The task is NOT done until all steps have been executed by the downstream agents. Your output is an input to the execution pipeline, not a result.
+
 ## Issue
 
 - ID: {$issue->id}
@@ -230,6 +232,7 @@ Rules:
 - Keep each step small, explicit, and sequential.
 - Do not add markdown fences, explanation, or extra keys outside the JSON object.
 - If the task needs code changes, make sure the later steps assume the earlier output is available as input.
+- After outputting the JSON plan, do NOT mark the issue as done — execution of the plan steps happens automatically after this output is received.
 PROMPT;
     }
 
