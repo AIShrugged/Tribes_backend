@@ -180,7 +180,7 @@ class IssueMergeService
 
         IssueComment::create([
             'issue_id'          => $existing->id,
-            'user_id'           => $user->id,
+            'user_id'           => null,
             'parent_id'         => null,
             'calendar_event_id' => $event->id,
             'content'           => "**Обновление по встрече \"{$event->title}\" от {$dateStr}:**\n\n{$updateText}",

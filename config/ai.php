@@ -24,6 +24,8 @@ return [
         ]
     ],
 
+    'bot_name' => 'Bot',
+
     'monitoring' => [
         'balance_threshold'        => 5,
         'telegram_chat_id'         => -1003705371486,
