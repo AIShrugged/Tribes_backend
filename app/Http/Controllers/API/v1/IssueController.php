@@ -102,7 +102,7 @@ class IssueController extends Controller
         $this->assertAssigneeIsVisible($request->user(), $data['assignee_id'] ?? null);
 
         $issue = Issue::create([
-            'user_id' => $request->user()->id,
+            'user_id' => $data['author_id'] ?? $request->user()->id,
             'organization_id' => $data['organization_id'],
             'team_id' => $data['team_id'] ?? null,
             'status' => $data['status'] ?? 'open',
@@ -110,16 +110,18 @@ class IssueController extends Controller
             'description' => $data['description'] ?? null,
             'type' => $data['type'],
             'assignee_id' => $data['assignee_id'] ?? null,
-        ])->load(['assignee', 'issueType']);
+            'due_date' => $data['due_date'] ?? null,
+            'priority' => $data['priority'] ?? 0,
+        ]);
 
-        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load(['assignee', 'issueType'])), status: 201);
+        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load(['assignee', 'issueType', 'user'])), status: 201);
     }
 
     public function show(IssueRequest $request, int $issue): ApiResponse
     {
         $task = $this->findVisibleIssue($request->user(), $issue);
 
-        return ApiResponse::success(data: IssueResource::make($task->load(['assignee', 'agentTask.latestRun'])));
+        return ApiResponse::success(data: IssueResource::make($task->load(['assignee', 'user', 'agentTask.latestRun'])));
     }
 
     public function update(IssueRequest $request, int $issue): ApiResponse
@@ -133,9 +135,16 @@ class IssueController extends Controller
             array_key_exists('team_id', $data) ? ($data['team_id'] !== null ? (int) $data['team_id'] : null) : $task->team_id,
         );
         $this->assertAssigneeIsVisible($request->user(), $data['assignee_id'] ?? $task->assignee_id);
-        $task->update($data);
 
-        return ApiResponse::success(data: IssueResource::make($task->refresh()->load('assignee')));
+        $updateData = $data;
+        if (array_key_exists('author_id', $updateData)) {
+            $updateData['user_id'] = $updateData['author_id'];
+            unset($updateData['author_id']);
+        }
+
+        $task->update($updateData);
+
+        return ApiResponse::success(data: IssueResource::make($task->refresh()->load(['assignee', 'user'])));
     }
 
     public function destroy(IssueRequest $request, int $issue): ApiResponse

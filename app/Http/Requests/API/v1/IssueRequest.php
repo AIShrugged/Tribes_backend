@@ -42,6 +42,9 @@ class IssueRequest extends FormRequest
                 'organization_id' => ['required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
                 'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
+                'author_id' => ['nullable', 'integer', 'exists:users,id'],
+                'due_date' => ['nullable', 'date'],
+                'priority' => ['nullable', 'integer', 'min:-1000000', 'max:1000000'],
             ],
             'issues.update' => [
                 'name' => ['sometimes', 'required', 'string', 'max:255'],
@@ -51,6 +54,9 @@ class IssueRequest extends FormRequest
                 'organization_id' => ['sometimes', 'required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
                 'assignee_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+                'author_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+                'due_date' => ['sometimes', 'nullable', 'date'],
+                'priority' => ['sometimes', 'nullable', 'integer', 'min:-1000000', 'max:1000000'],
             ],
             'issues.dispatch' => [
                 'agent_profile_id' => ['nullable', 'integer', 'exists:agent_profiles,id'],
@@ -106,6 +112,9 @@ class IssueRequest extends FormRequest
             'organization_id' => $this->input('organization_id'),
             'team_id' => $this->input('team_id'),
             'assignee_id' => $this->input('assignee_id'),
+            'author_id' => $this->input('author_id'),
+            'due_date' => $this->input('due_date'),
+            'priority' => $this->input('priority'),
         ];
     }
 
@@ -119,6 +128,9 @@ class IssueRequest extends FormRequest
             'organization_id' => $this->input('organization_id'),
             'team_id' => $this->input('team_id'),
             'assignee_id' => $this->input('assignee_id'),
+            'author_id' => $this->input('author_id'),
+            'due_date' => $this->input('due_date'),
+            'priority' => $this->input('priority'),
         ], static fn ($value) => $value !== null);
     }
 }
