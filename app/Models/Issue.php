@@ -23,6 +23,16 @@ class Issue extends Model
 
     public const TYPE_ORGANIZATION = 'organization';
 
+    public const PRIORITY_CRITICAL = 500;
+
+    public const PRIORITY_HIGH = 100;
+
+    public const PRIORITY_NORMAL = 0;
+
+    public const PRIORITY_LOW = -100;
+
+    public const PRIORITY_MINIMAL = -500;
+
     /** @deprecated Use TYPE_DEVELOPMENT instead. Kept for backward compatibility with existing data. */
     public const TYPE_FRONTEND = 'frontend';
 
@@ -43,6 +53,7 @@ class Issue extends Model
         return [
             'issue_type_id' => 'integer',
             'paperclip_user_id' => 'integer',
+            'priority' => 'integer',
             'due_date' => 'date',
             'registration_date' => 'datetime',
             'close_date' => 'datetime',
