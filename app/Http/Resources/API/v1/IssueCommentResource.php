@@ -14,9 +14,12 @@ class IssueCommentResource extends JsonResource
             'issue_id'   => $this->issue_id,
             'parent_id'  => $this->parent_id,
             'content'    => $this->content,
-            'user'       => [
+            'user'       => $this->user ? [
                 'id'   => $this->user->id,
                 'name' => $this->user->name,
+            ] : [
+                'id'   => null,
+                'name' => config('ai.bot_name'),
             ],
             'replies'    => IssueCommentResource::collection($this->whenLoaded('replies')),
             'created_at' => $this->created_at,

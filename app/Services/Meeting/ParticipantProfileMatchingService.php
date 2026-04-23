@@ -30,7 +30,7 @@ class ParticipantProfileMatchingService
             return;
         }
 
-        $profiles = $this->loadProfiles();
+        $profiles = $event->profiles()->with(['user', 'channel'])->get();
 
         if ($profiles->isEmpty()) {
             return;
