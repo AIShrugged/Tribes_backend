@@ -129,6 +129,8 @@ class IssueAgentFlowTest extends TestCase
         $this->assertNotNull($firstStep->agent_task_id);
         $this->assertNull($secondStep->agent_task_id);
 
+        $this->assertNotEmpty($planningStep->output);
+
         $firstTask = AgentTask::findOrFail($firstStep->agent_task_id);
         $firstRun = AgentTaskRun::query()->where('agent_task_id', $firstTask->id)->latest('id')->firstOrFail();
 

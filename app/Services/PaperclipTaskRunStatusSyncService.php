@@ -95,8 +95,6 @@ class PaperclipTaskRunStatusSyncService
             'paperclip_issue_id' => $run->paperclip_issue_id,
         ]);
 
-        $this->syncIssue($run, 'done', $output, $artifacts);
-
         try {
             $this->flowProgressService->handleTaskCompleted($task, $run);
         } catch (\Throwable $e) {
@@ -106,6 +104,8 @@ class PaperclipTaskRunStatusSyncService
                 'error' => $e->getMessage(),
             ]);
         }
+
+        $this->syncIssue($run, 'done', $output, $artifacts);
 
         return true;
     }
@@ -249,7 +249,13 @@ class PaperclipTaskRunStatusSyncService
         }
 
         try {
-            $this->issueSyncService->sync($issueModel, $run, $status, $comment, $artifacts);
+            $syncStatus = $status;
+
+            if ($status === 'done' && ! $this->canMarkIssueDone($run)) {
+                $syncStatus = null;
+            }
+
+            $this->issueSyncService->sync($issueModel, $run, $syncStatus, $comment, $artifacts);
         } catch (\Throwable $e) {
             Log::warning('Paperclip callback: issue sync failed', [
                 'agent_task_run_id' => $run->id,
@@ -283,5 +289,22 @@ class PaperclipTaskRunStatusSyncService
         }
 
         return null;
+    }
+
+    private function canMarkIssueDone(AgentTaskRun $run): bool
+    {
+        $issue = $this->resolveIssue($run);
+        if (! $issue) {
+            return true;
+        }
+
+        $flow = $issue->agentFlow()->first();
+        if (! $flow) {
+            return true;
+        }
+
+        return ! $flow->steps()
+            ->where('status', '!=', \App\Enums\IssueAgentFlowStepStatus::SUCCEEDED->value)
+            ->exists();
     }
 }

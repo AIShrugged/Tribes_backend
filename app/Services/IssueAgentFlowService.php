@@ -199,6 +199,7 @@ class IssueAgentFlowService
 
         return <<<PROMPT
         Ты planning-агент для issue flow по задаче разработки. Сформируй четкий план, который потом будет исполнен отдельными агентскими задачами по одной.
+        После успешного planning система автоматически запустит отдельный Execution-этап и передаст туда твой план. Поэтому не пиши абстрактные идеи: каждый шаг должен быть пригоден для немедленного исполнения.
 
 ## Issue
 
@@ -218,7 +219,7 @@ Return ONLY valid JSON object with this shape:
     {
       "title": "short step title",
       "prompt": "clear execution instructions for the next agent",
-      "acceptance_criteria": ["optional", "array", "of", "checks"],
+      "acceptance_criteria": ["one", "to", "three", "checks"],
       "output_mode": "plain"
     }
   ]
@@ -228,6 +229,9 @@ Rules:
 - Create between 2 and 7 steps.
 - Each step must depend on the previous step output.
 - Keep each step small, explicit, and sequential.
+- Every step must be execution-ready: describe concrete actions, checks, and expected result.
+- Each step must include 1 to 3 concrete acceptance criteria.
+- Assume the next phase will execute the plan; do not leave high-level placeholders or "figure out later" items.
 - Do not add markdown fences, explanation, or extra keys outside the JSON object.
 - If the task needs code changes, make sure the later steps assume the earlier output is available as input.
 PROMPT;
