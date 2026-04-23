@@ -230,10 +230,10 @@ class IssueExtractionPipelineTest extends TestCase
         Event::assertNotDispatched(IssuesExtracted::class);
     }
 
-    // ── 4. DispatchAgentTasksForIssues auto-dispatches extracted issues ──
+    // ── 4. DispatchAgentTasksForIssues keeps extracted issues pending manual dispatch ──
 
     #[Test]
-    public function issues_extracted_event_auto_dispatches_agent_tasks(): void
+    public function issues_extracted_event_does_not_auto_dispatch_agent_tasks(): void
     {
         Queue::fake();
 
@@ -242,16 +242,16 @@ class IssueExtractionPipelineTest extends TestCase
 
         IssuesExtracted::dispatch($issues, $this->team, $this->user);
 
-        $this->assertDatabaseCount('agent_tasks', 2);
+        $this->assertDatabaseCount('agent_tasks', 0);
 
         $development = $issues->firstWhere('type', 'development');
         $organization = $issues->firstWhere('type', 'organization');
 
         $this->assertNotNull($development);
-        $this->assertNotNull($development->fresh()->agent_task_id);
-        $this->assertNotNull($organization?->fresh()->agent_task_id);
-        $this->assertEquals(MeetingTaskStatus::IN_PROGRESS->value, $development->fresh()->status);
-        $this->assertEquals(MeetingTaskStatus::IN_PROGRESS->value, $organization->fresh()->status);
+        $this->assertNull($development->fresh()->agent_task_id);
+        $this->assertNull($organization?->fresh()->agent_task_id);
+        $this->assertEquals(MeetingTaskStatus::OPEN->value, $development->fresh()->status);
+        $this->assertEquals(MeetingTaskStatus::OPEN->value, $organization->fresh()->status);
     }
 
     // ── 5. Issue status transitions ──

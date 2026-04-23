@@ -16,7 +16,7 @@ class PaperclipIssueSyncService
     public function sync(
         Issue $issue,
         AgentTaskRun $run,
-        string $runStatus,
+        ?string $runStatus,
         ?string $comment,
         array $artifacts = [],
     ): void {
@@ -32,8 +32,12 @@ class PaperclipIssueSyncService
         $this->syncAttachments($issue, $artifacts);
     }
 
-    private function syncStatus(Issue $issue, string $runStatus): void
+    private function syncStatus(Issue $issue, ?string $runStatus): void
     {
+        if (! is_string($runStatus) || $runStatus === '') {
+            return;
+        }
+
         $issueStatus = match ($runStatus) {
             'done' => 'done',
             'blocked' => 'paused',

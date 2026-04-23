@@ -411,7 +411,7 @@ class IssueAgentFlowProgressService
                 'last_error' => null,
             ]);
 
-            $flow->issue()->update(['status' => 'done']);
+            $this->finalizeIssueIfFlowCompleted($flow);
 
             return $flow;
         });
@@ -471,8 +471,6 @@ class IssueAgentFlowProgressService
 
                 return $flow;
             });
-
-            $this->dispatchNextStep($flow, $flow->current_step_position);
 
             return;
         }
@@ -623,9 +621,35 @@ class IssueAgentFlowProgressService
                 'last_error' => null,
             ]);
 
-            $flow->issue()->update(['status' => 'done']);
+            $this->finalizeIssueIfFlowCompleted($flow);
         });
         // result-critic notifies the owner via send_user_message tool in its own execution
+    }
+
+    private function finalizeIssueIfFlowCompleted(IssueAgentFlow $flow): void
+    {
+        DB::transaction(function () use ($flow): void {
+            $lockedFlow = IssueAgentFlow::query()->lockForUpdate()->find($flow->id);
+            if (! $lockedFlow) {
+                return;
+            }
+
+            $hasUnfinishedSteps = $lockedFlow->steps()
+                ->where('status', '!=', IssueAgentFlowStepStatus::SUCCEEDED->value)
+                ->exists();
+
+            if ($hasUnfinishedSteps) {
+                return;
+            }
+
+            $lockedFlow->update([
+                'status' => IssueAgentFlowStatus::COMPLETED->value,
+                'current_step_position' => null,
+                'last_error' => null,
+            ]);
+
+            $lockedFlow->issue()->update(['status' => 'done']);
+        });
     }
 
     private function dispatchNextStep(IssueAgentFlow $flow, ?int $position): void
@@ -846,6 +870,7 @@ PROMPT;
                 'issue_id' => $flow->issue_id,
                 'status' => $flow->status?->value ?? $flow->status,
                 'current_step_position' => $step->position,
+                'planning_output' => $flow->plan_output,
             ],
             'step' => [
                 'id' => $step->id,
@@ -855,6 +880,7 @@ PROMPT;
                 'prompt' => $step->prompt,
                 'definition' => $definition,
             ],
+            'planning_output' => $flow->plan_output,
             'previous_step_output' => $previousOutput,
             'issue' => [
                 'id' => $issue->id,
@@ -898,9 +924,11 @@ PROMPT;
     private function buildExecutionPrompt(Issue $issue, IssueAgentFlow $flow, IssueAgentFlowStep $step, ?string $previousOutput): string
     {
         $previousSection = $previousOutput ? "\n\n## Previous Step Output\n\n{$previousOutput}" : '';
+        $planSection = $flow->plan_output ? "\n\n## Planning Output\n\n{$flow->plan_output}" : '';
 
         return <<<PROMPT
 You are executing step {$step->position} of an issue development flow.
+This is the Execution phase, not another planning pass. Use the planning output below as the source of truth and carry out the work.
 
 ## Issue
 
@@ -913,6 +941,8 @@ You are executing step {$step->position} of an issue development flow.
 
 - Title: {$step->title}
 - Instructions: {$step->prompt}
+
+{$planSection}
 
 ## Git Branch
 
@@ -935,6 +965,7 @@ Read files selectively to stay within context limits:
 
 - Treat the previous step output as the input for this step.
 - Complete only this step. Do not start later steps.
+- Do real execution work, not just a restatement of the plan.
 - When you finish, summarize the step output clearly for the next step in the chain.
 
 {$previousSection}

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\AgentTaskExecutionMode;
 use App\Enums\AgentTaskRunStatus;
 use App\Enums\ConversationChannelType;
+use App\Enums\IssueAgentFlowStepStatus;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\ChannelConversation;
@@ -328,7 +329,9 @@ class RunAgentTaskJob implements ShouldQueue
             return;
         }
 
-        $issue->update(['status' => 'done']);
+        if ($this->canMarkIssueDone($issue)) {
+            $issue->update(['status' => 'done']);
+        }
 
         $user = $issue->user()->first();
         if (! $user) {
@@ -395,7 +398,6 @@ class RunAgentTaskJob implements ShouldQueue
         $testAction = $testActions->last();
 
         if ($testAction) {
-
             if ($parsed && $parsed['total'] !== null) {
                 $emoji = $parsed['failed'] === 0 ? "\xE2\x9C\x85" : "\xE2\x9A\xA0\xEF\xB8\x8F";
                 $lines[] = "*Tests:* {$emoji} {$parsed['passed']}/{$parsed['total']} passed, {$parsed['failed']} failed";
@@ -491,5 +493,17 @@ class RunAgentTaskJob implements ShouldQueue
             'failed' => $failed,
             'failed_tests' => $failedTests,
         ];
+    }
+
+    private function canMarkIssueDone(Issue $issue): bool
+    {
+        $flow = $issue->agentFlow()->first();
+        if (! $flow) {
+            return true;
+        }
+
+        return ! $flow->steps()
+            ->where('status', '!=', IssueAgentFlowStepStatus::SUCCEEDED->value)
+            ->exists();
     }
 }
