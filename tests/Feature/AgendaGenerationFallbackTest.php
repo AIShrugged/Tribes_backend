@@ -27,43 +27,43 @@ class AgendaGenerationFallbackTest extends TestCase
     #[Test]
     public function agenda_generation_uses_fallback_model_when_primary_is_unavailable(): void
     {
-        $modelsCalled = [];
-        $fallbackModel = config('ai.providers.openrouter.fallback_models.0');
+        $modelsCalled  = [];
+        $primaryModel  = config('ai.providers.anthropic.models.agenda');
+        $fallbackModel = config('ai.providers.anthropic.fallback_models.0');
 
-        Http::fake(function (Request $request) use (&$modelsCalled) {
+        Http::fake(function (Request $request) use (&$modelsCalled, $primaryModel, $fallbackModel) {
             $model = $request->data()['model'] ?? null;
             $modelsCalled[] = $model;
 
-            if ($model === 'google/gemini-3-pro-preview') {
+            if ($model === $primaryModel) {
                 return Http::response([
-                    'error' => [
-                        'message' => 'No endpoints found for google/gemini-3-pro-preview.',
-                        'code' => 404,
-                    ],
+                    'type'  => 'error',
+                    'error' => ['type' => 'not_found_error', 'message' => "model not found: {$model}"],
                 ], 404);
             }
 
-            if ($model === 'anthropic/claude-3.5-sonnet') {
+            if ($model === $fallbackModel) {
                 return Http::response([
-                    'choices' => [[
-                        'message' => [
-                            'role' => 'assistant',
-                            'content' => json_encode([
-                                'previous_meeting_recap' => 'Mocked recap',
-                                'topics_to_discuss' => ['Topic 1'],
-                                'team_tasks_overview' => 'Mocked overview',
-                            ], JSON_UNESCAPED_UNICODE),
-                        ],
-                        'finish_reason' => 'stop',
+                    'id'          => 'msg_test',
+                    'type'        => 'message',
+                    'role'        => 'assistant',
+                    'content'     => [[
+                        'type' => 'text',
+                        'text' => json_encode([
+                            'previous_meeting_recap' => 'Mocked recap',
+                            'topics_to_discuss'      => ['Topic 1'],
+                            'team_tasks_overview'    => 'Mocked overview',
+                        ], JSON_UNESCAPED_UNICODE),
                     ]],
+                    'stop_reason' => 'end_turn',
+                    'model'       => $model,
+                    'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
                 ], 200);
             }
 
             return Http::response([
-                'error' => [
-                    'message' => 'Unexpected model: '.$model,
-                    'code' => 404,
-                ],
+                'type'  => 'error',
+                'error' => ['type' => 'not_found_error', 'message' => "Unexpected model: {$model}"],
             ], 404);
         });
 
@@ -78,10 +78,7 @@ class AgendaGenerationFallbackTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(AgendaStatus::DONE, $agenda->status);
-        $this->assertSame([
-            'google/gemini-3.1-pro-preview',
-            $fallbackModel,
-        ], $modelsCalled);
+        $this->assertSame([$primaryModel, $fallbackModel], $modelsCalled);
         $this->assertNotEmpty($agenda->raw_json);
         $this->assertNotEmpty($agenda->content);
     }
@@ -93,44 +90,49 @@ class AgendaGenerationFallbackTest extends TestCase
 
         Http::fake(function (Request $request) use (&$prompts) {
             $messages = $request->data()['messages'] ?? [];
-            $prompts[] = collect($messages)
+            $system   = $request->data()['system'] ?? '';
+
+            $prompts[] = $system . "\n\n" . collect($messages)
                 ->pluck('content')
                 ->filter()
                 ->implode("\n\n");
 
             return Http::response([
-                'choices' => [[
-                    'message' => [
-                        'role' => 'assistant',
-                        'content' => json_encode([
-                            'previous_meeting_recap' => null,
-                            'topics_to_discuss' => ['Topic 1'],
-                            'team_tasks_overview' => 'Mocked overview',
-                        ], JSON_UNESCAPED_UNICODE),
-                    ],
-                    'finish_reason' => 'stop',
+                'id'          => 'msg_test',
+                'type'        => 'message',
+                'role'        => 'assistant',
+                'content'     => [[
+                    'type' => 'text',
+                    'text' => json_encode([
+                        'previous_meeting_recap' => null,
+                        'topics_to_discuss'      => ['Topic 1'],
+                        'team_tasks_overview'    => 'Mocked overview',
+                    ], JSON_UNESCAPED_UNICODE),
                 ]],
+                'stop_reason' => 'end_turn',
+                'model'       => 'claude-sonnet-4-6',
+                'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
             ], 200);
         });
 
         [$user, $event, $organization, $team] = $this->makeEventWithTeam();
 
         $activeIssue = Issue::create([
-            'user_id' => $user->id,
+            'user_id'         => $user->id,
             'organization_id' => $organization->id,
-            'team_id' => $team->id,
-            'name' => 'Visible agenda task',
-            'type' => 'organization',
-            'status' => 'open',
+            'team_id'         => $team->id,
+            'name'            => 'Visible agenda task',
+            'type'            => 'organization',
+            'status'          => 'open',
         ]);
 
         $deletedIssue = Issue::create([
-            'user_id' => $user->id,
+            'user_id'         => $user->id,
             'organization_id' => $organization->id,
-            'team_id' => $team->id,
-            'name' => 'Deleted agenda task',
-            'type' => 'organization',
-            'status' => 'open',
+            'team_id'         => $team->id,
+            'name'            => 'Deleted agenda task',
+            'type'            => 'organization',
+            'status'          => 'open',
         ]);
         $deletedIssue->delete();
 
@@ -152,9 +154,9 @@ class AgendaGenerationFallbackTest extends TestCase
     {
         $methodology = Methodology::query()->where('is_default', true)->first()
             ?? Methodology::create([
-                'name' => 'Default Methodology',
-                'text' => 'Default methodology text',
-                'scheme' => '{}',
+                'name'       => 'Default Methodology',
+                'text'       => 'Default methodology text',
+                'scheme'     => '{}',
                 'is_default' => true,
             ]);
 
@@ -167,29 +169,29 @@ class AgendaGenerationFallbackTest extends TestCase
         $organization->users()->attach($user, ['role' => 'employee']);
 
         $team = Team::create([
-            'name' => 'Test Team',
-            'slug' => 'test-team',
+            'name'            => 'Test Team',
+            'slug'            => 'test-team',
             'organization_id' => $organization->id,
-            'methodology_id' => $methodology->id,
+            'methodology_id'  => $methodology->id,
         ]);
         $team->users()->attach($user);
 
         $source = Source::create([
-            'user_id' => $user->id,
-            'type' => 'google_calendar',
+            'user_id'     => $user->id,
+            'type'        => 'google_calendar',
             'external_id' => 'test-source-id',
-            'identity' => 'test@example.com',
+            'identity'    => 'test@example.com',
         ]);
 
         $event = CalendarEvent::create([
-            'source_id' => $source->id,
-            'external_id' => 'test-event-id',
-            'platform' => 'google_meet',
-            'title' => 'Test Meeting',
-            'url' => 'https://meet.google.com/test',
-            'description' => 'Test meeting description',
-            'starts_at' => now()->addDay(),
-            'ends_at' => now()->addDay()->addHour(),
+            'source_id'    => $source->id,
+            'external_id'  => 'test-event-id',
+            'platform'     => 'google_meet',
+            'title'        => 'Test Meeting',
+            'url'          => 'https://meet.google.com/test',
+            'description'  => 'Test meeting description',
+            'starts_at'    => now()->addDay(),
+            'ends_at'      => now()->addDay()->addHour(),
             'required_bot' => false,
         ]);
 

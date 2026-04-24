@@ -46,7 +46,7 @@ class ChatAgentServiceTest extends TestCase
     public function it_returns_llm_response_as_string(): void
     {
         Http::fake([
-            'openrouter.ai/*' => Http::response($this->makeTextResponse('Ответ на вопрос'), 200),
+            'api.anthropic.com/*' => Http::response($this->makeTextResponse('Ответ на вопрос'), 200),
         ]);
 
         $result = $this->makeService()->processMessage(
@@ -227,13 +227,23 @@ class ChatAgentServiceTest extends TestCase
         $this->makeService()->processMessage($this->user, new Collection, 'Use tool');
 
         $this->assertNotNull($secondCallMessages);
-        $toolMessages = array_filter($secondCallMessages, fn ($m) => ($m['role'] ?? '') === 'tool');
-        $this->assertNotEmpty($toolMessages);
 
-        $toolMessage = array_values($toolMessages)[0];
-        $this->assertEquals('call_abc', $toolMessage['tool_call_id']);
+        // AnthropicClient converts OpenAI tool results to Anthropic format before sending.
+        // Anthropic format: {role: "user", content: [{type: "tool_result", tool_use_id: "...", content: "..."}]}
+        $toolResultMessages = array_filter(
+            $secondCallMessages,
+            fn ($m) => ($m['role'] ?? '') === 'user'
+                && isset($m['content'][0]['type'])
+                && $m['content'][0]['type'] === 'tool_result'
+        );
+        $this->assertNotEmpty($toolResultMessages, 'Expected at least one tool_result message in Anthropic format');
 
-        $decoded = json_decode($toolMessage['content'], true);
+        $toolResultMessage = array_values($toolResultMessages)[0];
+        $toolResultBlock   = $toolResultMessage['content'][0];
+        $this->assertEquals('tool_result', $toolResultBlock['type']);
+        $this->assertEquals('call_abc', $toolResultBlock['tool_use_id']);
+
+        $decoded = json_decode($toolResultBlock['content'], true);
         $this->assertEquals('важные данные', $decoded['data'] ?? null);
     }
 
@@ -243,7 +253,7 @@ class ChatAgentServiceTest extends TestCase
         // Никаких инструментов не зарегистрировано
 
         Http::fake([
-            'openrouter.ai/*' => Http::sequence()
+            'api.anthropic.com/*' => Http::sequence()
                 ->push($this->makeToolCallResponse('nonexistent_tool', []), 200)
                 ->push($this->makeTextResponse('Ответ после ошибки инструмента'), 200),
         ]);
@@ -292,7 +302,7 @@ class ChatAgentServiceTest extends TestCase
         ]);
 
         Http::fake([
-            'openrouter.ai/*' => Http::sequence()
+            'api.anthropic.com/*' => Http::sequence()
                 ->push($this->makeToolCallResponse('search_agent_memories', [
                     'profile_key' => 'github-reviewer',
                     'provider' => 'github',
@@ -315,7 +325,7 @@ class ChatAgentServiceTest extends TestCase
     public function it_handles_llm_http_error_gracefully(): void
     {
         Http::fake([
-            'openrouter.ai/*' => Http::response(['error' => 'Server Error'], 500),
+            'api.anthropic.com/*' => Http::response(['error' => 'Server Error'], 500),
         ]);
 
         $result = $this->makeService()->processMessage(
@@ -389,34 +399,31 @@ class ChatAgentServiceTest extends TestCase
     private function makeTextResponse(string $content): array
     {
         return [
-            'choices' => [[
-                'message' => [
-                    'role' => 'assistant',
-                    'content' => $content,
-                ],
-                'finish_reason' => 'stop',
-            ]],
+            'id'          => 'msg_test',
+            'type'        => 'message',
+            'role'        => 'assistant',
+            'content'     => [['type' => 'text', 'text' => $content]],
+            'stop_reason' => 'end_turn',
+            'model'       => 'claude-sonnet-4-6',
+            'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
         ];
     }
 
     private function makeToolCallResponse(string $toolName, array $args, string $callId = 'call_test_123'): array
     {
         return [
-            'choices' => [[
-                'message' => [
-                    'role' => 'assistant',
-                    'content' => null,
-                    'tool_calls' => [[
-                        'id' => $callId,
-                        'type' => 'function',
-                        'function' => [
-                            'name' => $toolName,
-                            'arguments' => json_encode($args),
-                        ],
-                    ]],
-                ],
-                'finish_reason' => 'tool_calls',
+            'id'          => 'msg_test',
+            'type'        => 'message',
+            'role'        => 'assistant',
+            'content'     => [[
+                'type'  => 'tool_use',
+                'id'    => $callId,
+                'name'  => $toolName,
+                'input' => $args,
             ]],
+            'stop_reason' => 'tool_use',
+            'model'       => 'claude-sonnet-4-6',
+            'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
         ];
     }
 

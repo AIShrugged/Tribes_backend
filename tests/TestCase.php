@@ -29,55 +29,40 @@ abstract class TestCase extends BaseTestCase
         }
 
         Http::fake([
-            'openrouter.ai/*' => fn (Request $request) => $this->fakeLlmResponse($request),
+            'api.anthropic.com/*' => fn (Request $request) => $this->fakeLlmResponse($request),
         ]);
     }
 
     private function fakeLlmResponse(Request $request)
     {
-        $payload = $request->data();
+        $payload  = $request->data();
         $messages = $payload['messages'] ?? [];
+        $system   = $payload['system'] ?? '';
+
         $prompt = collect($messages)
             ->pluck('content')
             ->filter(fn ($content) => is_string($content))
             ->implode("\n\n");
 
-        if (
-            str_contains($prompt, 'frontend/backend') &&
-            str_contains($prompt, 'Return ONLY valid JSON object') &&
-            str_contains($prompt, '"steps"')
-        ) {
-            return Http::response([
-                'choices' => [[
-                    'message' => [
-                        'role' => 'assistant',
-                        'content' => $this->fakeLlmContent($payload, $prompt),
-                    ],
-                    'finish_reason' => 'stop',
-                ]],
-            ], 200);
-        }
+        $fullContext = $system . "\n\n" . $prompt;
 
         if (! empty($payload['tools'])) {
-            return Http::response([
-                'choices' => [[
-                    'message' => [
-                        'role' => 'assistant',
-                        'content' => 'Mocked testing response',
-                    ],
-                    'finish_reason' => 'stop',
-                ]],
-            ], 200);
+            return $this->anthropicResponse('Mocked testing response');
         }
 
+        return $this->anthropicResponse($this->fakeLlmContent($payload, $fullContext));
+    }
+
+    private function anthropicResponse(string $text): \Illuminate\Http\Client\Response
+    {
         return Http::response([
-            'choices' => [[
-                'message' => [
-                    'role' => 'assistant',
-                    'content' => $this->fakeLlmContent($payload, $prompt),
-                ],
-                'finish_reason' => 'stop',
-            ]],
+            'id'          => 'msg_test',
+            'type'        => 'message',
+            'role'        => 'assistant',
+            'content'     => [['type' => 'text', 'text' => $text]],
+            'stop_reason' => 'end_turn',
+            'model'       => 'claude-sonnet-4-6',
+            'usage'       => ['input_tokens' => 10, 'output_tokens' => 5],
         ], 200);
     }
 
@@ -113,7 +98,8 @@ abstract class TestCase extends BaseTestCase
             ]);
         }
 
-        $forceJson = ($payload['response_format']['type'] ?? null) === 'json_object';
+        // Detect JSON-required prompts by content since Anthropic does not use response_format.
+        $forceJson = str_contains($prompt, 'JSON') || str_contains($prompt, 'json');
 
         if (! $forceJson) {
             return 'Mocked LLM response';

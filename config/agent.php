@@ -67,10 +67,10 @@ return [
     */
 
     'models' => [
-        'interactive' => 'anthropic/claude-sonnet-4.6',
-        'summarization' => 'anthropic/claude-sonnet-4.6',
-        'extraction' => 'openai/gpt-4.1-mini',
-        'background' => 'anthropic/claude-sonnet-4.6',
+        'interactive'   => 'claude-sonnet-4-6',
+        'summarization' => 'claude-sonnet-4-6',
+        'extraction'    => 'claude-haiku-4-5-20251001',
+        'background'    => 'claude-sonnet-4-6',
     ],
 
     /*

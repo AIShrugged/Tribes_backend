@@ -258,7 +258,7 @@ class FollowupGenerationTest extends TestCase
     }
 
     #[Test]
-    public function followup_status_is_failed_when_openrouter_fails()
+    public function followup_status_is_failed_when_anthropic_fails()
     {
         // Мокаем OpenRouter клиент с ошибкой
         $mockClient = Mockery::mock(OpenRouterClient::class);

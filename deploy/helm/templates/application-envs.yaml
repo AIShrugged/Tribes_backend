@@ -62,7 +62,7 @@ data:
   PROXY_PORT: {{ quote .Values.application.config.proxyPort }}
   PROXY_USER: {{ quote .Values.application.config.proxyUser }}
   PROXY_PASS: {{ quote .Values.application.config.proxyPass }}
-  OPENROUTER_API_TOKEN: {{ quote .Values.application.config.openrouterApiToken }}
+  ANTHROPIC_API_KEY: {{ quote .Values.application.config.anthropicApiKey }}
   UNISENDER_GO_API_URL: {{ quote .Values.application.config.unisenderGoApiUrl }}
   UNISENDER_GO_API_KEY: {{ quote .Values.application.config.unisenderGoApiKey }}
   UNISENDER_GO_BACKEND_ID: {{ quote .Values.application.config.unisenderGoBackendId }}

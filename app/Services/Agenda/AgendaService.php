@@ -160,7 +160,7 @@ class AgendaService
             $prompt = $this->buildGeneralPrompt($event, $issues, $context);
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
-                model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
+                model: Setting::get('model.agenda', config('ai.providers.anthropic.models.agenda')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );
@@ -318,7 +318,7 @@ class AgendaService
             $prompt = $this->buildPersonalPrompt($event, $user, $previousEvent, $userIssues, $context);
             $json = OpenRouterClient::chat(
                 messages: [new MessageDTO('user', $prompt)],
-                model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
+                model: Setting::get('model.agenda', config('ai.providers.anthropic.models.agenda')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

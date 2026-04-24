@@ -43,7 +43,7 @@ class IssueExtractionService
         try {
             $json = $this->llm->chat(
                 messages: $messages,
-                model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
+                model: Setting::get('model.followup', config('ai.providers.anthropic.models.followup')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

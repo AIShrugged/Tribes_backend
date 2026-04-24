@@ -75,7 +75,7 @@ application:
     proxyPort: "ProxyPort"
     proxyUser: "ProxyUser"
     proxyPass: "ProxyPass"
-    openrouterApiToken: "OpenrouterApiToken"
+    anthropicApiKey: "AnthropicApiKey"
     unisenderGoApiUrl: "https://go2.unisender.ru"
     unisenderGoApiKey: "defaultApiKey"
     unisenderGoBackendId: "defaultBackendId"

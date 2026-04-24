@@ -208,7 +208,7 @@ class InsightTelegramService
 
             $json = $this->llm->chat(
                 messages:          [new MessageDTO('user', $prompt)],
-                model:             Setting::get('model.insight', config('ai.providers.openrouter.models.insight')),
+                model:             Setting::get('model.insight', config('ai.providers.anthropic.models.insight')),
                 maxTokens:         4096,
                 forceJsonResponse: true,
             );

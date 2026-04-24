@@ -83,7 +83,7 @@ class IssueMergeService
                     new MessageDTO('system', $this->buildMergeSystemPrompt()),
                     new MessageDTO('user', $userMessage),
                 ],
-                model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
+                model: Setting::get('model.followup', config('ai.providers.anthropic.models.followup')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

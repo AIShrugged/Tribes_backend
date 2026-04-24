@@ -36,7 +36,7 @@ class MeetingSummaryService
 
             $json = $this->llm->chat(
                 messages: [new MessageDTO('user', $this->buildPrompt($transcript, $event))],
-                model: Setting::get('model.meeting_summary', config('ai.providers.openrouter.models.meeting_summary')),
+                model: Setting::get('model.meeting_summary', config('ai.providers.anthropic.models.meeting_summary')),
                 maxTokens: 4096,
                 forceJsonResponse: true,
             );

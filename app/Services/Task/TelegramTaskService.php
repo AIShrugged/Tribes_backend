@@ -232,7 +232,7 @@ PROMPT;
         try {
             $json = $this->llm->chat(
                 messages: [new MessageDTO('user', $prompt)],
-                model: config('ai.providers.openrouter.models.meeting_tasks'),
+                model: config('ai.providers.anthropic.models.meeting_tasks'),
                 maxTokens: 2048,
                 forceJsonResponse: true,
             );

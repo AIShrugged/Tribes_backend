@@ -98,7 +98,7 @@ class FollowupService
 
             $json = $this->llm->chat(
                 messages: $messages,
-                model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
+                model: Setting::get('model.followup', config('ai.providers.anthropic.models.followup')),
                 maxTokens: 8192,
                 forceJsonResponse: true
             );
