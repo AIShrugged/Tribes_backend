@@ -3,12 +3,14 @@
 namespace App\Services\Agent;
 
 use App\Enums\InsightCategory;
+use App\Enums\InsightContextType;
 use App\Models\Channel;
 use App\Models\InsightProfile;
 use App\Models\InsightShortTerm;
 use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class MemoryService
 {
@@ -21,24 +23,34 @@ class MemoryService
      */
     public function composeMemoryContext(User $user, ?string $channelName = null): string
     {
-        $profile = $this->resolveProfile($user, $channelName);
+        $channel = $channelName ?? 'web';
+        $cacheKey = "memory_context:{$user->id}:{$channel}";
 
-        if (! $profile) {
-            return "## Previous Context\n\nNo previous memories. First interaction.";
-        }
+        return Cache::remember($cacheKey, 300, function () use ($user, $channel) {
+            $profile = $this->resolveProfile($user, $channel);
 
-        $shortTermMemories = InsightShortTerm::where('profile_id', $profile->id)
-            ->active()
-            ->get();
+            if (! $profile) {
+                return "## Previous Context\n\nNo previous memories. First interaction.";
+            }
 
-        $profiles = InsightProfile::where('profile_id', $profile->id)
-            ->whereIn('category', [
-                InsightCategory::COMMUNICATION_STYLE,
-                InsightCategory::GOALS_MOTIVATIONS,
-            ])
-            ->get();
+            $shortTermMemories = InsightShortTerm::where('profile_id', $profile->id)
+                ->active()
+                ->get();
 
-        return $this->formatContext($shortTermMemories, $profiles);
+            $profiles = InsightProfile::where('profile_id', $profile->id)
+                ->whereIn('category', [
+                    InsightCategory::COMMUNICATION_STYLE,
+                    InsightCategory::GOALS_MOTIVATIONS,
+                ])
+                ->get();
+
+            return $this->formatContext($shortTermMemories, $profiles);
+        });
+    }
+
+    public function invalidateMemoryCache(Profile $profile, string $channel): void
+    {
+        Cache::forget("memory_context:{$profile->user_id}:{$channel}");
     }
 
     /**
@@ -56,21 +68,33 @@ class MemoryService
             : null;
     }
 
-    /**
-     * Format combined context from ShortTerm and Profile data
-     */
     private function formatContext(Collection $shortTermMemories, Collection $profiles): string
     {
         $lines = ["## Previous Context\n"];
 
-        if ($shortTermMemories->isNotEmpty()) {
-            foreach ($shortTermMemories as $memory) {
-                if (! empty($memory->content['text'])) {
-                    $contextLabel = str_replace('_', ' ', $memory->context_type->value);
-                    $lines[]      = '### ' . ucwords($contextLabel);
-                    $lines[]      = $memory->content['text'];
-                    $lines[]      = '';
-                }
+        $focus = $shortTermMemories->first(
+            fn ($m) => $m->context_type === InsightContextType::USER_FOCUS
+        );
+
+        if ($focus && ! empty($focus->content['focus_text'])) {
+            $lines[] = '### Active Focus';
+            $focusLine = $focus->content['focus_text'];
+            if (! empty($focus->content['deadline'])) {
+                $focusLine .= ' (deadline: ' . $focus->content['deadline'] . ')';
+            }
+            $lines[] = $focusLine;
+            $lines[] = '';
+        }
+
+        foreach ($shortTermMemories as $memory) {
+            if ($memory->context_type === InsightContextType::USER_FOCUS) {
+                continue;
+            }
+            if (! empty($memory->content['text'])) {
+                $contextLabel = str_replace('_', ' ', $memory->context_type->value);
+                $lines[]      = '### ' . ucwords($contextLabel);
+                $lines[]      = $memory->content['text'];
+                $lines[]      = '';
             }
         }
 

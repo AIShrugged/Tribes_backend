@@ -51,6 +51,7 @@ use App\Http\Controllers\API\v1\DemoController;
 use App\Http\Controllers\API\v1\PersonController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\UserController;
+use App\Http\Controllers\API\v1\UserFocusController;
 use App\Http\Controllers\API\v1\UserPreferencesController;
 use App\Http\Controllers\API\v1\WorkspaceController;
 use Illuminate\Http\Request;
@@ -176,6 +177,10 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
             ->name('tasks.show');
+
+        Route::get('me/focus', [UserFocusController::class, 'show'])->name('me.focus.show');
+        Route::put('me/focus', [UserFocusController::class, 'update'])->name('me.focus.update');
+        Route::delete('me/focus', [UserFocusController::class, 'destroy'])->name('me.focus.destroy');
 
         Route::get('me/agendas', [AgendaController::class, 'myAgendas'])
             ->name('agendas.my');

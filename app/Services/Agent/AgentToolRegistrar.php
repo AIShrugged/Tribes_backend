@@ -60,7 +60,12 @@ use App\Services\Agent\Tools\UpdateAgentTaskTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Agent\Tools\UpdateMemoryTool;
 use App\Services\Agent\Tools\UpdateTaskStatusTool;
+use App\Services\Agent\Tools\SetUserFocusTool;
+use App\Services\Agent\Tools\GetUserFocusTool;
+use App\Services\Agent\Tools\ClearUserFocusTool;
 use App\Services\AgentMemoryLookupService;
+use App\Models\Profile;
+use App\Services\UserFocusService;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\AgentTaskFollowupService;
@@ -161,6 +166,16 @@ class AgentToolRegistrar
         $toolRegistry->register(new FetchDocumentTool());
         $toolRegistry->register(new GetUserOrganizationsTool($user));
         $toolRegistry->register(new GetOrganizationTeamsTool($user));
+
+        $profile = Profile::where('user_id', $user->id)->first();
+        if ($profile) {
+            $userFocusService = app(UserFocusService::class);
+            $memoryService    = app(MemoryService::class);
+            $ch               = $channel ?? 'web';
+            $toolRegistry->register(new SetUserFocusTool($profile, $userFocusService, $memoryService, $ch));
+            $toolRegistry->register(new GetUserFocusTool($profile, $userFocusService));
+            $toolRegistry->register(new ClearUserFocusTool($profile, $userFocusService, $memoryService, $ch));
+        }
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(
