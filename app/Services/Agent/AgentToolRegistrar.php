@@ -2,81 +2,60 @@
 
 namespace App\Services\Agent;
 
-use App\Models\Chat;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
+use App\Models\Chat;
+use App\Models\Profile;
 use App\Models\User;
-use App\Services\Agent\Tools\CreateAgentTaskTool;
+use App\Services\Agent\Tools\CopyWorkspaceFileTool;
 use App\Services\Agent\Tools\CreateArtifactTool;
-use App\Services\Agent\Tools\CreateMethodologyTool;
+use App\Services\Agent\Tools\CreateEntityTool;
 use App\Services\Agent\Tools\CreateFollowupAgentTaskTool;
-use App\Services\Agent\Tools\FetchDocumentTool;
-use App\Services\Agent\Tools\GetOrganizationTeamsTool;
-use App\Services\Agent\Tools\GetUserOrganizationsTool;
-use App\Services\Agent\Tools\RegenerateFollowupTool;
-use App\Services\Agent\Tools\SaveMethodologyTool;
-use App\Services\Agent\Tools\UpdateArtifactTool;
-use App\Services\Agent\Tools\CreateIssueTool;
+use App\Services\Agent\Tools\CreateMethodologyTool;
+use App\Services\Agent\Tools\CreateWorkspaceDirectoryTool;
 use App\Services\Agent\Tools\CreateWorkspaceTool;
+use App\Services\Agent\Tools\DeleteWorkspaceFileTool;
+use App\Services\Agent\Tools\DeleteWorkspaceTool;
+use App\Services\Agent\Tools\ExecuteSqlQueryTool;
+use App\Services\Agent\Tools\FetchDocumentTool;
+use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
 use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
 use App\Services\Agent\Tools\GitHubCreatePullRequestTool;
 use App\Services\Agent\Tools\GitHubDownloadArchiveTool;
-use App\Services\Agent\Tools\GitHubGetPullRequestCommentsTool;
-use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\GitHubGetBranchTool;
 use App\Services\Agent\Tools\GitHubGetFileContentsTool;
+use App\Services\Agent\Tools\GitHubGetPullRequestCommentsTool;
 use App\Services\Agent\Tools\GitHubGetRepositoryTool;
 use App\Services\Agent\Tools\GitHubGetTreeTool;
-use App\Services\Agent\Tools\GetCurrentUserTool;
-use App\Services\Agent\Tools\GetExtractedFactsTool;
-use App\Services\Agent\Tools\GetFollowupTool;
-use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
-use App\Services\Agent\Tools\GetMeetingSummaryTool;
-use App\Services\Agent\Tools\GetMeetingTasksTool;
-use App\Services\Agent\Tools\GetRelationshipInsightTool;
-use App\Services\Agent\Tools\GetOpenIssuesTool;
-use App\Services\Agent\Tools\GetTeamMembersTool;
-use App\Services\Agent\Tools\GetTranscriptTool;
-use App\Services\Agent\Tools\GetUserInfoTool;
-use App\Services\Agent\Tools\GetUserInsightsTool;
-use App\Services\Agent\Tools\GetUserDirectMessagesTool;
-use App\Services\Agent\Tools\GetUserGeneralMessagesTool;
-use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
-use App\Services\Agent\Tools\SearchAgentMemoriesTool;
-use App\Services\Agent\Tools\SearchMeetingsTool;
-use App\Services\Agent\Tools\ListWorkspacesTool;
 use App\Services\Agent\Tools\ListWorkspaceFilesTool;
+use App\Services\Agent\Tools\ListWorkspacesTool;
+use App\Services\Agent\Tools\MoveWorkspaceFileTool;
+use App\Services\Agent\Tools\QueryTribesDataTool;
 use App\Services\Agent\Tools\ReadWorkspaceFileTool;
+use App\Services\Agent\Tools\SaveMethodologyTool;
 use App\Services\Agent\Tools\SearchWorkspaceFilesTool;
 use App\Services\Agent\Tools\SendUserMessageTool;
-use App\Services\Agent\Tools\WriteWorkspaceFileTool;
-use App\Services\Agent\Tools\DeleteWorkspaceFileTool;
-use App\Services\Agent\Tools\DeleteWorkspaceTool;
-use App\Services\Agent\Tools\CopyWorkspaceFileTool;
-use App\Services\Agent\Tools\CreateWorkspaceDirectoryTool;
-use App\Services\Agent\Tools\MoveWorkspaceFileTool;
-use App\Services\Agent\Tools\UpdateAgentTaskTool;
-use App\Services\Agent\Tools\ToolRegistry;
-use App\Services\Agent\Tools\UpdateMemoryTool;
-use App\Services\Agent\Tools\UpdateTaskStatusTool;
-use App\Services\Agent\Tools\SetUserFocusTool;
-use App\Services\Agent\Tools\GetUserFocusTool;
 use App\Services\Agent\Tools\ClearUserFocusTool;
+use App\Services\Agent\Tools\GetUserFocusTool;
+use App\Services\Agent\Tools\SetUserFocusTool;
+use App\Services\Agent\Tools\ToolRegistry;
+use App\Services\Agent\Tools\UpdateArtifactTool;
+use App\Services\Agent\Tools\UpdateEntityTool;
+use App\Services\Agent\Tools\WriteWorkspaceFileTool;
 use App\Services\AgentMemoryLookupService;
-use App\Models\Profile;
-use App\Services\UserFocusService;
-use App\Services\Artifact\ArtifactStateService;
-use App\Services\GitHub\GitHubApiClient;
 use App\Services\AgentTaskFollowupService;
 use App\Services\AgentTaskMutationService;
+use App\Services\Artifact\ArtifactStateService;
+use App\Services\Channel\ChannelRuntimeService;
+use App\Services\Channel\UserChannelTargetResolver;
+use App\Services\GitHub\GitHubApiClient;
 use App\Services\JsonSchemaValidationService;
 use App\Services\TenantScopeValidator;
+use App\Services\UserFocusService;
 use App\Services\Workspace\WorkspaceAccessService;
 use App\Services\Workspace\WorkspaceProvisioningService;
 use App\Services\Workspace\WorkspaceService;
-use App\Services\Channel\ChannelRuntimeService;
-use App\Services\Channel\UserChannelTargetResolver;
 use Illuminate\Support\Facades\Auth;
 
 class AgentToolRegistrar
@@ -104,45 +83,14 @@ class AgentToolRegistrar
         bool $preserveSandboxDependencies = false,
         ?int $organizationId = null,
         ?int $teamId = null,
-    ): void
-    {
+    ): void {
         Auth::setUser($user);
 
-        $toolRegistry->register(new UpdateMemoryTool($user, $channel ?? 'web'));
-        $toolRegistry->register(new GetCurrentUserTool($user));
-        $toolRegistry->register(new GetUserInfoTool);
-        $toolRegistry->register(new SearchMeetingsTool);
-        $toolRegistry->register(new GetUserDirectMessagesTool);
-        $toolRegistry->register(new GetUserGeneralMessagesTool);
-        $toolRegistry->register(new GetMeetingSummaryTool);
-        $toolRegistry->register(new GetMeetingTasksTool);
-        $toolRegistry->register(new CreateIssueTool($user, $this->tenantScopeValidator, $organizationId, $teamId));
-        $toolRegistry->register(new CreateAgentTaskTool(
-            $user,
-            $this->schemaValidationService,
-            $this->tenantScopeValidator,
-            $organizationId,
-            $teamId,
-        ));
-        $toolRegistry->register(new UpdateAgentTaskTool(
-            $user,
-            $this->agentTaskMutationService,
-            $organizationId,
-            $teamId,
-        ));
-        $toolRegistry->register(new UpdateTaskStatusTool);
-        $toolRegistry->register(new GetFollowupTool);
-        $toolRegistry->register(new RegenerateFollowupTool($user));
-        $toolRegistry->register(new GetExtractedFactsTool);
-        $toolRegistry->register(new GetUserInsightsTool);
-        $toolRegistry->register(new GetInsightProfileHistoryTool);
-        $toolRegistry->register(new GetTeamMembersTool);
-        $toolRegistry->register(new GetOpenIssuesTool);
-        $toolRegistry->register(new GetRelationshipInsightTool);
-        $toolRegistry->register(new GetUserShortTermMemoryTool);
+        $toolRegistry->register(new QueryTribesDataTool($user, $this->agentMemoryLookupService));
+        $toolRegistry->register(new CreateEntityTool($user, $this->tenantScopeValidator, $this->schemaValidationService, $organizationId, $teamId));
+        $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $channel ?? 'web', $organizationId, $teamId));
         $toolRegistry->register(new GetTranscriptTool);
         $toolRegistry->register(new ExecuteSqlQueryTool($user->id));
-        $toolRegistry->register(new SearchAgentMemoriesTool($user, $this->agentMemoryLookupService));
         $toolRegistry->register(new SendUserMessageTool($user, $this->userChannelTargetResolver, $this->channelRuntimeService));
         $toolRegistry->register(new ListWorkspacesTool($user, $this->workspaceAccessService, $organizationId, $teamId));
         $toolRegistry->register(new CreateWorkspaceTool($user, $this->workspaceProvisioningService, $this->workspaceAccessService, $organizationId, $teamId));
@@ -163,9 +111,7 @@ class AgentToolRegistrar
         $toolRegistry->register(new GitHubCreateOrUpdateFileTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubCreatePullRequestTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetPullRequestCommentsTool($this->gitHubApiClient));
-        $toolRegistry->register(new FetchDocumentTool());
-        $toolRegistry->register(new GetUserOrganizationsTool($user));
-        $toolRegistry->register(new GetOrganizationTeamsTool($user));
+        $toolRegistry->register(new FetchDocumentTool);
 
         $profile = Profile::where('user_id', $user->id)->first();
         if ($profile) {
