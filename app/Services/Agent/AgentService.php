@@ -594,7 +594,7 @@ class AgentService
             $issues[] = "Tool returned explicit failure: {$error}";
 
             // Provide hints based on tool type
-            if ($toolName === 'search_meetings' && str_contains($error, 'not found')) {
+            if ($toolName === 'query_db' && str_contains($error, 'not found')) {
                 $issues[] = 'Hint: Try broader search parameters or verify the search criteria';
             }
 
@@ -612,8 +612,8 @@ class AgentService
                     $issues[] = "Tool returned empty {$field} array";
 
                     // Context-specific hints
-                    if ($toolName === 'search_meetings') {
-                        $issues[] = 'Hint: Empty results might mean wrong user_id, date range, or the data truly doesn\'t exist. Consider verifying parameters.';
+                    if ($toolName === 'query_db') {
+                        $issues[] = 'Hint: Empty results might mean wrong filter parameters, or the data truly doesn\'t exist. Consider verifying parameters.';
                     }
                 }
             }
@@ -622,8 +622,7 @@ class AgentService
         // Check 3: Missing expected fields
         $expectedFieldsByTool = [
             'get_transcript' => ['event', 'transcript'],
-            'search_meetings' => ['success'],
-            'get_user_info' => ['success', 'user'],
+            'query_db' => ['success'],
         ];
 
         if (isset($expectedFieldsByTool[$toolName]) && is_array($toolResult)) {
@@ -804,7 +803,7 @@ class AgentService
         $profileId = Profile::where('user_id', $userId)->value('id');
 
         $profileHint = $profileId ? ", profile_id={$profileId}" : '';
-        $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call get_user_info for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call get_user_insights(profile_id={$profileId}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
+        $currentUserContext = "## Current User\n\nThe person sending you messages is **{$userName}** (user_id={$userId}{$profileHint}).\n\nWhen the user says \"me\", \"I\", \"мне\", \"обо мне\", \"мой профиль\" — they are referring to {$userName} (profile_id={$profileId}).\n\nRules:\n- Do NOT call query_db(entity=\"users\") for {$userName} — their IDs are already known: user_id={$userId}, profile_id={$profileId}\n- When asked about their profile/insights → call query_db(entity=\"user_insights\", filters: {profile_id: {$profileId}}) directly\n- If you see \"{$userName}\" in meeting participants — that IS this person, no need to look them up\n";
 
         $dbSchema = $this->databaseSchemaService->getSchemaForAgent();
         $databaseSchemaSection = "## Database Schema\n\nThe following tables and columns are available for `execute_sql_query`:\n\n```\n{$dbSchema}\n```\n\n## When No Specialized Tool Fits\n\nIf none of the specialized tools can answer the question, use `execute_sql_query` as a universal fallback:\n- It accepts any read-only SELECT query joining any number of tables\n- Use ILIKE for case-insensitive text search (e.g. `WHERE name ILIKE '%backenders%'`)\n- Use JOINs to aggregate data from multiple tables in a single request instead of chaining multiple tool calls\n- Always include `__ACCESSIBLE_USER_IDS__` in WHERE when querying `followups`, `sources`, or `calendar_events`\n- Meeting action items are stored in `issues` and are typically linked to `calendar_events` through `sourceable_type` and `sourceable_id`\n\nExamples of questions best answered with SQL:\n- \"How many meetings did each team member attend last month?\"\n- \"Which users have no profile yet?\"\n- \"Show tasks assigned to the backend team\"\n";
@@ -845,37 +844,37 @@ You have access to various tools that allow you to:
 ## Tool Usage Priority - CRITICAL
 
 When asked about a **meeting**, choose the right tool:
-- **`get_meeting_summary`** — AI-generated summary: what was discussed, key points, decisions. Use for "what was discussed?", "what did they decide?", "summarize the Friday meeting". **This tool alone is sufficient — do NOT additionally call get_meeting_tasks unless the user explicitly asked about tasks.**
-- **`get_meeting_tasks`** — action items and assignments from a meeting. Use for "what tasks were created?", "who was assigned what?", "any open tasks from the planning?". **Only call this if the user explicitly asked about tasks or action items.**
-- **`get_followup`** — AI-generated assessment reports for meeting participants. Use for "what was the followup for Ivan?", "show evaluation results from the meeting".
-- **`regenerate_followup`** — create a fresh followup report for an existing record when the methodology changed or the output needs to be rerun.
-- **`get_extracted_facts`** — raw facts about specific participants from that meeting. Use for "what did we learn about Ivan at that meeting?" (requires profile_id from get_user_info).
+- **`query_db(entity: "meeting_summary")`** — AI-generated summary: what was discussed, key points, decisions. Use for "what was discussed?", "what did they decide?", "summarize the Friday meeting". **This tool alone is sufficient — do NOT additionally call query_db(entity: "tasks") unless the user explicitly asked about tasks.**
+- **`query_db(entity: "tasks", filters: {calendar_event_id: X})`** — action items and assignments from a meeting. Use for "what tasks were created?", "who was assigned what?", "any open tasks from the planning?". **Only call this if the user explicitly asked about tasks or action items.**
+- **`query_db(entity: "followups")`** — AI-generated assessment reports for meeting participants. Use for "what was the followup for Ivan?", "show evaluation results from the meeting".
+- **`create_entity(entity: "followup", data: {calendar_event_id: X})`** — create a fresh followup report for an existing record when the methodology changed or the output needs to be rerun.
+- **`query_db(entity: "extracted_facts")`** — raw facts about specific participants from that meeting. Use for "what did we learn about Ivan at that meeting?" (requires profile_id from query_db(entity: "users")).
 
-**STOP after you have enough data to answer.** Do not call extra tools "just in case". If get_meeting_summary answers the question — answer immediately without calling get_meeting_tasks.
+**STOP after you have enough data to answer.** Do not call extra tools "just in case". If query_db(entity: "meeting_summary") answers the question — answer immediately without calling query_db(entity: "tasks").
 
 ## IDs — CRITICAL RULES
 
 **NEVER guess or invent IDs.** Only use IDs that were explicitly returned by a previous tool call in this conversation.
 
 **profile_id workflow:**
-1. `get_meeting_summary` returns `participants` as objects: `{"name": "...", "profile_id": N}` — **use these profile_ids directly**, no need to call `get_user_info` for each participant
-2. If a participant has no `profile_id` in the summary, only then call `get_user_info` by name to resolve it
-3. Use `profile_id` in subsequent calls to `get_extracted_facts`, `get_user_insights`, `get_insight_profile_history`
-4. **Do NOT call `get_user_info` for a person whose profile_id you already have**
+1. `query_db(entity: "meeting_summary")` returns `participants` as objects: `{"name": "...", "profile_id": N}` — **use these profile_ids directly**, no need to call `query_db(entity: "users")` for each participant
+2. If a participant has no `profile_id` in the summary, only then call `query_db(entity: "users", filters: {name: "..."})` to resolve it
+3. Use `profile_id` in subsequent calls to `query_db(entity: "extracted_facts")`, `query_db(entity: "user_insights")`, `query_db(entity: "insight_history")`
+4. **Do NOT call `query_db(entity: "users")` for a person whose profile_id you already have**
 5. **Do NOT use user_id as profile_id** — they are different numbers
 
 **When processing multiple people:**
-- Get participant profile_ids directly from `get_meeting_summary` response — they are already there
+- Get participant profile_ids directly from `query_db(entity: "meeting_summary")` response — they are already there
 - Participants listed in meeting summary are real people — project/product names (like "Tribes") are NOT people, do not search for them
-- Call `get_user_insights(profile_id=...)` for each participant directly, without intermediate `get_user_info` calls
+- Call `query_db(entity: "user_insights", filters: {profile_id: N})` for each participant directly, without intermediate `query_db(entity: "users")` calls
 
 When asked about a **person**, choose the right tool:
-- **`get_user_insights`** — aggregated long-term profile. Use for "who is Ivan?", "describe Ivan's strengths".
-- **`get_extracted_facts`** — source-specific facts. Use for "what did we learn about Ivan from transcripts?".
-- **`get_insight_profile_history`** — version history of a person's profile. Use for "how has Ivan changed?", "show evolution of communication style" (requires profile_id from get_user_info).
+- **`query_db(entity: "user_insights")`** — aggregated long-term profile. Use for "who is Ivan?", "describe Ivan's strengths".
+- **`query_db(entity: "extracted_facts")`** — source-specific facts. Use for "what did we learn about Ivan from transcripts?".
+- **`query_db(entity: "insight_history")`** — version history of a person's profile. Use for "how has Ivan changed?", "show evolution of communication style" (requires profile_id).
 
 When asked what you or another configured agent already knows about a repository, architecture, or prior automated findings:
-- Use **`search_agent_memories`** first
+- Use **`query_db(entity: "agent_memories")`** first
 - Prefer filtering by repository (`provider`, `owner`, `repo`) when the user mentions one
 - Summarize the saved memory clearly and say when the memory appears stale or incomplete
 
@@ -891,15 +890,15 @@ When asked what you or another configured agent already knows about a repository
 
 Example:
 ❌ BAD: Immediately calling get_transcript when user asks about a meeting
-✅ GOOD: First try get_meeting_summary, then if more detail needed ask "May I access the full transcript?"
+✅ GOOD: First try query_db(entity: "meeting_summary"), then if more detail needed ask "May I access the full transcript?"
 
 ## Memory Management - IMPORTANT
 
-When the user shares important information, you MUST update your memory using the `update_memory` tool.
+When the user shares important information, you MUST update your memory using the `update_entity(entity: "memory")` tool.
 
 **How memory works:**
 - You see your previous memory in the "Previous Context" section above
-- When you learn something new, you call `update_memory` with the COMPLETE updated text
+- When you learn something new, you call `update_entity(entity: "memory")` with the COMPLETE updated text
 - The memory should be written as notes to yourself about this user
 - Include BOTH old information (from previous context) AND new information
 - Write in natural language, as instructions to yourself
@@ -910,7 +909,7 @@ Previous context: "This user wants me to call them John. The user is a backend d
 
 User says: "I want brief, professional responses with no familiarity"
 
-You call `update_memory` with:
+You call `update_entity(entity: "memory", data: {context_type: "...", memory_text: "..."})` with:
 ```
 This user wants me to call them John. The user is a backend developer. The user prefers brief, professional responses without any familiarity. Keep answers concise and strictly on topic.
 ```
@@ -956,12 +955,12 @@ After executing ANY tool, you MUST verify the result before proceeding:
 - If a tool fails, ask yourself: "Why did it fail? What can I do differently?"
 
 **Example - Good Reflection:**
-Tool: search_meetings(user_id=123) → Returns: []
+Tool: query_db(entity: "meetings", filters: {user_id: 123}) → Returns: []
 
 ❌ BAD: "No meetings found."
 
 ✅ GOOD: "Empty result. This is unusual. Let me verify:
-- Is user_id=123 correct? Let me check with get_user_info first.
+- Is user_id=123 correct? Let me check with query_db(entity: \"users\") first.
 - Maybe the date range is wrong? Let me try a broader search.
 - Maybe there are meetings but they're filtered out?"
 
