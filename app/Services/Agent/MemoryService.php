@@ -7,6 +7,7 @@ use App\Enums\InsightContextType;
 use App\Models\Channel;
 use App\Models\InsightProfile;
 use App\Models\InsightShortTerm;
+use App\Models\Issue;
 use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -44,7 +45,12 @@ class MemoryService
                 ])
                 ->get();
 
-            return $this->formatContext($shortTermMemories, $profiles);
+            $urgentIssues = Issue::urgentFor($user->id)
+                ->orderByRaw('priority DESC, due_date ASC NULLS LAST')
+                ->limit(5)
+                ->get(['id', 'name', 'priority', 'due_date', 'status']);
+
+            return $this->formatContext($shortTermMemories, $profiles, $urgentIssues);
         });
     }
 
@@ -68,7 +74,7 @@ class MemoryService
             : null;
     }
 
-    private function formatContext(Collection $shortTermMemories, Collection $profiles): string
+    private function formatContext(Collection $shortTermMemories, Collection $profiles, Collection $urgentIssues = new Collection()): string
     {
         $lines = ["## Previous Context\n"];
 
@@ -83,6 +89,16 @@ class MemoryService
                 $focusLine .= ' (deadline: ' . $focus->content['deadline'] . ')';
             }
             $lines[] = $focusLine;
+            $lines[] = '';
+        }
+
+        if ($urgentIssues->isNotEmpty()) {
+            $lines[] = '### Urgent Tasks';
+            foreach ($urgentIssues as $issue) {
+                $tag = $issue->priority >= Issue::PRIORITY_CRITICAL ? '[CRITICAL]' : '[OVERDUE]';
+                $due = $issue->due_date ? ' (due: ' . $issue->due_date->toDateString() . ')' : '';
+                $lines[] = "- {$tag} [#{$issue->id}] {$issue->name}{$due}";
+            }
             $lines[] = '';
         }
 

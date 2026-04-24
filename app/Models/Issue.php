@@ -90,6 +90,20 @@ class Issue extends Model
         });
     }
 
+    public function scopeUrgentFor(Builder $query, int $userId): Builder
+    {
+        return $query
+            ->withoutTrashed()
+            ->whereIn('status', ['open', 'in_progress'])
+            ->where(function (Builder $q) use ($userId): void {
+                $q->where('user_id', $userId)->orWhere('assignee_id', $userId);
+            })
+            ->where(function (Builder $q): void {
+                $q->where('priority', '>=', self::PRIORITY_CRITICAL)
+                  ->orWhere(fn (Builder $q2) => $q2->whereNotNull('due_date')->where('due_date', '<', now()->toDateString()));
+            });
+    }
+
     public function scopeForMeeting(Builder $query, int $calendarEventId): Builder
     {
         return $query
