@@ -20,7 +20,6 @@ class UserFocusService
     {
         return InsightShortTerm::forFocus($profile->id)
             ->active()
-            ->latest('updated_at')
             ->first();
     }
 

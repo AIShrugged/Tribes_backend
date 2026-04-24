@@ -59,7 +59,15 @@ class SetUserFocusTool implements ToolInterface
             return ['success' => false, 'error' => 'focus_text cannot be empty'];
         }
 
+        if (mb_strlen($focusText) > 500) {
+            return ['success' => false, 'error' => 'focus_text must not exceed 500 characters'];
+        }
+
         $deadline = $parameters['deadline'] ?? null;
+
+        if ($deadline !== null && ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $deadline)) {
+            return ['success' => false, 'error' => 'deadline must be in Y-m-d format, e.g. "2026-04-25"'];
+        }
 
         try {
             $record = $this->userFocusService->setFocus($this->profile, $focusText, $deadline);

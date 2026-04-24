@@ -16,11 +16,14 @@ class UserFocusRequest extends ApiResourceRequest
 
     public function getFocusText(): string
     {
-        return strip_tags(trim($this->input('focus_text')));
+        // strip_tags after trim — removes injected markup from LLM or frontend
+        return strip_tags(trim((string) $this->input('focus_text')));
     }
 
     public function getDeadline(): ?string
     {
-        return $this->input('deadline');
+        $deadline = $this->input('deadline');
+
+        return $deadline !== null ? (string) $deadline : null;
     }
 }

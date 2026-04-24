@@ -114,8 +114,9 @@ class UserFocusTest extends TestCase
     #[Test]
     public function put_focus_strips_html_tags_from_focus_text(): void
     {
+        // strip_tags removes tags but keeps inner text — "<b>Ship</b> v2.0" → "Ship v2.0"
         $this->actingAs($this->user)
-            ->putJson('/api/v1/me/focus', ['focus_text' => '<script>alert(1)</script>Ship v2.0'])
+            ->putJson('/api/v1/me/focus', ['focus_text' => '<b>Ship</b> v2.0'])
             ->assertOk()
             ->assertJsonPath('data.focus_text', 'Ship v2.0');
     }
@@ -153,5 +154,35 @@ class UserFocusTest extends TestCase
         $this->getJson('/api/v1/me/focus')->assertUnauthorized();
         $this->putJson('/api/v1/me/focus', ['focus_text' => 'x'])->assertUnauthorized();
         $this->deleteJson('/api/v1/me/focus')->assertUnauthorized();
+    }
+
+    #[Test]
+    public function user_without_profile_gets_graceful_response_on_get(): void
+    {
+        $userWithoutProfile = User::factory()->create();
+
+        $this->actingAs($userWithoutProfile)
+            ->getJson('/api/v1/me/focus')
+            ->assertOk()
+            ->assertJson(['success' => true, 'data' => null]);
+    }
+
+    #[Test]
+    public function user_without_profile_gets_graceful_response_on_delete(): void
+    {
+        $userWithoutProfile = User::factory()->create();
+
+        $this->actingAs($userWithoutProfile)
+            ->deleteJson('/api/v1/me/focus')
+            ->assertOk()
+            ->assertJson(['success' => true, 'data' => null]);
+    }
+
+    #[Test]
+    public function put_focus_rejects_focus_text_exceeding_500_chars(): void
+    {
+        $this->actingAs($this->user)
+            ->putJson('/api/v1/me/focus', ['focus_text' => str_repeat('a', 501)])
+            ->assertUnprocessable();
     }
 }

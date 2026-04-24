@@ -39,8 +39,13 @@ class UserFocusController extends Controller
      */
     public function show(Request $request): ApiResponse
     {
-        $profile = Profile::where('user_id', $request->user()->id)->firstOrFail();
-        $focus   = $this->userFocusService->getFocus($profile);
+        $profile = $this->resolveProfile($request);
+
+        if (! $profile) {
+            return ApiResponse::success(data: null);
+        }
+
+        $focus = $this->userFocusService->getFocus($profile);
 
         return ApiResponse::success(data: $focus ? UserFocusResource::make($focus) : null);
     }
@@ -61,10 +66,15 @@ class UserFocusController extends Controller
      */
     public function update(UserFocusRequest $request): ApiResponse
     {
-        $profile = Profile::where('user_id', $request->user()->id)->firstOrFail();
-        $focus   = $this->userFocusService->setFocus($profile, $request->getFocusText(), $request->getDeadline());
+        $profile = $this->resolveProfile($request);
 
-        $this->memoryService->invalidateMemoryCache($profile, 'web');
+        if (! $profile) {
+            return ApiResponse::error('Profile not found', status: 404);
+        }
+
+        $focus = $this->userFocusService->setFocus($profile, $request->getFocusText(), $request->getDeadline());
+
+        $this->invalidateAllChannels($profile);
 
         return ApiResponse::success(data: UserFocusResource::make($focus));
     }
@@ -81,11 +91,27 @@ class UserFocusController extends Controller
      */
     public function destroy(Request $request): ApiResponse
     {
-        $profile = Profile::where('user_id', $request->user()->id)->firstOrFail();
+        $profile = $this->resolveProfile($request);
+
+        if (! $profile) {
+            return ApiResponse::success(data: null);
+        }
+
         $this->userFocusService->clearFocus($profile);
 
-        $this->memoryService->invalidateMemoryCache($profile, 'web');
+        $this->invalidateAllChannels($profile);
 
         return ApiResponse::success(data: null);
+    }
+
+    private function resolveProfile(Request $request): ?Profile
+    {
+        return Profile::where('user_id', $request->user()->id)->first();
+    }
+
+    private function invalidateAllChannels(Profile $profile): void
+    {
+        $this->memoryService->invalidateMemoryCache($profile, 'web');
+        $this->memoryService->invalidateMemoryCache($profile, 'telegram');
     }
 }
