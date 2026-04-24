@@ -5,6 +5,7 @@ namespace App\Services\Agent;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\Chat;
+use App\Models\Profile;
 use App\Models\User;
 use App\Services\Agent\Tools\CopyWorkspaceFileTool;
 use App\Services\Agent\Tools\CreateArtifactTool;
