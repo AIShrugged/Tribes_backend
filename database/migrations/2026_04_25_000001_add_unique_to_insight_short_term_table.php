@@ -26,11 +26,11 @@ return new class extends Migration
             $table->index(['profile_id', 'expires_at'], 'insight_short_term_profile_expires_index');
         });
 
-        // Partial index for active records — eliminates expired row scan in scopeActive() queries.
+        // Index for active record lookups — supports scopeActive() + scopeForFocus() queries.
+        // Cannot use NOW() in partial index predicate (STABLE, not IMMUTABLE in PostgreSQL).
         DB::statement("
             CREATE INDEX insight_short_term_active_idx
-            ON insight_short_term (profile_id, context_type, updated_at DESC)
-            WHERE expires_at > NOW()
+            ON insight_short_term (profile_id, context_type, expires_at)
         ");
     }
 
