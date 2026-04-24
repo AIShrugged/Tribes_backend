@@ -76,3 +76,15 @@ Schedule::command('today:generate-nudges')
     ->dailyAt('06:00')
     ->name('today:generate-nudges')
     ->withoutOverlapping();
+
+// Morning brief: today's meetings + open tasks
+Schedule::command('meetings:send-morning-brief')
+    ->dailyAt('09:00')
+    ->name('meetings:send-morning-brief')
+    ->withoutOverlapping();
+
+// Stuck Detector: tasks with no activity for N days
+Schedule::command('notify:stuck-tasks')
+    ->dailyAt('10:00')
+    ->name('notify:stuck-tasks')
+    ->withoutOverlapping();
