@@ -41,23 +41,23 @@ class IssueStatsService
         $deltaOverdue    = $this->countOverdueDelta($base, $todayStart, $yesterdayStart, $yesterdayEnd);
 
         // Single conditional aggregation for all closed-task summary fields
-        $weekStart      = $now->copy()->startOfWeek();
-        $lastWeekStart  = $now->copy()->subWeek()->startOfWeek();
+        $weekStart      = $now->copy()->startOfWeek(Carbon::MONDAY);
+        $lastWeekStart  = $now->copy()->subWeek()->startOfWeek(Carbon::MONDAY);
         $monthStart     = $now->copy()->startOfMonth();
         $lastMonthStart = $now->copy()->subMonth()->startOfMonth();
 
         $closedBase    = (clone $base)->where('status', 'done')->whereNotNull('close_date');
         $closedSummary = (clone $closedBase)
             ->selectRaw('
-                SUM(close_date >= ? AND close_date < ?) AS closed_today,
-                SUM(close_date >= ? AND close_date < ?) AS closed_yesterday,
-                SUM(close_date >= ?)                    AS closed_this_week,
-                SUM(close_date >= ? AND close_date < ?) AS closed_last_week,
-                SUM(close_date >= ?)                    AS closed_this_month,
-                SUM(close_date >= ? AND close_date < ?) AS closed_last_month,
-                COUNT(*)                                AS closed_all_time
+                COUNT(*) FILTER (WHERE close_date >= ? AND close_date < ?) AS closed_today,
+                COUNT(*) FILTER (WHERE close_date >= ? AND close_date < ?) AS closed_yesterday,
+                COUNT(*) FILTER (WHERE close_date >= ?)                    AS closed_this_week,
+                COUNT(*) FILTER (WHERE close_date >= ? AND close_date < ?) AS closed_last_week,
+                COUNT(*) FILTER (WHERE close_date >= ?)                    AS closed_this_month,
+                COUNT(*) FILTER (WHERE close_date >= ? AND close_date < ?) AS closed_last_month,
+                COUNT(*)                                                    AS closed_all_time
             ', [
-                $todayStart,    $tomorrowStart,
+                $todayStart,     $tomorrowStart,
                 $yesterdayStart, $todayStart,
                 $weekStart,
                 $lastWeekStart,  $weekStart,
@@ -105,12 +105,12 @@ class IssueStatsService
             'month' => $now->copy()->subMonths($range)->startOfMonth(),
         };
 
-        // Use YEARWEEK with mode 1 (ISO weeks, Monday start) for week grouping.
-        // DATE_FORMAT with %X-%V-1 produces the Monday date string of each week.
+        // PostgreSQL: DATE_TRUNC truncates to period boundary; cast to date for string key matching.
+        // ISO week (Monday start) via DATE_TRUNC('week', ...) which follows ISO 8601 in Postgres.
         $groupExpr = match ($period) {
-            'day'   => 'DATE(close_date)',
-            'week'  => "DATE(DATE_FORMAT(close_date, '%X-%V-1'))",
-            'month' => "DATE_FORMAT(close_date, '%Y-%m-01')",
+            'day'   => "DATE_TRUNC('day', close_date)::date",
+            'week'  => "DATE_TRUNC('week', close_date)::date",
+            'month' => "DATE_TRUNC('month', close_date)::date",
         };
 
         $rows = (clone $base)
@@ -134,7 +134,8 @@ class IssueStatsService
     {
         return match ($period) {
             'day'   => $now->copy()->subDays($stepsBack)->toDateString(),
-            'week'  => $now->copy()->subWeeks($stepsBack)->startOfWeek()->toDateString(),
+            // Carbon startOfWeek() defaults to Monday (ISO 8601), matching DATE_TRUNC('week') in Postgres
+            'week'  => $now->copy()->subWeeks($stepsBack)->startOfWeek(Carbon::MONDAY)->toDateString(),
             'month' => $now->copy()->subMonths($stepsBack)->startOfMonth()->toDateString(),
         };
     }
