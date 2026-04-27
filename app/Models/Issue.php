@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use App\Observers\IssueObserver;
 use App\Enums\AgentTaskExecutionMode;
+use App\Observers\IssueObserver;
 use App\Services\IssueTypeResolver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
@@ -100,7 +100,7 @@ class Issue extends Model
             })
             ->where(function (Builder $q): void {
                 $q->where('priority', '>=', self::PRIORITY_CRITICAL)
-                  ->orWhere(fn (Builder $q2) => $q2->whereNotNull('due_date')->where('due_date', '<', now()->toDateString()));
+                    ->orWhere(fn (Builder $q2) => $q2->whereNotNull('due_date')->where('due_date', '<', now()->toDateString()));
             });
     }
 
@@ -222,6 +222,16 @@ class Issue extends Model
         }
 
         return in_array($this->type, [self::TYPE_DEVELOPMENT, self::TYPE_FRONTEND, self::TYPE_BACKEND], true);
+    }
+
+    public function blockedBy(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'issue_blockers', 'blocked_id', 'blocker_id');
+    }
+
+    public function blocking(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'issue_blockers', 'blocker_id', 'blocked_id');
     }
 
     public function agentTask(): BelongsTo

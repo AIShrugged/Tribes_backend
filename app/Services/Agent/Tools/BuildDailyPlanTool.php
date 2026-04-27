@@ -99,7 +99,12 @@ class BuildDailyPlanTool implements ToolInterface
     {
         return Issue::query()
             ->where('status', '!=', 'done')
-            ->with(['assignee:id,name', 'team:id,name'])
+            ->with([
+                'assignee:id,name',
+                'team:id,name',
+                'blockedBy:id,name',
+                'blocking:id,name',
+            ])
             ->select(['id', 'name', 'description', 'priority', 'due_date', 'status', 'assignee_id', 'team_id'])
             ->orderBy('priority', 'desc')
             ->orderByRaw('due_date IS NULL ASC')
@@ -116,6 +121,9 @@ class BuildDailyPlanTool implements ToolInterface
             $overdue = $daysUntilDue < 0;
         }
 
+        $blockedBy = $issue->blockedBy->map(fn (Issue $b) => ['id' => $b->id, 'name' => $b->name])->values()->all();
+        $blocking = $issue->blocking->map(fn (Issue $b) => ['id' => $b->id, 'name' => $b->name])->values()->all();
+
         return [
             'id' => $issue->id,
             'name' => $issue->name,
@@ -127,6 +135,8 @@ class BuildDailyPlanTool implements ToolInterface
             'assignee' => $issue->assignee?->name,
             'team' => $issue->team?->name,
             'description_snippet' => $issue->description ? mb_substr($issue->description, 0, 200) : null,
+            'blocked_by' => $blockedBy,
+            'blocking' => $blocking,
         ];
     }
 

@@ -8,9 +8,9 @@ use App\Models\AgentActivityLog;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
-use App\Services\Chat\PageContextFormatter;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Artifact\ArtifactStateService;
+use App\Services\Chat\PageContextFormatter;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -47,6 +47,7 @@ class AgentService
     private AgentModelRouter $modelRouter;
 
     private ConversationCompactionService $compactionService;
+
     private PageContextFormatter $pageContextFormatter;
 
     public function __construct(
@@ -943,6 +944,46 @@ When "### Urgent Tasks" appears in your memory context above, you MUST mention t
 
 Do NOT repeat the mention on every message — only on the first response.
 Do NOT call get_open_issues to retrieve critical tasks — they are already listed in the context.
+
+## Daily Planning & Critical Path Reasoning
+
+When the user asks to plan their day, prioritise tasks, or requests a team/personal schedule — call `build_daily_plan` and then reason through a **critical path analysis** before composing the reply.
+
+**Step 1 — Classify each task by urgency:**
+- OVERDUE → always "Сегодня", highest priority
+- Due today or tomorrow → "Сегодня" unless trivially small
+- CRITICAL / HIGH priority with no due date → "Сегодня" if workload allows
+- NORMAL / LOW with no near deadline → "Остальное"
+
+**Step 2 — Identify blockers (explicit DB relationships):**
+- Each task in the result has `blocked_by` (tasks that must be done first) and `blocking` (tasks waiting on this one)
+- A task with a non-empty `blocking` list is a blocker — it unblocks downstream work
+- Note the blocker in the "Сегодня" list: «блокирует: [название задачи]»
+- A task with a non-empty `blocked_by` list cannot start until those tasks are done — note it: «ждёт: [название задачи]»
+
+**Step 3 — Build the ordered "Сегодня" list:**
+1. Blockers (unblock the most downstream work first)
+2. Overdue tasks
+3. Due today / tomorrow (sorted by due date, then priority)
+4. CRITICAL / HIGH with no deadline (sorted by priority_value descending)
+
+**Step 4 — Compose the reply:**
+```
+Сегодня:
+(1) [название] — [одна причина: срочно / блокирует X / просрочено]
+(2) [название]
+...
+
+Остальное — завтра:
+- [название] (приоритет, дедлайн если есть)
+```
+
+**Rules:**
+- Reply in the same language the user used (Russian if they wrote in Russian)
+- Keep each reason to one short clause — no multi-sentence explanations
+- If the user asked for a **team plan** → group "Сегодня" by assignee, show each person's critical tasks
+- If the personal plan has `team_context` → mention briefly what teammates are working on at the end: «Команда сегодня: Иван — X, Маша — Y»
+- If there are zero open tasks → say so directly, do not fabricate tasks
 
 ## Reflection and Self-Checking - CRITICAL
 
