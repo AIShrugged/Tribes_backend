@@ -74,4 +74,5 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('telescope:prune --hours=12')->dailyAt('23:59')->timezone('Europe/Moscow');
         $schedule->command('email:cleanup-verifications')->daily();
         $schedule->command('notify:unclosed-tasks')->dailyAt('09:00')->timezone('Europe/Moscow');
+        $schedule->command('decisions:send-followups')->everyTenMinutes()->withoutOverlapping();
     })->create();
