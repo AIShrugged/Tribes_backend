@@ -197,6 +197,7 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
         Route::get('issues/stats', [IssueStatsController::class, 'index'])->name('issues.stats');
+        Route::get('issues/stats/history', [IssueStatsController::class, 'history'])->name('issues.stats.history');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
         Route::post('issues', [IssueController::class, 'store'])->name('issues.store');
         Route::get('issues/{issue}', [IssueController::class, 'show'])->name('issues.show');
