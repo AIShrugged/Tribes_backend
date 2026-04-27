@@ -8,15 +8,15 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->index(['status', 'close_date'], 'tasks_status_close_date_index');
+        Schema::table('issues', function (Blueprint $table) {
+            $table->index(['status', 'close_date'], 'issues_status_close_date_index');
         });
     }
 
     public function down(): void
     {
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->dropIndex('tasks_status_close_date_index');
+        Schema::table('issues', function (Blueprint $table) {
+            $table->dropIndex('issues_status_close_date_index');
         });
     }
 };

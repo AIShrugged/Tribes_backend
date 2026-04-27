@@ -66,13 +66,13 @@ class IssueStatsService
             ])
             ->first();
 
-        $closedToday     = (int) ($closedSummary->closed_today ?? 0);
-        $closedYesterday = (int) ($closedSummary->closed_yesterday ?? 0);
-        $closedThisWeek  = (int) ($closedSummary->closed_this_week ?? 0);
-        $closedLastWeek  = (int) ($closedSummary->closed_last_week ?? 0);
-        $closedThisMonth = (int) ($closedSummary->closed_this_month ?? 0);
-        $closedLastMonth = (int) ($closedSummary->closed_last_month ?? 0);
-        $closedAllTime   = (int) ($closedSummary->closed_all_time ?? 0);
+        $closedToday     = (int) ($closedSummary?->closed_today ?? 0);
+        $closedYesterday = (int) ($closedSummary?->closed_yesterday ?? 0);
+        $closedThisWeek  = (int) ($closedSummary?->closed_this_week ?? 0);
+        $closedLastWeek  = (int) ($closedSummary?->closed_last_week ?? 0);
+        $closedThisMonth = (int) ($closedSummary?->closed_this_month ?? 0);
+        $closedLastMonth = (int) ($closedSummary?->closed_last_month ?? 0);
+        $closedAllTime   = (int) ($closedSummary?->closed_all_time ?? 0);
 
         return new IssueStatsDTO(
             total:           $total,
@@ -161,7 +161,7 @@ class IssueStatsService
         $overdueBase = (clone $base)
             ->where('status', '!=', 'done')
             ->whereNotNull('due_date')
-            ->whereDate('due_date', '<', now());
+            ->where('due_date', '<', $todayStart);
 
         $today     = (clone $overdueBase)->where('updated_at', '>=', $todayStart)->count();
         $yesterday = (clone $overdueBase)->whereBetween('updated_at', [$yesterdayStart, $yesterdayEnd])->count();
