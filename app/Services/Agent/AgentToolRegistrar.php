@@ -7,6 +7,8 @@ use App\Models\AgentTaskRun;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Agent\Tools\BuildDailyPlanTool;
+use App\Services\Agent\Tools\ClearUserFocusTool;
 use App\Services\Agent\Tools\CopyWorkspaceFileTool;
 use App\Services\Agent\Tools\CreateArtifactTool;
 use App\Services\Agent\Tools\CreateEntityTool;
@@ -19,6 +21,7 @@ use App\Services\Agent\Tools\DeleteWorkspaceTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\FetchDocumentTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
+use App\Services\Agent\Tools\GetUserFocusTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
 use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
 use App\Services\Agent\Tools\GitHubCreatePullRequestTool;
@@ -36,8 +39,6 @@ use App\Services\Agent\Tools\ReadWorkspaceFileTool;
 use App\Services\Agent\Tools\SaveMethodologyTool;
 use App\Services\Agent\Tools\SearchWorkspaceFilesTool;
 use App\Services\Agent\Tools\SendUserMessageTool;
-use App\Services\Agent\Tools\ClearUserFocusTool;
-use App\Services\Agent\Tools\GetUserFocusTool;
 use App\Services\Agent\Tools\SetUserFocusTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Agent\Tools\UpdateArtifactTool;
@@ -116,12 +117,14 @@ class AgentToolRegistrar
         $profile = Profile::where('user_id', $user->id)->first();
         if ($profile) {
             $userFocusService = app(UserFocusService::class);
-            $memoryService    = app(MemoryService::class);
-            $ch               = $channel ?? 'web';
+            $memoryService = app(MemoryService::class);
+            $ch = $channel ?? 'web';
             $toolRegistry->register(new SetUserFocusTool($profile, $userFocusService, $memoryService, $ch));
             $toolRegistry->register(new GetUserFocusTool($profile, $userFocusService));
             $toolRegistry->register(new ClearUserFocusTool($profile, $userFocusService, $memoryService, $ch));
         }
+
+        $toolRegistry->register(new BuildDailyPlanTool($user, $organizationId, $teamId));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(
