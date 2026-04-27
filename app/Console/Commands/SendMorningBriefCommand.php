@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\Source;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -42,7 +43,16 @@ class SendMorningBriefCommand extends Command
 
     private function getTodayMeetings(User $user, string $today): Collection
     {
-        return CalendarEvent::whereHas('sources', fn($q) => $q->where('user_id', $user->id))
+        $sourceIds = Source::where('user_id', $user->id)->pluck('id');
+
+        return CalendarEvent::query()
+            ->where(function ($q) use ($user, $sourceIds) {
+                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+                if ($sourceIds->isNotEmpty()) {
+                    $q->orWhereIn('source_id', $sourceIds);
+                }
+                $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
+            })
             ->whereDate('starts_at', $today)
             ->orderBy('starts_at')
             ->get();
