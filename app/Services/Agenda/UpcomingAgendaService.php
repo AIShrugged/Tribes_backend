@@ -83,21 +83,42 @@ class UpcomingAgendaService
 
             $prompt = $this->buildPrompt($event, $user, $userIssues->all());
 
-            $json = OpenRouterClient::chat(
-                messages: [new MessageDTO('user', $prompt)],
-                model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
-                maxTokens: 8192,
-                forceJsonResponse: true,
-            );
+            $messages = [new MessageDTO('user', $prompt)];
+            $data = null;
+            $maxAttempts = 2;
 
-            if (! preg_match('/\{[\s\S]*\}/s', $json, $matches)) {
-                throw new \RuntimeException('No JSON found in LLM response');
+            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+                $json = OpenRouterClient::chat(
+                    messages: $messages,
+                    model: Setting::get('model.agenda', config('ai.providers.openrouter.models.agenda')),
+                    maxTokens: 8192,
+                    forceJsonResponse: true,
+                );
+
+                if (preg_match('/\{[\s\S]*\}/s', $json, $matches)) {
+                    $parsed = json_decode($matches[0], true);
+                    if (is_array($parsed)) {
+                        $data = $parsed;
+                        break;
+                    }
+                }
+
+                if ($attempt === $maxAttempts) {
+                    break;
+                }
+
+                Log::warning('Upcoming agenda: invalid JSON, retrying with repair prompt', [
+                    'user_id' => $user->id,
+                    'calendar_event_id' => $event->id,
+                    'attempt' => $attempt,
+                ]);
+
+                $messages[] = new MessageDTO('assistant', $json);
+                $messages[] = new MessageDTO('user', 'Твой предыдущий ответ не валидный JSON. Верни ТОЛЬКО JSON-объект без markdown-обёртки, без пояснений, без какого-либо текста до или после.');
             }
 
-            $data = json_decode($matches[0], true);
-
             if (! is_array($data)) {
-                throw new \RuntimeException('LLM returned invalid JSON: ' . substr($matches[0], 0, 200));
+                throw new \RuntimeException('No valid JSON in LLM response after ' . $maxAttempts . ' attempts');
             }
 
             $agenda->update([
