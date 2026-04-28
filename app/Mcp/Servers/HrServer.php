@@ -18,7 +18,9 @@ use App\Services\Agent\Tools\GetUserInsightsTool;
 use App\Services\Agent\Tools\GetUserDirectMessagesTool;
 use App\Services\Agent\Tools\GetUserGeneralMessagesTool;
 use App\Services\Agent\Tools\GetUserShortTermMemoryTool;
+use App\Services\Agent\Tools\SaveTeamDecisionTool;
 use App\Services\Agent\Tools\SearchMeetingsTool;
+use App\Services\Agent\Tools\SearchTeamDecisionsTool;
 use App\Services\Agent\Tools\RegenerateFollowupTool;
 use App\Services\Agent\Tools\UpdateTaskStatusTool;
 use Laravel\Mcp\Server;
@@ -43,6 +45,8 @@ class HrServer extends Server
         GetRelationshipInsightTool::class,
         GetTeamMembersTool::class,
         SearchMeetingsTool::class,
+        SearchTeamDecisionsTool::class,
+        SaveTeamDecisionTool::class,
         GetFollowupTool::class,
         RegenerateFollowupTool::class,
         GetMeetingSummaryTool::class,

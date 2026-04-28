@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DecisionSourceType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,6 +11,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Decision extends Model
 {
     protected $guarded = [];
+
+    protected $casts = [
+        'source_type' => DecisionSourceType::class,
+    ];
 
     public function calendarEvent(): BelongsTo
     {
@@ -35,6 +40,16 @@ class Decision extends Model
     {
         return $this->belongsToMany(Issue::class, 'decision_issue')
             ->withTimestamps(['created_at', null]);
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
     }
 
     public function followups(): HasMany

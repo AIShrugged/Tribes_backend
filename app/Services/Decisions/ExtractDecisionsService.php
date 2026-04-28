@@ -3,6 +3,7 @@
 namespace App\Services\Decisions;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Enums\DecisionSourceType;
 use App\Models\CalendarEvent;
 use App\Models\Decision;
 use App\Models\MeetingSummary;
@@ -36,7 +37,9 @@ class ExtractDecisionsService
             return 0;
         }
 
-        return DB::transaction(function () use ($event, $summary, $enriched) {
+        [$teamId, $organizationId] = $this->resolveTeamContext($event);
+
+        return DB::transaction(function () use ($event, $summary, $enriched, $teamId, $organizationId) {
             Decision::where('summary_id', $summary->id)->delete();
 
             $created = 0;
@@ -54,6 +57,9 @@ class ExtractDecisionsService
                 Decision::create([
                     'calendar_event_id' => $event->id,
                     'summary_id'        => $summary->id,
+                    'team_id'           => $teamId,
+                    'organization_id'   => $organizationId,
+                    'source_type'       => DecisionSourceType::Meeting->value,
                     'author_user_id'    => $resolved['user_id'],
                     'author_profile_id' => $resolved['profile_id'],
                     'author_raw_name'   => $resolved['raw_name'],
@@ -65,6 +71,30 @@ class ExtractDecisionsService
 
             return $created;
         });
+    }
+
+    /**
+     * Derive team and organization from the calendar event's creator.
+     * Calendar events have no direct team_id; we resolve via creator → teams.
+     * If the creator belongs to exactly one team, use it; otherwise leave null.
+     *
+     * @return array{0: int|null, 1: int|null}
+     */
+    private function resolveTeamContext(CalendarEvent $event): array
+    {
+        $creator = $event->creator;
+        if (! $creator) {
+            return [null, null];
+        }
+
+        $teams = $creator->teams()->with('organization')->get();
+
+        $team = $teams->count() === 1 ? $teams->first() : null;
+        $teamId = $team?->id;
+        $organizationId = $team?->organization_id
+            ?? $creator->organizations()->value('organizations.id');
+
+        return [$teamId, $organizationId];
     }
 
     /**
