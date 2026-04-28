@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\AgentTaskType;
 use App\Enums\OutputMode;
 use App\Models\ChannelIdentity;
+use App\Models\ChannelMessage;
 use App\Models\User;
 use App\Services\Agent\AgentRunOptions;
 use App\Services\Agent\AgentService;
@@ -16,11 +17,16 @@ use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\TelegramTypingIndicator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class ProcessTelegramWorkerJob implements ShouldQueue
 {
     use Queueable;
+
+    private const HISTORY_LIMIT = 30;
+
+    private const HISTORY_WINDOW_HOURS = 24;
 
     public function __construct(
         public int $chatId,
@@ -53,9 +59,12 @@ class ProcessTelegramWorkerJob implements ShouldQueue
             $typingSessionId = $typingIndicator->sessionId($this->chatId, $this->messageThreadId);
             $typingIndicator->start($typingSessionId, $this->chatId, $this->messageThreadId);
 
+            $conversation = $channelBus->forTelegram($this->chatId, $this->messageThreadId);
+            $history = $this->loadRecentHistory($conversation->id);
+
             $response = $agentService->run(
                 $user,
-                collect(),
+                $history,
                 $this->content,
                 new AgentRunOptions(
                     channel: 'telegram',
@@ -92,5 +101,25 @@ class ProcessTelegramWorkerJob implements ShouldQueue
         } finally {
             $typingIndicator->stop($typingSessionId ?? $typingIndicator->sessionId($this->chatId, $this->messageThreadId));
         }
+    }
+
+    private function loadRecentHistory(int $conversationId): Collection
+    {
+        $batchMinId = ChannelMessage::query()
+            ->where('agent_batch_uuid', $this->batchUuid)
+            ->min('id');
+
+        $query = ChannelMessage::query()
+            ->where('conversation_id', $conversationId)
+            ->whereIn('role', ['user', 'assistant'])
+            ->where('created_at', '>=', now()->subHours(self::HISTORY_WINDOW_HOURS))
+            ->orderByDesc('id')
+            ->limit(self::HISTORY_LIMIT);
+
+        if ($batchMinId !== null) {
+            $query->where('id', '<', $batchMinId);
+        }
+
+        return $query->get()->reverse()->values();
     }
 }
