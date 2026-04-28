@@ -125,6 +125,7 @@ Route::group(['prefix' => 'v1'], function () {
                 ->name('calendar-events.detail');
 
             Route::post('/{calendar_event_id}/bot/require', [BotController::class, 'require']);
+            Route::post('/{calendar_event_id}/bot/join-now', [BotController::class, 'joinNow']);
 
             Route::get('/{calendar_event_id}/participants', [ParticipantController::class, 'index'])
                 ->name('calendar-events.participants.index');

@@ -4,10 +4,12 @@ namespace App\Http\Controllers\API\v1;
 
 use App\Events\CalendarEventChanged;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\API\v1\JoinBotNowRequest;
 use App\Http\Requests\API\v1\RequireBotRequest;
 use App\Http\Resources\API\v1\CalendarEventResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
+use App\Services\Recall\BotSchedulingService;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -16,6 +18,11 @@ use Illuminate\Support\Facades\Auth;
  */
 class BotController extends Controller
 {
+    public function __construct(
+        private readonly BotSchedulingService $botSchedulingService,
+    ) {
+    }
+
     /**
      * Set bot requirement for event
      *
@@ -73,6 +80,45 @@ class BotController extends Controller
 
         return ApiResponse::success(
             data: CalendarEventResource::make($calendarEvent),
+        );
+    }
+
+    /**
+     * Send bot to an already running meeting
+     *
+     * Creates a Recall bot directly by meeting URL, bypassing Recall calendar
+     * event lookup. Use this when the meeting has already started and the bot
+     * needs to join immediately.
+     *
+     * @authenticated
+     *
+     * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     */
+    public function joinNow(JoinBotNowRequest $request): ApiResponse
+    {
+        $calendarEvent = CalendarEvent::owned(Auth::id())
+            ->findOrFail($request->getCalendarEventId());
+
+        abort_unless(
+            $calendarEvent->creator_user_id === Auth::id(),
+            403,
+            'Only the meeting organizer can manage the bot.',
+        );
+
+        $source = $calendarEvent->sources()
+            ->where('user_id', Auth::id())
+            ->first();
+
+        if ($source) {
+            $calendarEvent->sources()->updateExistingPivot($source->id, [
+                'required_bot' => true,
+            ]);
+        }
+
+        $this->botSchedulingService->joinMeetingNow($calendarEvent);
+
+        return ApiResponse::success(
+            data: CalendarEventResource::make($calendarEvent->fresh('bot')),
         );
     }
 }

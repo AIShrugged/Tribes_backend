@@ -83,6 +83,47 @@ class BotSchedulingService
     }
 
     /**
+     * Send a bot to a meeting that is already running.
+     *
+     * This intentionally uses Recall's direct bot endpoint by meeting URL,
+     * because the calendar-event endpoint can return 404 for stale or missing
+     * Recall calendar event IDs while the Meet URL itself is still valid.
+     */
+    public function joinMeetingNow(CalendarEvent $calendarEvent): void
+    {
+        Log::info('BotSchedulingService: join now requested', [
+            'calendar_event_id' => $calendarEvent->id,
+            'calendar_event_url' => $calendarEvent->url,
+            'bot_id' => $calendarEvent->bot_id,
+        ]);
+
+        DB::transaction(function () use ($calendarEvent) {
+            $calendarEvent = CalendarEvent::query()
+                ->with('bot')
+                ->lockForUpdate()
+                ->findOrFail($calendarEvent->id);
+
+            if ($calendarEvent->bot?->is_active) {
+                $calendarEvent->bot->deactivate();
+            }
+
+            $botDTO = $this->recallBotService->joinMeetingNow($calendarEvent);
+
+            $bot = Bot::create([
+                'external_id'      => $botDTO->externalId,
+                'deduplication_key' => $botDTO->deduplicationKey,
+                'meeting_url'      => $calendarEvent->url,
+                'is_active'        => true,
+            ]);
+
+            $bot->logEvent(BotEventType::SCHEDULED);
+
+            $calendarEvent->bot()->associate($bot);
+            $calendarEvent->save();
+        });
+    }
+
+    /**
      * Remove the bot from the meeting.
      * Deactivates the bot but keeps the record for transcript delivery.
      */
