@@ -11,4 +11,5 @@ enum ArtifactType: string
     case Chart          = 'chart';
     case TranscriptView        = 'transcript_view';
     case MethodologyCriteria   = 'methodology_criteria';
+    case DecisionLog           = 'decision_log';
 }

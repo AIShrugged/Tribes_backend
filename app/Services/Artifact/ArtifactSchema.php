@@ -23,6 +23,7 @@ class ArtifactSchema
             ArtifactType::Chart          => self::chart(),
             ArtifactType::TranscriptView        => self::transcriptView(),
             ArtifactType::MethodologyCriteria   => self::methodologyCriteria(),
+            ArtifactType::DecisionLog           => self::decisionLog(),
         };
     }
 
@@ -41,6 +42,7 @@ class ArtifactSchema
         - insight_card: {"person": {"name": string, "profile_id": int}, "insights": [{"category": string, "content": object}]}
         - chart: {"chart_type": "bar"|"line"|"pie", "title": string|null, "labels": [string], "datasets": [{"label": string, "data": [number]}]}
         - transcript_view: {"meeting_title": string, "entries": [{"speaker": string, "text": string, "timestamp": string|null}]}
+        - decision_log: {"team_id": int, "team_name": string, "query": string|null, "decisions": [{"id": int, "text": string, "topic": string|null, "source_type": "meeting"|"manual"|"chat", "author": {"id": int|null, "name": string|null}, "meeting": {"id": int, "title": string, "date": ISO8601}|null, "created_at": ISO8601}]}
         - methodology_criteria: {"blocks": [Block]} where Block is one of:
           - {"type": "header", "text": string} — section header
           - {"type": "scoring_table", "columns": [string], "rows": [[string|number]]} — criteria table with scores
@@ -183,6 +185,48 @@ class ArtifactSchema
                             'speaker'   => ['type' => 'string'],
                             'text'      => ['type' => 'string'],
                             'timestamp' => ['type' => ['string', 'null']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    private static function decisionLog(): array
+    {
+        return [
+            'type'       => 'object',
+            'required'   => ['team_id', 'team_name', 'decisions'],
+            'properties' => [
+                'team_id'   => ['type' => 'integer'],
+                'team_name' => ['type' => 'string'],
+                'query'     => ['type' => ['string', 'null']],
+                'decisions' => [
+                    'type'  => 'array',
+                    'items' => [
+                        'type'       => 'object',
+                        'required'   => ['id', 'text', 'source_type', 'created_at'],
+                        'properties' => [
+                            'id'          => ['type' => 'integer'],
+                            'text'        => ['type' => 'string'],
+                            'topic'       => ['type' => ['string', 'null']],
+                            'source_type' => ['type' => 'string', 'enum' => ['meeting', 'manual', 'chat']],
+                            'author'      => [
+                                'type'       => 'object',
+                                'properties' => [
+                                    'id'   => ['type' => ['integer', 'null']],
+                                    'name' => ['type' => ['string', 'null']],
+                                ],
+                            ],
+                            'meeting' => [
+                                'type'       => ['object', 'null'],
+                                'properties' => [
+                                    'id'    => ['type' => 'integer'],
+                                    'title' => ['type' => 'string'],
+                                    'date'  => ['type' => 'string', 'description' => 'ISO 8601'],
+                                ],
+                            ],
+                            'created_at' => ['type' => 'string', 'description' => 'ISO 8601'],
                         ],
                     ],
                 ],
