@@ -370,7 +370,15 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryMeetings(array $filters, int $limit): array
     {
-        $query = CalendarEvent::query()->owned(Auth::id())->with('participants');
+        $userId = Auth::id();
+
+        $query = CalendarEvent::query()
+            ->where(function ($q) use ($userId) {
+                $q->whereHas('sources', fn ($s) => $s->where('user_id', $userId))
+                    ->orWhereHas('profiles', fn ($p) => $p->where('user_id', $userId))
+                    ->orWhereHas('participants.profile', fn ($p) => $p->where('user_id', $userId));
+            })
+            ->with('participants');
 
         if (! empty($filters['query'])) {
             $query->where('title', 'ilike', '%'.$filters['query'].'%');
