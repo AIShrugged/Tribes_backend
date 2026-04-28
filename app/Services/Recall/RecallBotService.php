@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 class RecallBotService
 {
     private const API_URL = 'https://us-west-2.recall.ai/api/v2/calendar-events/%s/bot/';
+    private const DIRECT_BOT_API_URL = 'https://us-west-2.recall.ai/api/v1/bot/';
 
     private PendingRequest $httpClient;
 
@@ -56,6 +57,42 @@ class RecallBotService
                 $botExternalId = $bot['bot_id'];
             }
         }
+
+        if (!$botExternalId) {
+            throw new AppException('Bot not found', 'RECALL_GENERIC_ERROR');
+        }
+
+        return new BotDTO($botExternalId, $deduplicationKey);
+    }
+
+    public function joinMeetingNow(CalendarEvent $calendarEvent): BotDTO
+    {
+        $deduplicationKey = md5('join-now:' . $calendarEvent->id . ':' . \Illuminate\Support\Str::uuid());
+
+        $response = $this->httpClient->post(self::DIRECT_BOT_API_URL, [
+            'meeting_url'      => $calendarEvent->url,
+            'bot_name'         => 'Tribes Notetaker',
+            'recording_config' => [
+                'transcript' => [
+                    'provider' => [
+                        'recallai_streaming' => [
+                            'mode' => 'prioritize_accuracy'
+                        ]
+                    ]
+                ]
+            ],
+            'metadata'         => [
+                'calendar_event_id' => (string) $calendarEvent->id,
+            ],
+        ]);
+
+        if (!$response->successful()) {
+            throw new AppException($response->json('message') ?? $response->body(), 'RECALL_GENERIC_ERROR');
+        }
+
+        Log::info('Bot joined meeting now', $response->json());
+
+        $botExternalId = $response->json('id') ?? $response->json('bot_id');
 
         if (!$botExternalId) {
             throw new AppException('Bot not found', 'RECALL_GENERIC_ERROR');

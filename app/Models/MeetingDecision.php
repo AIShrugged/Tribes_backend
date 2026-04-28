@@ -5,22 +5,25 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class MeetingSummary extends Model
+class MeetingDecision extends Model
 {
     protected $guarded = [];
 
     protected function casts(): array
     {
         return [
-            'key_points'           => 'array',
-            'decisions'            => 'array',
-            'commitments'          => 'array',
-            'repeated_discussions' => 'array',
+            'participants' => 'array',
+            'meeting_date' => 'date',
         ];
     }
 
     public function calendarEvent(): BelongsTo
     {
         return $this->belongsTo(CalendarEvent::class);
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
     }
 }

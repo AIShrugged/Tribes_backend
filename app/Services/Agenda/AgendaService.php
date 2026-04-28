@@ -491,6 +491,19 @@ class AgendaService
             }
         }
 
+        // [4] Repeated discussions from previous meeting
+        $prevRepeated = isset($summary) ? ($summary->repeated_discussions ?? []) : [];
+        if (!empty($prevRepeated)) {
+            $parts[] = '';
+            $parts[] = '--- ПОВТОРЯЮЩИЕСЯ ОБСУЖДЕНИЯ ---';
+            $parts[] = 'На прошлой встрече были выявлены темы, которые команда уже обсуждала ранее:';
+            foreach ($prevRepeated as $repeat) {
+                $prevDate = Carbon::parse($repeat['previous_date'])->format('d.m.Y');
+                $parts[] = "• «{$repeat['new_decision']}» — похожее решение уже принималось {$prevDate}: «{$repeat['previous_decision']}»";
+            }
+            $parts[] = 'Если эти темы снова актуальны — включи их в discussion_topics с пометкой о предыдущем решении.';
+        }
+
         // Pass numbered commitments to LLM for question generation
         if (!empty($allCommitments)) {
             $parts[] = '';

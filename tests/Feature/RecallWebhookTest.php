@@ -427,6 +427,60 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
+    public function bot_join_now_creates_direct_recall_bot_for_running_meeting(): void
+    {
+        Http::fake([
+            'https://us-west-2.recall.ai/api/v1/bot/' => Http::response([
+                'id' => 'bot-direct-1',
+            ], 201),
+        ]);
+
+        $source = Source::firstWhere('user_id', $this->user->id);
+
+        $this->calendarEvent->update([
+            'creator_user_id' => $this->user->id,
+        ]);
+        $this->calendarEvent->sources()->syncWithoutDetaching([
+            $source->id => [
+                'external_id' => 'test-event-id',
+                'required_bot' => false,
+            ],
+        ]);
+
+        $this->actingAs($this->user);
+
+        $response = $this->postJson('/api/v1/calendar-events/' . $this->calendarEvent->id . '/bot/join-now');
+
+        $response->assertOk();
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://us-west-2.recall.ai/api/v1/bot/'
+                && $request['meeting_url'] === 'https://meet.google.com/test'
+                && $request['bot_name'] === 'Tribes Notetaker'
+                && $request['metadata']['calendar_event_id'] === (string) $this->calendarEvent->id;
+        });
+
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $this->calendarEvent->id,
+            'source_id' => $source->id,
+            'required_bot' => true,
+        ]);
+
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'test-bot-123',
+            'is_active' => false,
+        ]);
+
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'bot-direct-1',
+            'meeting_url' => 'https://meet.google.com/test',
+            'is_active' => true,
+        ]);
+
+        $this->assertSame('bot-direct-1', $this->calendarEvent->fresh()->bot?->external_id);
+    }
+
+    #[Test]
     public function parse_transcript_job_creates_transcript_entries_and_dispatches_event()
     {
         Event::fake();
