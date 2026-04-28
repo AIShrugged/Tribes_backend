@@ -37,9 +37,9 @@ class ExtractDecisionsService
             return 0;
         }
 
-        [$teamId, $organizationId] = $this->resolveTeamContext($event);
+        $teamContexts = $this->resolveTeamContexts($event);
 
-        return DB::transaction(function () use ($event, $summary, $enriched, $teamId, $organizationId) {
+        return DB::transaction(function () use ($event, $summary, $enriched, $teamContexts) {
             Decision::where('summary_id', $summary->id)->delete();
 
             $created = 0;
@@ -54,19 +54,21 @@ class ExtractDecisionsService
                     $item['author_name'] ?? null,
                 );
 
-                Decision::create([
-                    'calendar_event_id' => $event->id,
-                    'summary_id'        => $summary->id,
-                    'team_id'           => $teamId,
-                    'organization_id'   => $organizationId,
-                    'source_type'       => DecisionSourceType::Meeting->value,
-                    'author_user_id'    => $resolved['user_id'],
-                    'author_profile_id' => $resolved['profile_id'],
-                    'author_raw_name'   => $resolved['raw_name'],
-                    'text'              => $text,
-                    'topic'             => $item['topic'] ?? null,
-                ]);
-                $created++;
+                foreach ($teamContexts as [$teamId, $organizationId]) {
+                    Decision::create([
+                        'calendar_event_id' => $event->id,
+                        'summary_id'        => $summary->id,
+                        'team_id'           => $teamId,
+                        'organization_id'   => $organizationId,
+                        'source_type'       => DecisionSourceType::Meeting->value,
+                        'author_user_id'    => $resolved['user_id'],
+                        'author_profile_id' => $resolved['profile_id'],
+                        'author_raw_name'   => $resolved['raw_name'],
+                        'text'              => $text,
+                        'topic'             => $item['topic'] ?? null,
+                    ]);
+                    $created++;
+                }
             }
 
             return $created;
@@ -74,27 +76,29 @@ class ExtractDecisionsService
     }
 
     /**
-     * Derive team and organization from the calendar event's creator.
-     * Calendar events have no direct team_id; we resolve via creator → teams.
-     * If the creator belongs to exactly one team, use it; otherwise leave null.
+     * Derive team/organization pairs from the calendar event's creator.
+     * Returns one entry per team the creator belongs to, so the decision
+     * is visible in every team's log. Falls back to [(null, orgId)] when
+     * the creator has no teams but belongs to an organization, or to
+     * [(null, null)] when neither can be resolved.
      *
-     * @return array{0: int|null, 1: int|null}
+     * @return array<int, array{0: int|null, 1: int|null}>
      */
-    private function resolveTeamContext(CalendarEvent $event): array
+    private function resolveTeamContexts(CalendarEvent $event): array
     {
         $creator = $event->creator;
         if (! $creator) {
-            return [null, null];
+            return [[null, null]];
         }
 
         $teams = $creator->teams()->with('organization')->get();
 
-        $team = $teams->count() === 1 ? $teams->first() : null;
-        $teamId = $team?->id;
-        $organizationId = $team?->organization_id
-            ?? $creator->organizations()->value('organizations.id');
+        if ($teams->isEmpty()) {
+            $orgId = $creator->organizations()->value('organizations.id');
+            return [[null, $orgId]];
+        }
 
-        return [$teamId, $organizationId];
+        return $teams->map(fn ($team) => [$team->id, $team->organization_id])->all();
     }
 
     /**
