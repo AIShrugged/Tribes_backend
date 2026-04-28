@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MeetingSummary extends Model
 {
@@ -21,5 +22,10 @@ class MeetingSummary extends Model
     public function calendarEvent(): BelongsTo
     {
         return $this->belongsTo(CalendarEvent::class);
+    }
+
+    public function decisions(): HasMany
+    {
+        return $this->hasMany(Decision::class, 'summary_id');
     }
 }

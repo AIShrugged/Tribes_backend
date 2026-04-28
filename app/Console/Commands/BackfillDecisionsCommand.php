@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class BackfillDecisionsCommand extends Command
 {
-    protected $signature = 'decisions:backfill {--summary-id= : Process only this summary id}';
+    protected $signature = 'decisions:backfill {--summary-id= : Process only this summary id} {--skip-existing : Skip summaries that already have decisions in the decisions table}';
 
     protected $description = 'Backfill decisions table from existing meeting_summaries.decisions JSON';
 
@@ -18,6 +18,10 @@ class BackfillDecisionsCommand extends Command
 
         if ($id = $this->option('summary-id')) {
             $query->where('id', $id);
+        }
+
+        if ($this->option('skip-existing')) {
+            $query->whereDoesntHave('decisions');
         }
 
         $summaries = $query->get()->filter(fn (MeetingSummary $s) => ! empty($s->decisions));

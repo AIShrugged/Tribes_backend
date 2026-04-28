@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\Chat\PageContextFormatter;
-use App\Services\Chat\PageContextFormatter;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
