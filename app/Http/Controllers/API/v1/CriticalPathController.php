@@ -72,11 +72,20 @@ class CriticalPathController extends Controller
             ->values()
             ->all();
 
-        $edges = $graph->edges->map(fn ($edge) => [
-            'from_node_id' => $edge->from_node_id,
-            'to_node_id' => $edge->to_node_id,
-            'edge_type' => $edge->edge_type,
-        ])->values()->all();
+        $issueNodeIds = array_flip(array_column($nodes, 'node_id'));
+
+        $edges = $graph->edges
+            ->filter(fn ($edge) =>
+                isset($issueNodeIds[$edge->from_node_id]) &&
+                isset($issueNodeIds[$edge->to_node_id])
+            )
+            ->map(fn ($edge) => [
+                'from_node_id' => $edge->from_node_id,
+                'to_node_id' => $edge->to_node_id,
+                'edge_type' => $edge->edge_type,
+            ])
+            ->values()
+            ->all();
 
         $projectDuration = collect($nodes)->max('early_finish') ?? 0;
 
