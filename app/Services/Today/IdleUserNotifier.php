@@ -117,14 +117,20 @@ class IdleUserNotifier
             return collect();
         }
 
+        $managerIds = \DB::table('organization_user')
+            ->whereIn('organization_id', $orgIds)
+            ->where('role', 'manager')
+            ->where('user_id', '!=', $user->id)
+            ->pluck('user_id')
+            ->unique();
+
+        if ($managerIds->isEmpty()) {
+            return collect();
+        }
+
         return User::query()
-            ->where('id', '!=', $user->id)
-            ->whereHas('organizations', function ($q) use ($orgIds) {
-                $q->whereIn('organizations.id', $orgIds)
-                  ->wherePivot('role', 'manager');
-            })
+            ->whereIn('id', $managerIds)
             ->with('telegramUser')
-            ->distinct()
             ->get();
     }
 
