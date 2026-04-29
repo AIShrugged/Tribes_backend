@@ -20,8 +20,9 @@ use App\Services\Agent\Tools\DeleteWorkspaceFileTool;
 use App\Services\Agent\Tools\DeleteWorkspaceTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\FetchDocumentTool;
-use App\Services\Agent\Tools\GetTranscriptTool;
+use App\Services\Agent\Tools\GetCriticalPathTool;
 use App\Services\Agent\Tools\GetFocusedIssuesTool;
+use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetUserFocusTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
 use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
@@ -51,6 +52,7 @@ use App\Services\AgentTaskMutationService;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\UserChannelTargetResolver;
+use App\Services\CriticalPath\CriticalPathService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\JsonSchemaValidationService;
 use App\Services\TenantScopeValidator;
@@ -127,6 +129,7 @@ class AgentToolRegistrar
         }
 
         $toolRegistry->register(new BuildDailyPlanTool($user, $organizationId, $teamId));
+        $toolRegistry->register(new GetCriticalPathTool($user, app(CriticalPathService::class), $organizationId, $teamId));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(

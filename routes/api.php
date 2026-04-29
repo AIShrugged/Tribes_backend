@@ -44,6 +44,7 @@ use App\Http\Controllers\API\v1\InsightController;
 use App\Http\Controllers\API\v1\IssueAttachmentController;
 use App\Http\Controllers\API\v1\IssueCommentController;
 use App\Http\Controllers\API\v1\IssueAgentFlowController;
+use App\Http\Controllers\API\v1\CriticalPathController;
 use App\Http\Controllers\API\v1\IssueController;
 use App\Http\Controllers\API\v1\IssueStatsController;
 use App\Http\Controllers\API\v1\PaperclipIssueStatusController;
@@ -200,6 +201,9 @@ Route::group(['prefix' => 'v1'], function () {
             ->name('me.today.send-message');
 
         Route::get('persons', [PersonController::class, 'index'])->name('persons.index');
+        Route::get('critical-path', [CriticalPathController::class, 'show'])->name('critical-path.show');
+        Route::post('critical-path/rebuild', [CriticalPathController::class, 'rebuild'])->name('critical-path.rebuild');
+
         Route::get('issues/stats', [IssueStatsController::class, 'index'])->name('issues.stats');
         Route::get('issues/stats/history', [IssueStatsController::class, 'history'])->name('issues.stats.history');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');

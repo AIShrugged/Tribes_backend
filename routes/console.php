@@ -10,14 +10,14 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 // Insight maintenance jobs
-Schedule::call(fn() => app(InsightMaintenanceService::class)->runWeeklyConsolidation())
+Schedule::call(fn () => app(InsightMaintenanceService::class)->runWeeklyConsolidation())
     ->weekly()
     ->sundays()
     ->at('03:00')
     ->name('insight:weekly-consolidation')
     ->withoutOverlapping();
 
-Schedule::call(fn() => app(InsightMaintenanceService::class)->runMonthlyRebuild())
+Schedule::call(fn () => app(InsightMaintenanceService::class)->runMonthlyRebuild())
     ->monthly()
     ->name('insight:monthly-rebuild')
     ->withoutOverlapping();
@@ -93,4 +93,10 @@ Schedule::command('notify:stuck-tasks')
 Schedule::command('tasks:notify-idle-users')
     ->hourly()
     ->name('tasks:notify-idle-users')
+    ->withoutOverlapping();
+
+// Critical Path: flush pending-issue buffer and run incremental/full rebuild per org
+Schedule::command('cpm:process-pending')
+    ->hourly()
+    ->name('cpm:process-pending')
     ->withoutOverlapping();
