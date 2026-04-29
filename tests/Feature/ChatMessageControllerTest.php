@@ -185,7 +185,7 @@ class ChatMessageControllerTest extends TestCase
                 'content' => 'Что здесь важно?',
                 'page_title' => 'Dashboard',
                 'page_url' => 'https://app.example.com/dashboard',
-                'page_html' => '<html><body><h1>Dashboard</h1><p>Open issues</p></body></html>',
+                'page_text' => 'Dashboard Open issues',
             ]);
 
         $response->assertStatus(200);
