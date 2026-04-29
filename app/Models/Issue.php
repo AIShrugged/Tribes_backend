@@ -82,7 +82,7 @@ class Issue extends Model
                 $issue->type = self::TYPE_DEVELOPMENT;
             }
 
-            if ($issue->status === 'done') {
+            if (in_array($issue->status, ['done', 'closed', 'cancelled'], true)) {
                 $issue->close_date ??= now();
             } elseif ($issue->isDirty('status')) {
                 $issue->close_date = null;

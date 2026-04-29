@@ -88,3 +88,9 @@ Schedule::command('notify:stuck-tasks')
     ->dailyAt('10:00')
     ->name('notify:stuck-tasks')
     ->withoutOverlapping();
+
+// Idle users: closed last task in previous hour and now have 0 open
+Schedule::command('tasks:notify-idle-users')
+    ->hourly()
+    ->name('tasks:notify-idle-users')
+    ->withoutOverlapping();
