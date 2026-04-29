@@ -5,9 +5,12 @@ namespace App\Observers;
 use App\Enums\AgentScheduleType;
 use App\Enums\AgentTaskExecutionMode;
 use App\Enums\MeetingTaskStatus;
+use App\Jobs\QuickCpmUpdateJob;
 use App\Models\AgentTask;
+use App\Models\CriticalPathPendingIssue;
 use App\Models\DailyNudge;
 use App\Models\Issue;
+use App\Models\Team;
 use App\Services\AgentTaskSchedulerService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -33,25 +36,76 @@ class IssueObserver
         private readonly AgentTaskSchedulerService $scheduler,
     ) {}
 
+    public function created(Issue $issue): void
+    {
+        $this->queueCpmPending($issue);
+    }
+
     public function updated(Issue $issue): void
     {
-        if (! $issue->isDirty('status')) {
+        if ($issue->isDirty('status')) {
+            // Invalidate nudge when task status changes — data is now stale
+            if ($issue->assignee_id) {
+                DailyNudge::query()
+                    ->where('user_id', $issue->assignee_id)
+                    ->where('date', Carbon::today()->format('Y-m-d'))
+                    ->delete();
+            }
+
+            if ($issue->status === MeetingTaskStatus::REOPEN->value) {
+                $this->handleReopen($issue);
+            }
+        }
+
+        if ($issue->isDirty('status')) {
+            if (in_array($issue->status, ['open', 'in_progress'], true)) {
+                $this->queueCpmPending($issue);
+            } else {
+                $this->dispatchQuickCpmRemove($issue);
+            }
+        } elseif ($issue->isDirty(['priority', 'due_date', 'description', 'name'])) {
+            $this->queueCpmPending($issue);
+        }
+    }
+
+    public function deleted(Issue $issue): void
+    {
+        $this->dispatchQuickCpmRemove($issue);
+    }
+
+    private function dispatchQuickCpmRemove(Issue $issue): void
+    {
+        $organizationId = $this->resolveOrganizationId($issue);
+        if (! $organizationId) {
             return;
         }
 
-        // Invalidate nudge when task status changes — data is now stale
-        if ($issue->assignee_id) {
-            DailyNudge::query()
-                ->where('user_id', $issue->assignee_id)
-                ->where('date', Carbon::today()->format('Y-m-d'))
-                ->delete();
-        }
+        QuickCpmUpdateJob::dispatch($issue->id, $organizationId, removeFromGraph: true);
+    }
 
-        if ($issue->status !== MeetingTaskStatus::REOPEN->value) {
+    private function queueCpmPending(Issue $issue): void
+    {
+        $organizationId = $this->resolveOrganizationId($issue);
+        if (! $organizationId) {
             return;
         }
 
-        $this->handleReopen($issue);
+        CriticalPathPendingIssue::updateOrCreate(
+            ['organization_id' => $organizationId, 'issue_id' => $issue->id],
+            ['created_at' => now()],
+        );
+    }
+
+    private function resolveOrganizationId(Issue $issue): ?int
+    {
+        $organizationId = $issue->organization_id;
+
+        if (! $organizationId && $issue->team_id) {
+            $organizationId = $issue->team?->organization_id
+                ?? Team::find($issue->team_id)?->organization_id;
+        }
+
+        return $organizationId;
     }
 
     private function handleReopen(Issue $issue): void
@@ -175,7 +229,7 @@ class IssueObserver
                 ."\n5. После исправлений обнови статус issue на \"review\" через update_task_status";
         }
 
-        return "Задача была reopened после ревью. Нужно проанализировать обратную связь и внести исправления."
+        return 'Задача была reopened после ревью. Нужно проанализировать обратную связь и внести исправления.'
             ."\n\nЗадача: {$issue->name}{$description}"
             ."\nIssue ID: {$issue->id}{$prContext}"
             ."\n\n{$callbackBlock}"
@@ -188,7 +242,7 @@ class IssueObserver
 
     private function buildPaperclipCallbackBlock(): string
     {
-        return <<<PROMPT
+        return <<<'PROMPT'
 ## Paperclip completion callback
 
 This callback is mandatory.
