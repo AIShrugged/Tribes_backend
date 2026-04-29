@@ -16,8 +16,9 @@ class MeetingSummaryResource extends JsonResource
             'title'             => $this->title,
             'summary'           => $this->summary,
             'key_points'        => $this->key_points ?? [],
-            'decisions'         => $this->decisions ?? [],
-            'attendees'         => $this->calendarEvent->participants->map(fn ($p) => ['name' => $p->name])->values(),
+            'decisions'              => $this->decisions ?? [],
+            'repeated_discussions'   => $this->repeated_discussions ?? [],
+            'attendees'              => $this->calendarEvent->participants->map(fn ($p) => ['name' => $p->name])->values(),
             'created_at'        => $this->created_at,
             'updated_at'        => $this->updated_at,
         ];
