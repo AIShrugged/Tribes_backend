@@ -145,14 +145,14 @@ class AgendaService
                 'user_id' => null,
                 'type' => 'general',
                 'status' => AgendaStatus::IN_PROGRESS,
-                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+                'send_scheduled_at' => $event->starts_at->subMinutes(15),
             ]);
         } else {
             $agenda->update([
                 'status' => AgendaStatus::IN_PROGRESS,
                 'raw_json' => null,
                 'content' => null,
-                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+                'send_scheduled_at' => $event->starts_at->subMinutes(15),
             ]);
         }
 
@@ -302,14 +302,14 @@ class AgendaService
                 'user_id' => $user->id,
                 'type' => 'personal',
                 'status' => AgendaStatus::IN_PROGRESS,
-                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+                'send_scheduled_at' => $event->starts_at->subMinutes(15),
             ]);
         } else {
             $agenda->update([
                 'status' => AgendaStatus::IN_PROGRESS,
                 'raw_json' => null,
                 'content' => null,
-                'send_scheduled_at' => $event->starts_at->subMinutes(30),
+                'send_scheduled_at' => $event->starts_at->subMinutes(15),
             ]);
         }
 
