@@ -10,17 +10,17 @@ class MeetingSummaryResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'                => $this->id,
+            'id' => $this->id,
             'calendar_event_id' => $this->calendar_event_id,
-            'status'            => $this->status,
-            'title'             => $this->title,
-            'summary'           => $this->summary,
-            'key_points'        => $this->key_points ?? [],
-            'decisions'              => $this->decisions ?? [],
-            'repeated_discussions'   => $this->repeated_discussions ?? [],
-            'attendees'              => $this->calendarEvent->participants->map(fn ($p) => ['name' => $p->name])->values(),
-            'created_at'        => $this->created_at,
-            'updated_at'        => $this->updated_at,
+            'status' => $this->status,
+            'title' => $this->title,
+            'summary' => $this->summary,
+            'key_points' => $this->key_points ?? [],
+            'decisions' => $this->decisions ?? [],
+            'repeated_discussions' => $this->repeated_discussions ?? [],
+            'attendees' => $this->calendarEvent->participants->map(fn ($p) => ['name' => $p->name])->values(),
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
         ];
     }
 }

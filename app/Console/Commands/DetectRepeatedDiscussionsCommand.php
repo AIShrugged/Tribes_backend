@@ -22,6 +22,7 @@ class DetectRepeatedDiscussionsCommand extends Command
 
         if (! $summary) {
             $this->error("Event #{$event->id} has no meeting summary.");
+
             return self::FAILURE;
         }
 
@@ -29,6 +30,7 @@ class DetectRepeatedDiscussionsCommand extends Command
 
         if (empty($decisions)) {
             $this->error('Summary has no decisions to analyze.');
+
             return self::FAILURE;
         }
 
@@ -36,11 +38,12 @@ class DetectRepeatedDiscussionsCommand extends Command
 
         if (! $teams || $teams->isEmpty()) {
             $this->error("No teams found for this event's user.");
+
             return self::FAILURE;
         }
 
         $this->info("Event: #{$event->id} — {$event->title}");
-        $this->info('Decisions in this meeting: ' . count($decisions));
+        $this->info('Decisions in this meeting: '.count($decisions));
         $this->newLine();
 
         foreach ($teams as $team) {
@@ -56,6 +59,7 @@ class DetectRepeatedDiscussionsCommand extends Command
 
         if ($this->option('dry-run')) {
             $this->warn('--dry-run: LLM was NOT called. Remove the flag to run for real.');
+
             return self::SUCCESS;
         }
 
@@ -81,14 +85,15 @@ class DetectRepeatedDiscussionsCommand extends Command
 
         if (empty($allMatches)) {
             $this->info('No repeated discussions found.');
+
             return self::SUCCESS;
         }
 
-        $this->info('Repeated discussions found: ' . count($allMatches));
+        $this->info('Repeated discussions found: '.count($allMatches));
         $this->newLine();
 
         foreach ($allMatches as $i => $match) {
-            $this->line(($i + 1) . ". New: «{$match['new_decision']}»");
+            $this->line(($i + 1).". New: «{$match['new_decision']}»");
             $this->line("   Previous ({$match['previous_date']}): «{$match['previous_decision']}»");
             if ($match['previous_meeting_title']) {
                 $this->line("   Meeting: {$match['previous_meeting_title']}");

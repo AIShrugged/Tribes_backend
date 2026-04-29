@@ -102,7 +102,7 @@ class DetectRepeatedDiscussionsService
     }
 
     /**
-     * @return array<int, array{id: int, text: string, date: string|null, meeting_title: string, participants: array}>
+     * @return array<int, array{id: int, text: string, date: string|null, meeting_title: string, participants: array, calendar_event_id: int|null}>
      */
     private function flattenDecisions(Collection $summaries): array
     {
@@ -126,6 +126,7 @@ class DetectRepeatedDiscussionsService
                     'date' => $date,
                     'meeting_title' => $title,
                     'participants' => $participants,
+                    'calendar_event_id' => $event?->id,
                 ];
 
                 $index++;
@@ -214,6 +215,7 @@ class DetectRepeatedDiscussionsService
                 'previous_date' => $prev['date'],
                 'previous_meeting_title' => $prev['meeting_title'],
                 'previous_participants' => $prev['participants'],
+                'previous_calendar_event_id' => $prev['calendar_event_id'],
             ];
         }
 
