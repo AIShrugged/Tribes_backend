@@ -19,13 +19,14 @@ class OpenRouterClient
         array $messages,
         string|array $model,
         int $maxTokens = 1024,
-        bool $forceJsonResponse = false
+        bool $forceJsonResponse = false,
+        array $extraPayload = [],
     ): string {
         $lastException = null;
 
         foreach (self::resolveModelCandidates($model) as $candidate) {
             try {
-                return self::chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse);
+                return self::chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse, $extraPayload);
             } catch (\Throwable $e) {
                 $lastException = $e;
 
@@ -46,7 +47,8 @@ class OpenRouterClient
         array $messages,
         string $model,
         int $maxTokens,
-        bool $forceJsonResponse
+        bool $forceJsonResponse,
+        array $extraPayload,
     ): string {
         $payloadMessages = array_map(
             static function (MessageDTO|array $message): array {
@@ -66,11 +68,11 @@ class OpenRouterClient
             $messages
         );
 
-        $data = [
+        $data = array_merge($extraPayload, [
             'model'      => $model,
             'messages'   => $payloadMessages,
             'max_tokens' => $maxTokens,
-        ];
+        ]);
 
         if ($forceJsonResponse) {
             $data['response_format'] = ['type' => 'json_object'];
@@ -99,6 +101,14 @@ class OpenRouterClient
         }
 
         $body = $response->json();
+        $finishReason = $body['choices'][0]['finish_reason'] ?? null;
+        $nativeFinishReason = $body['choices'][0]['native_finish_reason'] ?? null;
+
+        if (in_array($finishReason, ['length', 'MAX_TOKENS'], true)
+            || in_array($nativeFinishReason, ['length', 'MAX_TOKENS'], true)
+        ) {
+            throw new AppException('AI response was truncated', 'AI_RESPONSE_TRUNCATED');
+        }
 
         return $body['choices'][0]['message']['content'] ?? '';
     }
