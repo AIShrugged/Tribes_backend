@@ -14,6 +14,7 @@ class TodayBriefingDTO extends BaseDTO
         public readonly array $waiting_on_you,
         public readonly array $stale,
         public readonly ?string $nudge,
+        public readonly TodayTaskGroupsDTO $task_groups,
     ) {}
 
     public function toArray(): array
@@ -26,6 +27,7 @@ class TodayBriefingDTO extends BaseDTO
             'waiting_on_you' => array_map(fn(TodayWaitingTaskDTO $t) => $t->toArray(), $this->waiting_on_you),
             'stale' => array_map(fn(TodayStaleTaskDTO $t) => $t->toArray(), $this->stale),
             'nudge' => $this->nudge,
+            'task_groups' => $this->task_groups->toArray(),
         ];
     }
 }

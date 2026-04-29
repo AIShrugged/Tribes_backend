@@ -6,6 +6,7 @@ use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\Source;
 use App\Models\User;
+use App\Services\Today\TaskDeadlineGrouper;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -18,6 +19,11 @@ class SendMorningBriefCommand extends Command
 
     protected $description = 'Send morning brief with today\'s meetings and open tasks to each user';
 
+    public function __construct(private readonly TaskDeadlineGrouper $taskGrouper)
+    {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
         $today    = now()->toDateString();
@@ -29,13 +35,17 @@ class SendMorningBriefCommand extends Command
 
         foreach ($users as $user) {
             $meetings = $this->getTodayMeetings($user, $today);
-            $issues   = $this->getOpenIssues($user);
+            $groups   = $this->taskGrouper->groupForUser($user);
 
-            if ($meetings->isEmpty() && $issues->isEmpty()) {
+            $hasIssues = $groups['overdue']->isNotEmpty()
+                || $groups['today']->isNotEmpty()
+                || $groups['current']->isNotEmpty();
+
+            if ($meetings->isEmpty() && ! $hasIssues) {
                 continue;
             }
 
-            $this->sendBrief($user, $meetings, $issues, $testUser);
+            $this->sendBrief($user, $meetings, $groups, $testUser);
         }
 
         return self::SUCCESS;
@@ -58,55 +68,10 @@ class SendMorningBriefCommand extends Command
             ->get();
     }
 
-    private function getOpenIssues(User $user): Collection
-    {
-        return Issue::where('assignee_id', $user->id)
-            ->whereNotIn('status', ['done', 'closed', 'cancelled'])
-            ->get();
-    }
-
-    private function groupIssues(Collection $issues): array
-    {
-        $today    = Carbon::today();
-        $weekAgo  = Carbon::today()->subDays(7);
-        $frontendUrl = rtrim(config('app.frontend_url'), '/');
-
-        $groups = [
-            'overdue' => [],
-            'today'   => [],
-            'stuck'   => [],
-            'other'   => [],
-        ];
-
-        foreach ($issues as $issue) {
-            $dueDate = $issue->due_date ? Carbon::parse($issue->due_date) : null;
-            $createdAt = $issue->registration_date
-                ? Carbon::parse($issue->registration_date)
-                : Carbon::parse($issue->created_at);
-
-            $url  = $frontendUrl . '/dashboard/issues/' . $issue->id;
-            $name = e($issue->name);
-            $link = "<a href=\"{$url}\">{$name}</a>";
-
-            if ($dueDate && $dueDate->lt($today)) {
-                $days = $dueDate->diffInDays($today);
-                $groups['overdue'][] = "{$link} <i>({$days}д просрочено)</i>";
-            } elseif ($dueDate && $dueDate->isSameDay($today)) {
-                $groups['today'][] = "{$link} <i>(сегодня)</i>";
-            } elseif ($createdAt->lte($weekAgo)) {
-                $groups['stuck'][] = $link;
-            } else {
-                $groups['other'][] = $link;
-            }
-        }
-
-        return $groups;
-    }
-
-    private function sendBrief(User $user, Collection $meetings, Collection $issues, ?string $testUser = null): void
+    private function sendBrief(User $user, Collection $meetings, array $groups, ?string $testUser = null): void
     {
         $telegramUserId = $testUser ?? $user->telegramUser->telegram_user_id;
-        $text = $this->formatMessage($meetings, $issues, $user->name, (bool) $testUser);
+        $text = $this->formatMessage($meetings, $groups, $user->name, (bool) $testUser);
 
         try {
             $telegram = new Api(config('telegram.bot_token'));
@@ -125,7 +90,7 @@ class SendMorningBriefCommand extends Command
         }
     }
 
-    private function formatMessage(Collection $meetings, Collection $issues, string $userName = '', bool $testMode = false): string
+    private function formatMessage(Collection $meetings, array $groups, string $userName = '', bool $testMode = false): string
     {
         $lines = [];
         if ($testMode) {
@@ -151,45 +116,59 @@ class SendMorningBriefCommand extends Command
             }
         }
 
-        if ($issues->isNotEmpty()) {
-            $groups = $this->groupIssues($issues);
+        $hasIssues = $groups['today']->isNotEmpty()
+            || $groups['current']->isNotEmpty()
+            || $groups['overdue']->isNotEmpty();
 
+        if ($hasIssues) {
             $lines[] = '';
             $lines[] = '📋 <b>Задачи:</b>';
 
-            if (!empty($groups['overdue'])) {
-                $lines[] = '';
-                $lines[] = '🔴 <b>Просрочено:</b>';
-                foreach ($groups['overdue'] as $item) {
-                    $lines[] = "• {$item}";
-                }
-            }
-
-            if (!empty($groups['today'])) {
+            if ($groups['today']->isNotEmpty()) {
                 $lines[] = '';
                 $lines[] = '🟠 <b>Срочно — сегодня дедлайн:</b>';
-                foreach ($groups['today'] as $item) {
-                    $lines[] = "• {$item}";
+                foreach ($groups['today'] as $issue) {
+                    $lines[] = '• ' . $this->formatTaskLine($issue);
                 }
             }
 
-            if (!empty($groups['stuck'])) {
+            if ($groups['current']->isNotEmpty()) {
                 $lines[] = '';
-                $lines[] = '🟡 <b>Зависшие — открыто больше недели:</b>';
-                foreach ($groups['stuck'] as $item) {
-                    $lines[] = "• {$item}";
+                $lines[] = '🔵 <b>Текущие задачи:</b>';
+                foreach ($groups['current'] as $issue) {
+                    $lines[] = '• ' . $this->formatTaskLine($issue);
                 }
             }
 
-            if (!empty($groups['other'])) {
+            if ($groups['overdue']->isNotEmpty()) {
                 $lines[] = '';
-                $lines[] = '⚪ <b>Остальное:</b>';
-                foreach ($groups['other'] as $item) {
-                    $lines[] = "• {$item}";
+                $lines[] = '🔴 <b>Просроченные задачи:</b>';
+                foreach ($groups['overdue'] as $issue) {
+                    $lines[] = '• ' . $this->formatTaskLine($issue);
                 }
             }
         }
 
         return implode("\n", $lines);
+    }
+
+    private function formatTaskLine(Issue $issue): string
+    {
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+        $url  = $frontendUrl . '/dashboard/issues/' . $issue->id;
+        $name = e($issue->name);
+        $line = "<a href=\"{$url}\">{$name}</a>";
+
+        $today = Carbon::today();
+        $due   = $issue->due_date ? Carbon::parse($issue->due_date) : null;
+
+        if ($due && $due->lt($today)) {
+            $days = (int) $due->diffInDays($today);
+            $line .= " <i>({$days}д просрочено)</i>";
+        } elseif ($due && $due->gt($today)) {
+            $line .= ' <i>(до ' . $due->format('d.m') . ')</i>';
+        }
+
+        return $line;
     }
 }

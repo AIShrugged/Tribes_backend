@@ -4,11 +4,13 @@ namespace App\Services\Today;
 
 use App\Domain\DTO\Today\TodayBriefingDTO;
 use App\Domain\DTO\Today\TodayCarriedTaskDTO;
+use App\Domain\DTO\Today\TodayDeadlineTaskDTO;
 use App\Domain\DTO\Today\TodayEventDTO;
 use App\Domain\DTO\Today\TodayMeetingReviewDTO;
 use App\Domain\DTO\Today\TodayMeetingSummaryDTO;
 use App\Domain\DTO\Today\TodayMeetingTaskDTO;
 use App\Domain\DTO\Today\TodayStaleTaskDTO;
+use App\Domain\DTO\Today\TodayTaskGroupsDTO;
 use App\Domain\DTO\Today\TodayWaitingTaskDTO;
 use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
@@ -29,14 +31,17 @@ class TodayBriefingService
     public function __construct(
         private readonly MeetingContextService $meetingContext,
         private readonly DailyNudgeService $nudgeService,
+        private readonly TaskDeadlineGrouper $taskGrouper,
     ) {}
 
     public function getBriefing(User $user, Carbon $date): TodayBriefingDTO
     {
+        $taskGroups = $this->buildTaskGroups($user);
+
         $hasCalendar = Source::query()->where('user_id', $user->id)->withTrashed()->exists();
 
         if (! $hasCalendar) {
-            return $this->emptyBriefing($date, 'empty');
+            return $this->emptyBriefing($date, 'empty', $taskGroups);
         }
 
         $events = $this->loadEvents($user, $date);
@@ -51,6 +56,7 @@ class TodayBriefingService
                 waiting_on_you: $this->buildWaitingOnYou($user),
                 stale: $this->buildStaleForUser($user),
                 nudge: $this->nudgeService->getCached($user->id, $date),
+                task_groups: $taskGroups,
             );
         }
 
@@ -102,6 +108,36 @@ class TodayBriefingService
             waiting_on_you: $waitingDTOs,
             stale: $staleDTOs,
             nudge: $nudge,
+            task_groups: $taskGroups,
+        );
+    }
+
+    private function buildTaskGroups(User $user): TodayTaskGroupsDTO
+    {
+        $today = Carbon::today();
+        $groups = $this->taskGrouper->groupForUser($user);
+
+        $toDTO = function (Issue $issue) use ($today): TodayDeadlineTaskDTO {
+            $due = $issue->due_date ? Carbon::parse($issue->due_date) : null;
+            $daysOverdue = $due && $due->lt($today)
+                ? (int) $due->diffInDays($today)
+                : null;
+
+            return new TodayDeadlineTaskDTO(
+                id: $issue->id,
+                name: $issue->name,
+                status: $issue->status,
+                priority: (int) ($issue->priority ?? 0),
+                due_date: $due?->format('Y-m-d'),
+                days_overdue: $daysOverdue,
+                assignee_name: $issue->assignee?->name ?? $issue->assignee_name,
+            );
+        };
+
+        return new TodayTaskGroupsDTO(
+            overdue: $groups['overdue']->map($toDTO)->all(),
+            today:   $groups['today']->map($toDTO)->all(),
+            current: $groups['current']->map($toDTO)->all(),
         );
     }
 
@@ -359,7 +395,7 @@ class TodayBriefingService
             ->all();
     }
 
-    private function emptyBriefing(Carbon $date, string $state): TodayBriefingDTO
+    private function emptyBriefing(Carbon $date, string $state, ?TodayTaskGroupsDTO $taskGroups = null): TodayBriefingDTO
     {
         return new TodayBriefingDTO(
             state: $state,
@@ -369,6 +405,7 @@ class TodayBriefingService
             waiting_on_you: [],
             stale: [],
             nudge: null,
+            task_groups: $taskGroups ?? TodayTaskGroupsDTO::empty(),
         );
     }
 }
