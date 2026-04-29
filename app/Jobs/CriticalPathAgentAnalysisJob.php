@@ -110,31 +110,31 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
     private function buildPrompt(Issue $issue, CriticalPathNode $node): string
     {
         $description = $issue->description
-            ? "\n\nОписание: {$issue->description}"
+            ? "\n\nDescription: {$issue->description}"
             : '';
 
-        $dueDate = $issue->due_date ? $issue->due_date->format('d.m.Y') : 'не задан';
-        $assignee = $issue->assignee?->name ?? 'не назначен';
+        $dueDate = $issue->due_date ? $issue->due_date->format('Y-m-d') : 'not set';
+        $assignee = $issue->assignee?->name ?? 'unassigned';
         $duration = round($node->duration_days, 1);
         $earlyStart = round($node->early_start ?? 0, 1);
 
         return <<<PROMPT
-Ты — менеджер проекта. Перед тобой задача, которая находится на критическом пути проекта.
+You are a project manager. You are looking at an issue that is currently on the project's critical path.
 
-Задача: {$issue->name} (ID: #{$issue->id}){$description}
+Issue: {$issue->name} (ID: #{$issue->id}){$description}
 
-Параметры критического пути:
-- Ожидаемая длительность: {$duration} рабочих дней
-- Начало выполнения: через {$earlyStart} дней от сегодня
-- Дедлайн: {$dueDate}
-- Исполнитель: {$assignee}
+Critical path parameters:
+- Estimated duration: {$duration} work days
+- Earliest start: {$earlyStart} days from today
+- Due date: {$dueDate}
+- Assignee: {$assignee}
 
-Твои действия:
-1. Если задача крупная (длительность > 3 дней) — декомпозируй её: создай подзадачи через create_entity (тип "issue") со ссылкой на родительскую задачу в описании
-2. Наполни задачу: добавь acceptance criteria, уточни контекст и ожидаемый результат через update_entity
-3. Оставь комментарий к задаче с вариантами решения и рекомендацией через create_entity (тип "issue_comment")
+Your actions:
+1. If the issue is large (duration > 3 days), decompose it: create sub-issues via create_entity (entity type "issue") and reference the parent issue in the description.
+2. Improve the issue via update_entity: add acceptance criteria, clarify context, and define the expected result.
+3. Leave a comment on the issue with implementation options and a recommendation via create_entity (entity type "issue_comment").
 
-Помни: задача на критическом пути — любая задержка откладывает весь проект.
+Remember: this issue is on the critical path, so any delay delays the whole project.
 PROMPT;
     }
 }
