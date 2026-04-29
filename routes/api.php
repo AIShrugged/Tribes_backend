@@ -18,6 +18,7 @@ use App\Http\Controllers\API\v1\ChatMessageController;
 use App\Http\Controllers\API\v1\EmailVerificationController;
 use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\FollowupExportController;
+use App\Http\Controllers\API\v1\FocusedIssuesController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
 use App\Http\Controllers\API\v1\MethodologyController;
 use App\Http\Controllers\API\v1\CalendarEventDetailController;
@@ -181,6 +182,7 @@ Route::group(['prefix' => 'v1'], function () {
             ->name('tasks.show');
 
         Route::get('me/focus', [UserFocusController::class, 'show'])->name('me.focus.show');
+        Route::get('me/issues/focused', [FocusedIssuesController::class, 'index'])->name('me.issues.focused');
         Route::put('me/focus', [UserFocusController::class, 'update'])->name('me.focus.update');
         Route::delete('me/focus', [UserFocusController::class, 'destroy'])->name('me.focus.destroy');
 

@@ -21,6 +21,7 @@ use App\Services\Agent\Tools\DeleteWorkspaceTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\FetchDocumentTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
+use App\Services\Agent\Tools\GetFocusedIssuesTool;
 use App\Services\Agent\Tools\GetUserFocusTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
 use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
@@ -122,6 +123,7 @@ class AgentToolRegistrar
             $toolRegistry->register(new SetUserFocusTool($profile, $userFocusService, $memoryService, $ch));
             $toolRegistry->register(new GetUserFocusTool($profile, $userFocusService));
             $toolRegistry->register(new ClearUserFocusTool($profile, $userFocusService, $memoryService, $ch));
+            $toolRegistry->register(new GetFocusedIssuesTool($profile, $userFocusService, $user->id));
         }
 
         $toolRegistry->register(new BuildDailyPlanTool($user, $organizationId, $teamId));
