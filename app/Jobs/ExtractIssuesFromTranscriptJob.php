@@ -27,5 +27,7 @@ class ExtractIssuesFromTranscriptJob implements ShouldQueue
         if ($issues->isNotEmpty()) {
             IssuesExtracted::dispatch($issues, $this->team, $this->user);
         }
+
+        VerifyMeetingArtifactsJob::dispatch($this->calendarEvent, $this->team, $this->user);
     }
 }
