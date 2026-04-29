@@ -76,26 +76,49 @@ class ExtractDecisionsService
     }
 
     /**
-     * Derive team/organization pairs from the calendar event's creator.
-     * Returns one entry per team the creator belongs to, so the decision
-     * is visible in every team's log. Falls back to [(null, orgId)] when
-     * the creator has no teams but belongs to an organization, or to
-     * [(null, null)] when neither can be resolved.
+     * Derive team/organization pairs from all participants of the calendar event.
+     * Collects every registered User reachable via Participant → Profile → User,
+     * merges in the event creator, then unions all their team memberships so the
+     * decision is visible in every relevant team's log.
+     *
+     * Falls back to [(null, orgId)] when no participant belongs to any team but
+     * an organization can be determined, or to [(null, null)] as a last resort.
      *
      * @return array<int, array{0: int|null, 1: int|null}>
      */
     private function resolveTeamContexts(CalendarEvent $event): array
     {
-        $creator = $event->creator;
-        if (! $creator) {
+        // Collect user IDs from participants who have a matched profile → user.
+        $participantUserIds = $event->participants()
+            ->with('profile.user')
+            ->get()
+            ->map(fn ($p) => optional($p->profile)->user_id)
+            ->filter()
+            ->values();
+
+        // Also include the event creator so the old behaviour is preserved.
+        $creatorId = $event->creator_user_id;
+        $userIds = $participantUserIds
+            ->when($creatorId, fn ($c) => $c->push($creatorId))
+            ->unique()
+            ->values();
+
+        if ($userIds->isEmpty()) {
             return [[null, null]];
         }
 
-        $teams = $creator->teams()->with('organization')->get();
+        $teams = \App\Models\Team::whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds))
+            ->get(['id', 'organization_id']);
 
         if ($teams->isEmpty()) {
-            $orgId = $creator->organizations()->value('organizations.id');
-            return [[null, $orgId]];
+            // Fall back to organisation of the first resolvable user.
+            $orgId = \App\Models\User::whereIn('id', $userIds)
+                ->with('organizations')
+                ->get()
+                ->flatMap(fn ($u) => $u->organizations->pluck('id'))
+                ->first();
+
+            return [[null, $orgId ?? null]];
         }
 
         return $teams->map(fn ($team) => [$team->id, $team->organization_id])->all();
