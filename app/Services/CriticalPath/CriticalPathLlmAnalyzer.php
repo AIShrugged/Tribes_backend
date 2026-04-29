@@ -10,34 +10,45 @@ use Illuminate\Support\Facades\Log;
 
 class CriticalPathLlmAnalyzer
 {
-    private const MAX_DESCRIPTION_LENGTH = 400;
+    private const MAX_DESCRIPTION_LENGTH = 800;
 
     private const SYSTEM_PROMPT = <<<'PROMPT'
-Ты — инструмент планирования проектов. Проанализируй список задач и верни ТОЛЬКО валидный JSON без пояснений.
+You are a project-planning engine. Analyze the issue list and return ONLY valid JSON, with no prose, no Markdown, and no explanations.
 
-Схема ответа:
+Response schema:
 {
   "durations": {
-    "<issue_id>": <число рабочих дней (float)>
+    "<issue_id>": <number of work days as a float>
   },
   "implicit_edges": [
-    { "from": <id блокирующей задачи>, "to": <id заблокированной задачи> }
+    { "from": <id of prerequisite issue>, "to": <id of dependent issue> }
   ]
 }
 
-Правила для duration (рабочие дни):
-- Баг или мелкая правка конфигурации: 0.5–1
-- Простая задача с понятным описанием: 1–2
-- Feature со средней сложностью: 2–5
-- Крупная feature или рефакторинг: 5–10
-- Задача с CRITICAL приоритетом без описания: 3
-- НЕ включай задачи со статусом done
+Duration rules, in work days:
+- Bug or small configuration fix: 0.5-1
+- Simple task with a clear description: 1-2
+- Medium-complexity feature: 2-5
+- Large feature or refactoring: 5-10
+- CRITICAL-priority issue with no description: 3
+- Do NOT include issues with status done
 
-Правила для implicit_edges:
-- Добавляй только связи, которых НЕТ в списке explicit_blockers
-- Выводи зависимость из текста описания ("требует X", "после Y", "зависит от Z")
-- Используй ТОЛЬКО id из входных данных, не изобретай новые
-- Если неявных зависимостей нет — верни пустой массив
+Rules for implicit_edges:
+- Your job is to build a DAG of work order, not only to search for literal words such as "depends", "after", or "requires"
+- Add only dependencies that are NOT already present in explicit_blockers
+- Edge {from: A, to: B} means: A must be completed before B can be started or finished properly
+- Infer dependencies from titles, descriptions, deliverables, references to other issues (#123), project phases, and practical PM judgment
+- Common dependency chains:
+  - requirements / discussion / cases / docs -> implementation
+  - design / draft / plan -> upload / notify / release
+  - collect prompts/docs/tasks -> analyze / create documentation / implement improvements
+  - architecture / specification / question aggregation -> implementation / decision lookup / memory work
+  - stakeholder meeting / UC review -> write requirements / implement UC
+- Do NOT add a dependency only because two issues share a topic; there must be real work order
+- Do NOT make PM-comment / recommendation / "solution options" issues prerequisites for their parent issues. Those are comments, not prerequisites
+- Use ONLY ids from the input data; never invent ids
+- Return an empty array only if no reliable work order can be inferred
+- The graph must be acyclic
 PROMPT;
 
     public function analyze(Collection $issues, array $explicitBlockerPairs): array
@@ -54,9 +65,29 @@ PROMPT;
         $model = config('ai.providers.openrouter.models.critical_path', 'google/gemini-3.1-pro-preview');
 
         try {
-            $raw = OpenRouterClient::chat($messages, $model, 2048, forceJsonResponse: true);
+            $raw = OpenRouterClient::chat(
+                $messages,
+                $model,
+                8192,
+                forceJsonResponse: true,
+                extraPayload: [
+                    'reasoning' => [
+                        'max_tokens' => 256,
+                        'exclude' => true,
+                    ],
+                ],
+            );
 
-            return $this->parseResponse($raw, $issues->pluck('id')->all());
+            $result = $this->parseResponse($raw, $issues->pluck('id')->all());
+
+            if ($issues->count() > 1 && empty($explicitBlockerPairs) && empty($result['implicit_edges'])) {
+                Log::warning('CriticalPathLlmAnalyzer: no dependencies inferred', [
+                    'issue_count' => $issues->count(),
+                    'issue_ids' => $issues->pluck('id')->values()->all(),
+                ]);
+            }
+
+            return $result;
         } catch (\Throwable $e) {
             Log::error('CriticalPathLlmAnalyzer: LLM call failed', [
                 'error' => $e->getMessage(),
