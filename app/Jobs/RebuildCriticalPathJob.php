@@ -47,8 +47,6 @@ class RebuildCriticalPathJob implements ShouldBeUnique, ShouldQueue
 
         $notificationService = app(\App\Services\CriticalPath\CriticalPathNotificationService::class);
         $notificationService->notifyTeam($graph->fresh(['nodes.issue', 'edges']));
-
-        dispatch(new CriticalPathAgentAnalysisJob($this->teamId, $this->organizationId));
     }
 
     public function failed(\Throwable $e): void
