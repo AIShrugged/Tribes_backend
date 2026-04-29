@@ -37,7 +37,8 @@ class SendMorningBriefCommand extends Command
             $meetings = $this->getTodayMeetings($user, $today);
             $groups   = $this->taskGrouper->groupForUser($user);
 
-            $hasIssues = $groups['overdue']->isNotEmpty()
+            $hasIssues = ($groups['focused'] ?? collect())->isNotEmpty()
+                || $groups['overdue']->isNotEmpty()
                 || $groups['today']->isNotEmpty()
                 || $groups['current']->isNotEmpty();
 
@@ -116,13 +117,23 @@ class SendMorningBriefCommand extends Command
             }
         }
 
-        $hasIssues = $groups['today']->isNotEmpty()
+        $focused = $groups['focused'] ?? collect();
+        $hasIssues = $focused->isNotEmpty()
+            || $groups['today']->isNotEmpty()
             || $groups['current']->isNotEmpty()
             || $groups['overdue']->isNotEmpty();
 
         if ($hasIssues) {
             $lines[] = '';
             $lines[] = '📋 <b>Задачи:</b>';
+
+            if ($focused->isNotEmpty()) {
+                $lines[] = '';
+                $lines[] = '⭐ <b>В фокусе:</b>';
+                foreach ($focused as $issue) {
+                    $lines[] = '• ' . $this->formatTaskLine($issue);
+                }
+            }
 
             if ($groups['today']->isNotEmpty()) {
                 $lines[] = '';

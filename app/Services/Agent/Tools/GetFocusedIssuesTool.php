@@ -4,6 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\Issue;
 use App\Models\Profile;
+use App\Models\User;
 use App\Services\UserFocusService;
 
 class GetFocusedIssuesTool implements ToolInterface
@@ -21,8 +22,11 @@ class GetFocusedIssuesTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Get the current user\'s focused tasks — issues that match their active focus text via full-text search, plus critical-priority issues (priority >= 500) as fallback. '
-             . 'Returns focused_tasks (keyword-matched), fallback_tasks (critical priority), has_focus flag, and matched_count. '
+        return 'Get the current user\'s focused tasks. Resolution order: '
+             . '(1) explicit issue_ids snapshot stored when focus was set, in user-given order; '
+             . '(2) full-text search over the focus_text for legacy/thematic focus; '
+             . '(3) critical-priority open issues as fallback. '
+             . 'Returns focused_tasks (the resolved list), has_focus flag, and matched_count. '
              . 'Call this when the user asks about focused tasks, their priorities, or what to work on next.';
     }
 
@@ -33,50 +37,30 @@ class GetFocusedIssuesTool implements ToolInterface
 
     public function execute(?array $parameters): mixed
     {
-        $focus = $this->userFocusService->getFocus($this->profile);
+        $focus    = $this->userFocusService->getFocus($this->profile);
         $hasFocus = $focus !== null && ! empty($focus->content['focus_text']);
         $focusText = $hasFocus ? ($focus->content['focus_text'] ?? '') : '';
 
-        $focusedTasks = [];
-
-        if ($hasFocus && $focusText !== '') {
-            $focusedIssues = Issue::query()
-                ->whereNotIn('status', ['done'])
-                ->whereRaw(
-                    "to_tsvector('russian', coalesce(name, '') || ' ' || coalesce(description, '')) @@ plainto_tsquery('russian', ?)",
-                    [$focusText]
-                )
-                ->where(function ($q) {
-                    $q->where('assignee_id', $this->userId)
-                      ->orWhere('user_id', $this->userId);
-                })
-                ->orderBy('priority', 'desc')
-                ->limit(10)
-                ->get();
-
-            $focusedTasks = $focusedIssues->map(fn (Issue $i) => $this->formatIssue($i))->toArray();
+        $user = User::find($this->userId);
+        if (! $user) {
+            return [
+                'success'        => true,
+                'has_focus'      => $hasFocus,
+                'focus_text'     => $focusText,
+                'matched_count'  => 0,
+                'focused_tasks'  => [],
+            ];
         }
 
-        $fallbackIssues = Issue::query()
-            ->whereNotIn('status', ['done'])
-            ->where('priority', '>=', Issue::PRIORITY_CRITICAL)
-            ->where(function ($q) {
-                $q->where('assignee_id', $this->userId)
-                  ->orWhere('user_id', $this->userId);
-            })
-            ->orderBy('priority', 'desc')
-            ->limit(5)
-            ->get();
-
-        $fallbackTasks = $fallbackIssues->map(fn (Issue $i) => $this->formatIssue($i))->toArray();
+        $issues = $this->userFocusService->getFocusedIssues($user);
+        $tasks  = $issues->map(fn (Issue $i) => $this->formatIssue($i))->all();
 
         return [
             'success'        => true,
             'has_focus'      => $hasFocus,
             'focus_text'     => $focusText,
-            'matched_count'  => count($focusedTasks),
-            'focused_tasks'  => $focusedTasks,
-            'fallback_tasks' => $fallbackTasks,
+            'matched_count'  => count($tasks),
+            'focused_tasks'  => $tasks,
         ];
     }
 
@@ -88,7 +72,7 @@ class GetFocusedIssuesTool implements ToolInterface
             'status'        => $issue->status,
             'priority'      => $issue->priority,
             'due_date'      => $issue->due_date?->toDateString(),
-            'assignee_name' => $issue->assignee_name,
+            'assignee_name' => $issue->assignee?->name ?? $issue->assignee_name,
         ];
     }
 }

@@ -37,11 +37,16 @@ class InsightShortTerm extends Model
             ->where('context_type', InsightContextType::USER_FOCUS);
     }
 
-    public static function setFocus(int $profileId, string $focusText, ?string $deadline, ?Carbon $expiresAt): self
+    public static function setFocus(int $profileId, string $focusText, ?string $deadline, ?Carbon $expiresAt, ?array $issueIds = null): self
     {
+        $content = ['focus_text' => $focusText, 'deadline' => $deadline];
+        if ($issueIds !== null) {
+            $content['issue_ids'] = array_values($issueIds);
+        }
+
         return static::updateOrCreate(
             ['profile_id' => $profileId, 'context_type' => InsightContextType::USER_FOCUS],
-            ['content' => ['focus_text' => $focusText, 'deadline' => $deadline], 'expires_at' => $expiresAt],
+            ['content' => $content, 'expires_at' => $expiresAt],
         );
     }
 }

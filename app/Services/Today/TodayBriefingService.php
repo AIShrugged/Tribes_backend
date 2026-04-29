@@ -135,9 +135,10 @@ class TodayBriefingService
         };
 
         return new TodayTaskGroupsDTO(
-            overdue: $groups['overdue']->map($toDTO)->all(),
+            focused: ($groups['focused'] ?? collect())->map($toDTO)->all(),
             today:   $groups['today']->map($toDTO)->all(),
             current: $groups['current']->map($toDTO)->all(),
+            overdue: $groups['overdue']->map($toDTO)->all(),
         );
     }
 
