@@ -9,7 +9,6 @@ use App\Models\CriticalPathGraph;
 use App\Models\CriticalPathNode;
 use App\Models\Issue;
 use App\Services\AgentTaskSchedulerService;
-use App\Services\CriticalPath\CriticalPathNotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -27,7 +26,6 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
 
     public function handle(
         AgentTaskSchedulerService $scheduler,
-        CriticalPathNotificationService $notificationService,
     ): void {
         $graph = CriticalPathGraph::where('team_id', $this->teamId)
             ->where('organization_id', $this->organizationId)
@@ -61,7 +59,7 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
                 continue;
             }
 
-            $this->dispatchAnalysisTask($issue, $node, $scheduler, $notificationService);
+            $this->dispatchAnalysisTask($issue, $node, $scheduler);
         }
     }
 
@@ -69,7 +67,6 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
         Issue $issue,
         CriticalPathNode $node,
         AgentTaskSchedulerService $scheduler,
-        CriticalPathNotificationService $notificationService,
     ): void {
         $userId = $issue->user_id ?? $issue->assignee_id;
 
@@ -102,9 +99,6 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
             ]);
 
             $scheduler->dispatchTaskNow($agentTask);
-
-            // Notify assignee and creator
-            $notificationService->notifyParticipants($issue, []);
         } catch (\Throwable $e) {
             Log::error('CriticalPathAgentAnalysisJob: failed to dispatch analysis task', [
                 'issue_id' => $issue->id,

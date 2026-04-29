@@ -100,3 +100,9 @@ Schedule::command('cpm:process-pending')
     ->hourly()
     ->name('cpm:process-pending')
     ->withoutOverlapping();
+
+// Critical Path: one batched personal reminder per participant in the morning
+Schedule::command('critical-path:send-daily-reminders')
+    ->dailyAt('09:05')
+    ->name('critical-path:send-daily-reminders')
+    ->withoutOverlapping();
