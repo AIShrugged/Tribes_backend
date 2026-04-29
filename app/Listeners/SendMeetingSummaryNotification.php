@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Events\MeetingSummaryGenerated;
+use App\Models\MeetingSummary;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use Illuminate\Support\Facades\Log;
@@ -48,16 +49,17 @@ class SendMeetingSummaryNotification
         }
     }
 
-    private function send(TelegramChatRegistration $registration, $summary): void
+    private function send(TelegramChatRegistration $registration, MeetingSummary $summary): void
     {
         try {
+            $summary->refresh();
             $summary->calendarEvent->loadMissing(['participants']);
             $text = $this->formatMessage($summary);
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
-                'chat_id'    => $registration->telegram_chat_id,
-                'text'       => $text,
+                'chat_id' => $registration->telegram_chat_id,
+                'text' => $text,
                 'parse_mode' => 'HTML',
             ];
 
@@ -75,28 +77,28 @@ class SendMeetingSummaryNotification
         }
     }
 
-    private function formatMessage($summary): string
+    private function formatMessage(MeetingSummary $summary): string
     {
         $lines = [];
         $lines[] = '📋 <b>Meeting Summary</b>';
         $lines[] = '';
-        $lines[] = '<b>' . e($summary->title) . '</b>';
+        $lines[] = '<b>'.e($summary->title).'</b>';
         $lines[] = '';
 
         $attendees = $summary->calendarEvent->participants->pluck('name')->filter()->values();
         if ($attendees->isNotEmpty()) {
-            $lines[] = '👥 <b>Участники:</b> ' . e($attendees->implode(', '));
+            $lines[] = '👥 <b>Участники:</b> '.e($attendees->implode(', '));
             $lines[] = '';
         }
 
-        $hasKeyPoints = !empty($summary->key_points);
-        $hasDecisions = !empty($summary->decisions);
+        $hasKeyPoints = ! empty($summary->key_points);
+        $hasDecisions = ! empty($summary->decisions);
 
         if ($hasKeyPoints || $hasDecisions) {
             if ($hasKeyPoints) {
                 $lines[] = '<b>Ключевые тезисы:</b>';
                 foreach ($summary->key_points as $point) {
-                    $lines[] = '• ' . e($point);
+                    $lines[] = '• '.e($point);
                 }
                 $lines[] = '';
             }
@@ -104,12 +106,40 @@ class SendMeetingSummaryNotification
             if ($hasDecisions) {
                 $lines[] = '<b>Решения:</b>';
                 foreach ($summary->decisions as $decision) {
-                    $lines[] = '• ' . e($decision);
+                    $lines[] = '• '.e($decision);
                 }
                 $lines[] = '';
             }
         } elseif ($summary->summary) {
             $lines[] = $this->markdownToTelegramHtml($summary->summary);
+            $lines[] = '';
+        }
+
+        $repeated = $summary->repeated_discussions ?? [];
+        if (! empty($repeated)) {
+            $lines[] = '🔁 <b>Повторяющиеся обсуждения:</b>';
+            foreach ($repeated as $item) {
+                $newDecision = e($item['new_decision'] ?? '');
+                $prevDecision = e($item['previous_decision'] ?? '');
+                $prevDate = $item['previous_date'] ?? '';
+                $prevTitle = $item['previous_meeting_title'] ?? '';
+
+                $when = $prevDate ? ' ('.\Carbon\Carbon::parse($prevDate)->format('d.m.Y').')' : '';
+
+                $eventId = $item['previous_calendar_event_id'] ?? null;
+                $meetingLink = $eventId
+                    ? config('app.frontend_url').'/dashboard/meetings/'.$eventId
+                    : null;
+
+                $titlePart = $meetingLink
+                    ? '<a href="'.e($meetingLink).'">'.e($prevTitle ?: 'встреча').'</a>'
+                    : ($prevTitle ? '«'.e($prevTitle).'»' : '');
+
+                $where = $titlePart ? ' на '.$titlePart : '';
+
+                $lines[] = "⚠️ «{$newDecision}»";
+                $lines[] = "   Уже решалось{$when}{$where}: «{$prevDecision}»";
+            }
             $lines[] = '';
         }
 
@@ -126,6 +156,7 @@ class SendMeetingSummaryNotification
             // Table separator |---|---| — skip, but mark next row is data (not header)
             if (preg_match('/^\|[-| :]+\|$/', trim($line))) {
                 $skipNextRow = false;
+
                 continue;
             }
 
@@ -134,6 +165,7 @@ class SendMeetingSummaryNotification
                 if ($skipNextRow) {
                     // Header row — skip, treat next as data
                     $skipNextRow = false;
+
                     continue;
                 }
                 $cells = array_values(array_filter(
@@ -141,26 +173,30 @@ class SendMeetingSummaryNotification
                     fn ($c) => $c !== '',
                 ));
                 $escaped = array_map(fn ($c) => e(strip_tags($c)), $cells);
-                $result[] = '• ' . implode(' — ', $escaped);
+                $result[] = '• '.implode(' — ', $escaped);
+
                 continue;
             }
 
             // Headings ## → <b>text</b>
             if (preg_match('/^#{1,6}\s+(.+)$/', $line, $m)) {
-                $result[] = '<b>' . e(trim($m[1])) . '</b>';
+                $result[] = '<b>'.e(trim($m[1])).'</b>';
+
                 continue;
             }
 
             // List items - text → • text
             if (preg_match('/^[-*]\s+(.+)$/', $line, $m)) {
                 $text = $this->inlineMarkdown($m[1]);
-                $result[] = '• ' . $text;
+                $result[] = '• '.$text;
+
                 continue;
             }
 
             // Empty line
             if (trim($line) === '') {
                 $result[] = '';
+
                 continue;
             }
 
