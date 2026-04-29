@@ -7,6 +7,7 @@ use App\Models\Issue;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -95,6 +96,38 @@ class CriticalPathNotificationService
         }
     }
 
+    public function notifyParticipantBatch(User $user, Collection $items, ?int $overrideTelegramUserId = null): bool
+    {
+        $telegramUserId = $overrideTelegramUserId ?? $user->telegramUser?->telegram_user_id;
+
+        if (! $telegramUserId || $items->isEmpty()) {
+            return false;
+        }
+
+        $text = $this->formatParticipantBatchMessage($user, $items);
+
+        try {
+            $telegram = new Api(config('telegram.bot_token'));
+            $telegram->sendMessage([
+                'chat_id' => $telegramUserId,
+                'text' => $text,
+                'parse_mode' => 'HTML',
+                'disable_web_page_preview' => true,
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('CriticalPathNotificationService: failed to notify participant batch', [
+                'user_id' => $user->id,
+                'telegram_user_id' => $telegramUserId,
+                'issue_ids' => $items->pluck('issue.id')->filter()->values()->all(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
     private function formatTeamMessage(
         CriticalPathGraph $graph,
         $criticalNodes,
@@ -166,6 +199,52 @@ class CriticalPathNotificationService
         }
 
         return implode("\n", $lines);
+    }
+
+    private function formatParticipantBatchMessage(User $user, Collection $items): string
+    {
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+
+        $lines = [];
+        $lines[] = '📋 <b>Задачи на критическом пути на сегодня</b>';
+        $lines[] = '';
+        $lines[] = 'Эти задачи влияют на сроки всей команды. Любая задержка здесь двигает общий план.';
+
+        foreach ($items->values() as $i => $item) {
+            /** @var Issue $issue */
+            $issue = $item['issue'];
+            $node = $item['node'];
+            $team = $item['team'] ?? null;
+            $num = $i + 1;
+            $url = "{$frontendUrl}/dashboard/issues/{$issue->id}";
+            $role = $this->participantRoleLabel($user, $issue);
+            $teamName = $team?->name ? ' · '.e($team->name) : '';
+            $due = $issue->due_date ? ' · 📅 '.$issue->due_date->format('d.m.Y') : '';
+            $duration = round($node->duration_days, 1);
+            $earlyStart = round($node->early_start ?? 0, 1);
+
+            $lines[] = '';
+            $lines[] = "{$num}. <a href=\"{$url}\">".e($issue->name).'</a>';
+            $lines[] = "   {$role}{$teamName}{$due}";
+            $lines[] = "   ⏱ {$duration}д · старт через {$earlyStart}д";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function participantRoleLabel(User $user, Issue $issue): string
+    {
+        $roles = [];
+
+        if ($issue->assignee_id === $user->id) {
+            $roles[] = 'исполнитель';
+        }
+
+        if ($issue->user_id === $user->id) {
+            $roles[] = 'постановщик';
+        }
+
+        return $roles ? implode(' + ', $roles) : 'участник';
     }
 
     private function sendToChat(TelegramChatRegistration $registration, string $text): void
