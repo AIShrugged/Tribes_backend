@@ -13,7 +13,7 @@ class ChatMessageRequest extends ApiResourceRequest
     {
         return [
             'content'    => ['required', 'string', 'max:10000'],
-            'page_html'  => ['nullable', 'string', 'max:200000'],
+            'page_text'  => ['nullable', 'string', 'max:30000'],
             'page_title' => ['nullable', 'string', 'max:500'],
             'page_url'   => ['nullable', 'string', 'max:2000'],
         ];
@@ -39,7 +39,7 @@ class ChatMessageRequest extends ApiResourceRequest
     public function getPageContext(): array
     {
         return [
-            'html'  => $this->input('page_html'),
+            'text'  => $this->input('page_text'),
             'title' => $this->input('page_title'),
             'url'   => $this->input('page_url'),
         ];
@@ -52,9 +52,9 @@ class ChatMessageRequest extends ApiResourceRequest
                 'description' => 'The message text to send to the bot. Max 10,000 characters.',
                 'example'     => 'Summarise the key points from last week\'s meetings.',
             ],
-            'page_html'  => [
-                'description' => 'Optional raw HTML of the current page to add to the model context.',
-                'example'     => '<html><body><h1>Dashboard</h1></body></html>',
+            'page_text'  => [
+                'description' => 'Optional visible text of the current page (extracted client-side, e.g. document.body.innerText). Max 30,000 characters.',
+                'example'     => 'Dashboard\nOpen issues: 12\nIn progress: 4',
             ],
             'page_title' => [
                 'description' => 'Optional page title.',

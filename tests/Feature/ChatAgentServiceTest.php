@@ -354,7 +354,6 @@ class ChatAgentServiceTest extends TestCase
                 'page_context' => [
                     'title' => 'Dashboard',
                     'url' => 'https://app.example.com/dashboard',
-                    'html' => '<html><body><h1>Dashboard</h1><p>Open issues</p></body></html>',
                     'text' => 'Dashboard Open issues',
                 ],
             ]

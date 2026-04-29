@@ -169,7 +169,6 @@ class ChatMessageController extends Controller
      *       "page_context": {
      *         "title": "Dashboard",
      *         "url": "https://app.example.com/dashboard",
-     *         "html": "<html>...</html>",
      *         "text": "Dashboard Open issues"
      *       }
      *     },
@@ -190,7 +189,7 @@ class ChatMessageController extends Controller
     #[Endpoint(title: 'Send chat message', description: 'Send a user message to Tribes and return the queued assistant message placeholder.')]
     #[PathParameter('chat', 'Chat ID.', required: true, type: 'integer', example: 1)]
     #[BodyParameter('content', 'Message text to send to the bot.', required: true, type: 'string', example: 'Summarise the key points from last week\'s meetings.')]
-    #[BodyParameter('page_html', 'Optional raw HTML of the current page to add to the model context.', required: false, type: 'string', example: '<html><body><h1>Dashboard</h1></body></html>')]
+    #[BodyParameter('page_text', 'Optional visible text of the current page (e.g. document.body.innerText). Max 30,000 characters.', required: false, type: 'string', example: 'Dashboard\nOpen issues: 12')]
     #[BodyParameter('page_title', 'Optional page title.', required: false, type: 'string', example: 'Dashboard')]
     #[BodyParameter('page_url', 'Optional page URL.', required: false, type: 'string', example: 'https://app.example.com/dashboard')]
     #[Response(

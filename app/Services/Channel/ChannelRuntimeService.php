@@ -30,7 +30,7 @@ class ChannelRuntimeService
     {
         $userMessageAttributes = [];
         $metadata = $this->pageContextFormatter->buildMetadata(
-            is_string($pageContext['html'] ?? null) ? $pageContext['html'] : null,
+            is_string($pageContext['text'] ?? null) ? $pageContext['text'] : null,
             is_string($pageContext['title'] ?? null) ? $pageContext['title'] : null,
             is_string($pageContext['url'] ?? null) ? $pageContext['url'] : null,
         );
