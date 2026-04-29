@@ -3,8 +3,6 @@
 namespace App\Services\Meeting;
 
 use App\Domain\DTO\AI\MessageDTO;
-use App\Models\CalendarEvent;
-use App\Models\MeetingDecision;
 use App\Models\MeetingSummary;
 use App\Models\Setting;
 use App\Models\Team;
@@ -24,7 +22,35 @@ class DetectRepeatedDiscussionsService
     ) {}
 
     /**
-     * Persist decisions from summary and detect repeats against team history.
+     * @return array{new_decisions: int, historical_decisions: int, estimated_chars: int}
+     */
+    public function preview(MeetingSummary $summary, Team $team): array
+    {
+        $decisions = array_values(array_filter((array) ($summary->decisions ?? [])));
+        $event = $summary->calendarEvent;
+
+        if (empty($decisions) || ! $event) {
+            return ['new_decisions' => 0, 'historical_decisions' => 0, 'estimated_chars' => 0];
+        }
+
+        $cutoff = Carbon::parse($event->starts_at)->subMonths(self::HISTORY_MONTHS);
+        $historical = $this->loadHistoricalSummaries($team, $event->id, $cutoff);
+        $flat = $this->flattenDecisions($historical);
+
+        $payload = json_encode([
+            'new_decisions' => $decisions,
+            'historical_decisions' => $flat,
+        ], JSON_UNESCAPED_UNICODE);
+
+        return [
+            'new_decisions' => count($decisions),
+            'historical_decisions' => count($flat),
+            'estimated_chars' => strlen($payload),
+        ];
+    }
+
+    /**
+     * Detect new decisions that were already decided in previous team meetings.
      *
      * @return array<int, array{new_decision: string, previous_decision: string, previous_date: string, previous_meeting_title: string, previous_participants: array}>
      */
@@ -42,55 +68,78 @@ class DetectRepeatedDiscussionsService
             return [];
         }
 
-        $participants = $event->participants->pluck('name')->filter()->values()->all();
-        $meetingDate = Carbon::parse($event->starts_at)->toDateString();
+        $cutoff = Carbon::parse($event->starts_at)->subMonths(self::HISTORY_MONTHS);
 
-        $this->persistDecisions($decisions, $event, $team, $participants, $meetingDate);
+        $historical = $this->loadHistoricalSummaries($team, $event->id, $cutoff);
+        $flatDecisions = $this->flattenDecisions($historical);
 
-        $historical = $this->loadHistoricalDecisions($team, $event->id, $meetingDate);
-
-        if ($historical->isEmpty()) {
+        if (empty($flatDecisions)) {
             return [];
         }
 
-        return $this->callLlm($decisions, $historical, $event->title ?? '') ?? [];
+        return $this->callLlm($decisions, $flatDecisions, $event->title ?? '') ?? [];
     }
 
-    private function persistDecisions(
-        array $decisions,
-        CalendarEvent $event,
-        Team $team,
-        array $participants,
-        string $meetingDate,
-    ): void {
-        foreach ($decisions as $text) {
-            MeetingDecision::firstOrCreate(
-                [
-                    'calendar_event_id' => $event->id,
-                    'team_id' => $team->id,
-                    'text' => $text,
-                ],
-                [
-                    'participants' => $participants,
-                    'meeting_date' => $meetingDate,
-                ]
-            );
-        }
-    }
-
-    private function loadHistoricalDecisions(Team $team, int $excludeEventId, string $meetingDate): Collection
+    private function loadHistoricalSummaries(Team $team, int $excludeEventId, Carbon $cutoff): Collection
     {
-        return MeetingDecision::query()
-            ->where('team_id', $team->id)
-            ->where('calendar_event_id', '!=', $excludeEventId)
-            ->where('meeting_date', '>=', Carbon::parse($meetingDate)->subMonths(self::HISTORY_MONTHS)->toDateString())
-            ->orderByDesc('meeting_date')
-            ->limit(self::MAX_HISTORICAL)
-            ->with('calendarEvent:id,title')
+        return MeetingSummary::query()
+            ->where('status', 'done')
+            ->whereHas('calendarEvent', function ($q) use ($excludeEventId, $cutoff) {
+                $q->where('id', '!=', $excludeEventId)
+                    ->where('starts_at', '>=', $cutoff);
+            })
+            ->whereHas('calendarEvent.sources', function ($q) use ($team) {
+                $q->whereHas('user.teams', fn ($q2) => $q2->where('teams.id', $team->id));
+            })
+            ->whereNotNull('decisions')
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->with([
+                'calendarEvent:id,title,starts_at',
+                'calendarEvent.participants:calendar_event_id,name',
+            ])
             ->get();
     }
 
-    private function callLlm(array $newDecisions, Collection $historical, string $meetingTitle): ?array
+    /**
+     * @return array<int, array{id: int, text: string, date: string|null, meeting_title: string, participants: array}>
+     */
+    private function flattenDecisions(Collection $summaries): array
+    {
+        $result = [];
+        $index = 0;
+
+        foreach ($summaries as $summary) {
+            $event = $summary->calendarEvent;
+            $date = $event ? Carbon::parse($event->starts_at)->toDateString() : null;
+            $title = $event?->title ?? '';
+            $participants = $event?->participants->pluck('name')->filter()->values()->all() ?? [];
+
+            foreach ((array) ($summary->decisions ?? []) as $text) {
+                if (! trim((string) $text)) {
+                    continue;
+                }
+
+                $result[] = [
+                    'id' => $index,
+                    'text' => $text,
+                    'date' => $date,
+                    'meeting_title' => $title,
+                    'participants' => $participants,
+                ];
+
+                $index++;
+
+                if ($index >= self::MAX_HISTORICAL) {
+                    return $result;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    private function callLlm(array $newDecisions, array $historicalDecisions, string $meetingTitle): ?array
     {
         $newList = array_map(
             fn (int $i, string $text) => ['new_index' => $i, 'text' => $text],
@@ -98,18 +147,10 @@ class DetectRepeatedDiscussionsService
             $newDecisions,
         );
 
-        $historicalList = $historical->map(fn (MeetingDecision $d) => [
-            'id' => $d->id,
-            'text' => $d->text,
-            'date' => $d->meeting_date->toDateString(),
-            'meeting_title' => $d->calendarEvent?->title ?? '',
-            'participants' => $d->participants ?? [],
-        ])->values()->all();
-
         $userMessage = json_encode([
             'current_meeting_title' => $meetingTitle,
             'new_decisions' => $newList,
-            'historical_decisions' => $historicalList,
+            'historical_decisions' => $historicalDecisions,
         ], JSON_UNESCAPED_UNICODE);
 
         try {
@@ -134,7 +175,7 @@ class DetectRepeatedDiscussionsService
                 return [];
             }
 
-            return $this->buildResult($matches, $newDecisions, $historical);
+            return $this->buildResult($matches, $newDecisions, $historicalDecisions);
         } catch (\Throwable $e) {
             Log::error('DetectRepeatedDiscussionsService: LLM call failed', [
                 'error' => $e->getMessage(),
@@ -147,9 +188,9 @@ class DetectRepeatedDiscussionsService
     /**
      * @param  array<int, array{new_index: int, historical_id: int}>  $matches
      */
-    private function buildResult(array $matches, array $newDecisions, Collection $historical): array
+    private function buildResult(array $matches, array $newDecisions, array $historicalDecisions): array
     {
-        $historicalById = $historical->keyBy('id');
+        $historicalById = collect($historicalDecisions)->keyBy('id');
         $result = [];
 
         foreach ($matches as $match) {
@@ -169,10 +210,10 @@ class DetectRepeatedDiscussionsService
 
             $result[] = [
                 'new_decision' => $newText,
-                'previous_decision' => $prev->text,
-                'previous_date' => $prev->meeting_date->toDateString(),
-                'previous_meeting_title' => $prev->calendarEvent?->title ?? '',
-                'previous_participants' => $prev->participants ?? [],
+                'previous_decision' => $prev['text'],
+                'previous_date' => $prev['date'],
+                'previous_meeting_title' => $prev['meeting_title'],
+                'previous_participants' => $prev['participants'],
             ];
         }
 
@@ -182,30 +223,30 @@ class DetectRepeatedDiscussionsService
     private function buildSystemPrompt(): string
     {
         return <<<'PROMPT'
-Ты — аналитик встреч. Твоя задача: найти решения из текущей встречи, которые уже принимались на прошлых встречах той же команды.
+You are a meeting analyst. Your task: identify decisions from the current meeting that have already been made in previous meetings of the same team.
 
-Тебе передаются:
-- "new_decisions" — решения, принятые на текущей встрече
-- "historical_decisions" — решения прошлых встреч с датами
+You receive:
+- "new_decisions" — decisions made in the current meeting
+- "historical_decisions" — decisions from past meetings with dates
 
-Для каждого нового решения определи: есть ли в историческом списке похожее по смыслу решение?
+For each new decision, determine: is there a semantically similar decision in the historical list?
 
-## Правила сравнения
+## Comparison rules
 
-Сравнивай по СМЫСЛУ, а не по словам. Примеры одного и того же решения:
-- «Перейти на PostgreSQL» = «Решили использовать PostgreSQL для нового сервиса»
-- «Нанять DevOps» = «Принять специалиста по инфраструктуре»
+Compare by MEANING, not by wording. Examples of the same decision:
+- "Switch to PostgreSQL" = "Decided to use PostgreSQL for the new service"
+- "Hire a DevOps engineer" = "Bring on an infrastructure specialist"
 
-НЕ считай повтором:
-- Уточнение или развитие ранее принятого решения («Добавить кэш к PostgreSQL» — не повтор «Перейти на PostgreSQL»)
-- Решение по другому проекту/контексту
-- Общие фразы без конкретного смысла
+Do NOT treat as a repeat:
+- A refinement or extension of a prior decision ("Add caching to PostgreSQL" is not a repeat of "Switch to PostgreSQL")
+- A decision about a different project or context
+- Generic statements without specific meaning
 
-Возвращай ТОЛЬКО реальные смысловые повторы с высокой уверенностью.
+Return ONLY genuine semantic repeats with high confidence.
 
-## Формат ответа
+## Response format
 
-Верни JSON строго в этом формате:
+Return JSON strictly in this format:
 {
   "matches": [
     {
@@ -215,13 +256,13 @@ class DetectRepeatedDiscussionsService
   ]
 }
 
-Если повторов нет — верни: { "matches": [] }
+If there are no repeats, return: { "matches": [] }
 
-Поля:
-- new_index: индекс из "new_decisions"
-- historical_id: id из "historical_decisions"
+Fields:
+- new_index: index from "new_decisions"
+- historical_id: id from "historical_decisions"
 
-Каждое новое решение может совпасть максимум с одним историческим (самым близким по смыслу).
+Each new decision may match at most one historical decision (the closest in meaning).
 PROMPT;
     }
 }
