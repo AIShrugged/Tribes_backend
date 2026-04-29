@@ -25,6 +25,7 @@ class SetUserFocusTool implements ToolInterface
         return 'Save or update what the user is currently focused on — their top priority, sprint theme, or stated goal. '
              . 'Call when the user explicitly states their focus ("I\'m focused on X", "my priority is Y", "focusing on Z until date"). '
              . 'Do NOT infer focus from task patterns — only call when the user has communicated clearly. '
+             . 'When the user names specific tasks, ALWAYS pass their numeric IDs in `issue_ids` (look them up via get_tasks/query_db if needed). '
              . 'The saved focus is injected automatically into future sessions; only call when focus changes.';
     }
 
@@ -35,7 +36,12 @@ class SetUserFocusTool implements ToolInterface
             'properties' => [
                 'focus_text' => [
                     'type'        => 'string',
-                    'description' => 'What the user is focused on (free text, max 500 chars)',
+                    'description' => 'Short human-readable description of the focus (free text, max 500 chars). E.g. "Интеграция календарей" or "v2.0 релиз".',
+                ],
+                'issue_ids' => [
+                    'type'        => 'array',
+                    'items'       => ['type' => 'integer'],
+                    'description' => 'Numeric IDs of specific tasks the user wants to focus on, in priority order (most important first). Pass when the user names concrete tasks. Omit or pass empty for thematic focus without specific tasks.',
                 ],
                 'deadline' => [
                     'type'        => 'string',
@@ -69,19 +75,29 @@ class SetUserFocusTool implements ToolInterface
             return ['success' => false, 'error' => 'deadline must be in Y-m-d format, e.g. "2026-04-25"'];
         }
 
+        $issueIds = $parameters['issue_ids'] ?? null;
+        if ($issueIds !== null && ! is_array($issueIds)) {
+            return ['success' => false, 'error' => 'issue_ids must be an array of integers'];
+        }
+
         try {
-            $record = $this->userFocusService->setFocus($this->profile, $focusText, $deadline);
+            $record = $this->userFocusService->setFocus($this->profile, $focusText, $deadline, $issueIds);
             $this->memoryService->invalidateMemoryCache($this->profile, $this->channel);
+
+            $storedIds = $record->content['issue_ids'] ?? [];
 
             return [
                 'success'         => true,
                 'action'          => $record->wasRecentlyCreated ? 'created' : 'updated',
                 'focus'           => [
-                    'text'       => $focusText,
-                    'deadline'   => $deadline,
-                    'expires_at' => $record->expires_at?->toIso8601String(),
+                    'text'         => $focusText,
+                    'issue_ids'    => $storedIds,
+                    'deadline'     => $deadline,
+                    'expires_at'   => $record->expires_at?->toIso8601String(),
                 ],
-                'confirm_message' => 'Focus saved: "'.$focusText.'"'.($deadline ? " (until {$deadline})" : ''),
+                'confirm_message' => 'Focus saved: "'.$focusText.'"'
+                    . (count($storedIds) > 0 ? ' [' . count($storedIds) . ' tasks]' : '')
+                    . ($deadline ? " (until {$deadline})" : ''),
             ];
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];

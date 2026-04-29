@@ -4,20 +4,30 @@ namespace App\Services\Today;
 
 use App\Models\Issue;
 use App\Models\User;
+use App\Services\UserFocusService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
 class TaskDeadlineGrouper
 {
+    public function __construct(private readonly UserFocusService $userFocusService) {}
+
     public function groupForUser(User $user): array
     {
+        $focused = $this->userFocusService->getFocusedIssues($user);
+        $focusedIds = $focused->pluck('id')->all();
+
         $issues = Issue::query()
             ->where('assignee_id', $user->id)
             ->whereNotIn('status', ['done', 'closed', 'cancelled'])
+            ->when(! empty($focusedIds), fn($q) => $q->whereNotIn('id', $focusedIds))
             ->with('assignee')
             ->get();
 
-        return $this->group($issues);
+        $groups = $this->group($issues);
+        $groups['focused'] = $focused; // user-given order preserved by service
+
+        return $groups;
     }
 
     public function group(Collection $issues): array

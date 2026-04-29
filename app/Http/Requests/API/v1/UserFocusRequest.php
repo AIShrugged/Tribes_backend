@@ -11,6 +11,8 @@ class UserFocusRequest extends ApiResourceRequest
         return [
             'focus_text' => ['required', 'string', 'min:1', 'max:500'],
             'deadline'   => ['nullable', 'date_format:Y-m-d'],
+            'issue_ids'  => ['nullable', 'array'],
+            'issue_ids.*' => ['integer', 'min:1'],
         ];
     }
 
@@ -25,5 +27,12 @@ class UserFocusRequest extends ApiResourceRequest
         $deadline = $this->input('deadline');
 
         return $deadline !== null ? (string) $deadline : null;
+    }
+
+    public function getIssueIds(): ?array
+    {
+        $ids = $this->input('issue_ids');
+
+        return is_array($ids) ? array_values(array_map('intval', $ids)) : null;
     }
 }

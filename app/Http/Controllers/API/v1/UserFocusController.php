@@ -72,7 +72,12 @@ class UserFocusController extends Controller
             return ApiResponse::error('Profile not found', status: 404);
         }
 
-        $focus = $this->userFocusService->setFocus($profile, $request->getFocusText(), $request->getDeadline());
+        $focus = $this->userFocusService->setFocus(
+            $profile,
+            $request->getFocusText(),
+            $request->getDeadline(),
+            $request->getIssueIds(),
+        );
 
         $this->invalidateAllChannels($profile);
 
