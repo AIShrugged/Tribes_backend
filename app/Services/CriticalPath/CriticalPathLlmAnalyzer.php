@@ -54,7 +54,18 @@ PROMPT;
         $model = config('ai.providers.openrouter.models.critical_path', 'google/gemini-3.1-pro-preview');
 
         try {
-            $raw = OpenRouterClient::chat($messages, $model, 2048, forceJsonResponse: true);
+            $raw = OpenRouterClient::chat(
+                $messages,
+                $model,
+                8192,
+                forceJsonResponse: true,
+                extraPayload: [
+                    'reasoning' => [
+                        'max_tokens' => 256,
+                        'exclude' => true,
+                    ],
+                ],
+            );
 
             return $this->parseResponse($raw, $issues->pluck('id')->all());
         } catch (\Throwable $e) {
