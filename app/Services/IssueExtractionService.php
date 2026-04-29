@@ -125,7 +125,8 @@ Return JSON strictly in the following format:
       "description": "## Context\nWhy this is needed — what was discussed at the meeting, what problem exists.\n\n## Steps\n1. Concrete step 1\n2. Concrete step 2\n\n## Definition of done\nHow to know the task is complete.",
       "type": "frontend | backend | organization",
       "assignee_name": "First Last | null",
-      "due_date": "YYYY-MM-DD | null"
+      "due_date": "YYYY-MM-DD | null",
+      "priority": "critical | high | normal | low | minimal"
     }
   ]
 }
@@ -147,6 +148,15 @@ Return JSON strictly in the following format:
 **assignee_name** — the name of the person who EXPLICITLY took the task or was EXPLICITLY assigned it in the conversation. If unclear — null.
 
 **due_date** — only if a deadline was EXPLICITLY mentioned in the meeting ("by Friday", "by April 1st", "next week"). Convert relative dates from the meeting date. If no deadline was mentioned — null.
+
+**priority** — choose based on what was said:
+- "critical" — explicit blockers, prod down, "drop everything else", "must be done today"
+- "high" — explicit urgency: "ASAP", "before the next meeting", customer-facing release
+- "normal" — default for any task without explicit urgency markers (use this if unsure)
+- "low" — explicit "when you have time", "nice to have", post-release polish
+- "minimal" — explicit "someday/maybe", parking lot, ideas to revisit
+
+If the meeting did not signal urgency — use "normal".
 
 ## Important
 - Do not duplicate: if the same task was discussed multiple times — it is one task

@@ -171,6 +171,10 @@ class IssueMergeService
             }
         }
 
+        if (!empty($decision['priority'])) {
+            $updates['priority'] = $this->mapPriority($decision['priority']);
+        }
+
         if (!empty($updates)) {
             $existing->update($updates);
         }
@@ -217,7 +221,19 @@ class IssueMergeService
             'status'          => MeetingTaskStatus::OPEN->value,
             'assignee_name'   => $item['assignee_name'] ?? null,
             'due_date'        => $this->parseDueDate($item['due_date'] ?? null),
+            'priority'        => $this->mapPriority($item['priority'] ?? null),
         ]);
+    }
+
+    private function mapPriority(?string $value): int
+    {
+        return match (strtolower(trim((string) $value))) {
+            'critical' => Issue::PRIORITY_CRITICAL,
+            'high'     => Issue::PRIORITY_HIGH,
+            'low'      => Issue::PRIORITY_LOW,
+            'minimal'  => Issue::PRIORITY_MINIMAL,
+            default    => Issue::PRIORITY_NORMAL,
+        };
     }
 
     private function parseDueDate(?string $value): ?Carbon
@@ -272,7 +288,8 @@ Return JSON strictly in this format:
       "existing_issue_id": 42,
       "update_description": "New context from this meeting: ...",
       "assignee_name": null,
-      "due_date": null
+      "due_date": null,
+      "priority": null
     },
     {
       "index": 2,
@@ -290,6 +307,8 @@ Return JSON strictly in this format:
 **assignee_name** — only if this meeting explicitly assigned or reassigned someone. Otherwise null.
 
 **due_date** — YYYY-MM-DD, only if this meeting explicitly mentioned a deadline. Otherwise null.
+
+**priority** — one of "critical | high | normal | low | minimal", only if this meeting changed the urgency (e.g. "this is now blocking prod", "deprioritize this"). Otherwise null.
 
 ## Important
 - Every item in "new_issues" must appear exactly once in "decisions", matched by "index".
