@@ -206,6 +206,7 @@ class TodayBriefingService
             key_points: $summary->key_points ?? [],
             decisions: $summary->decisions ?? [],
             attendees: $summary->calendarEvent->participants->map(fn ($p) => ['name' => $p->name])->values()->all(),
+            repeated_discussions: $summary->repeated_discussions ?? [],
         );
     }
 

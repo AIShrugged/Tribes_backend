@@ -106,10 +106,8 @@ class CalendarEvent extends Model
     public function isRequiredBot(): bool
     {
         return DB::table('calendar_event_source')
-            ->join('sources', 'sources.id', '=', 'calendar_event_source.source_id')
-            ->where('calendar_event_source.calendar_event_id', $this->id)
-            ->where('sources.user_id', $this->creator_user_id)
-            ->where('calendar_event_source.required_bot', true)
+            ->where('calendar_event_id', $this->id)
+            ->where('required_bot', true)
             ->exists();
     }
 

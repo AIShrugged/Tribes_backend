@@ -12,5 +12,6 @@ class TodayMeetingSummaryDTO extends BaseDTO
         public readonly array $key_points,
         public readonly array $decisions,
         public readonly array $attendees,
+        public readonly array $repeated_discussions = [],
     ) {}
 }
