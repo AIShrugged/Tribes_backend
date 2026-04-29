@@ -28,8 +28,8 @@ class PreMeetingBriefService
 
     public function sendBriefs(): int
     {
-        $from = Carbon::now()->addMinutes(25);
-        $to = Carbon::now()->addMinutes(35);
+        $from = Carbon::now()->addMinutes(10);
+        $to = Carbon::now()->addMinutes(20);
 
         $events = CalendarEvent::query()
             ->whereBetween('starts_at', [$from, $to])
