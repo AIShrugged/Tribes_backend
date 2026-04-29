@@ -97,7 +97,7 @@ Schedule::command('tasks:notify-idle-users')
 
 // Critical Path: flush pending-issue buffer and run incremental/full rebuild per org
 Schedule::command('cpm:process-pending')
-    ->hourly()
+    ->twiceDaily(3, 15)
     ->name('cpm:process-pending')
     ->withoutOverlapping();
 
