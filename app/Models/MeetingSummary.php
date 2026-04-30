@@ -29,4 +29,9 @@ class MeetingSummary extends Model
     {
         return $this->hasMany(Decision::class, 'summary_id');
     }
+
+    public function keyPoints(): HasMany
+    {
+        return $this->hasMany(MeetingKeyPoint::class, 'meeting_summary_id');
+    }
 }

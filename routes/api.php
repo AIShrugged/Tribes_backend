@@ -31,6 +31,7 @@ use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TeamController;
 use App\Http\Controllers\API\v1\TeamDashboardController;
 use App\Http\Controllers\API\v1\TeamDecisionController;
+use App\Http\Controllers\API\v1\TeamKeyPointController;
 use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
@@ -247,6 +248,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::middleware('throttle:60,1')->group(function () {
             Route::get('teams/{team}/decisions', [TeamDecisionController::class, 'index']);
             Route::post('teams/{team}/decisions', [TeamDecisionController::class, 'store']);
+            Route::get('teams/{team}/key-points', [TeamKeyPointController::class, 'index']);
         });
 
         Route::apiResource('organizations', OrganizationController::class);

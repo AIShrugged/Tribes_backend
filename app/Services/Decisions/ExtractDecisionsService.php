@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Log;
 
 class ExtractDecisionsService
 {
+    use ResolvesTeamContexts;
+
     public function __construct(
         private readonly TranscriptBuilderService $transcriptBuilder,
         private readonly DecisionAuthorResolver $authorResolver,
@@ -73,55 +75,6 @@ class ExtractDecisionsService
 
             return $created;
         });
-    }
-
-    /**
-     * Derive team/organization pairs from all participants of the calendar event.
-     * Collects every registered User reachable via Participant → Profile → User,
-     * merges in the event creator, then unions all their team memberships so the
-     * decision is visible in every relevant team's log.
-     *
-     * Falls back to [(null, orgId)] when no participant belongs to any team but
-     * an organization can be determined, or to [(null, null)] as a last resort.
-     *
-     * @return array<int, array{0: int|null, 1: int|null}>
-     */
-    private function resolveTeamContexts(CalendarEvent $event): array
-    {
-        // Collect user IDs from participants who have a matched profile → user.
-        $participantUserIds = $event->participants()
-            ->with('profile.user')
-            ->get()
-            ->map(fn ($p) => optional($p->profile)->user_id)
-            ->filter()
-            ->values();
-
-        // Also include the event creator so the old behaviour is preserved.
-        $creatorId = $event->creator_user_id;
-        $userIds = $participantUserIds
-            ->when($creatorId, fn ($c) => $c->push($creatorId))
-            ->unique()
-            ->values();
-
-        if ($userIds->isEmpty()) {
-            return [[null, null]];
-        }
-
-        $teams = \App\Models\Team::whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds))
-            ->get(['id', 'organization_id']);
-
-        if ($teams->isEmpty()) {
-            // Fall back to organisation of the first resolvable user.
-            $orgId = \App\Models\User::whereIn('id', $userIds)
-                ->with('organizations')
-                ->get()
-                ->flatMap(fn ($u) => $u->organizations->pluck('id'))
-                ->first();
-
-            return [[null, $orgId ?? null]];
-        }
-
-        return $teams->map(fn ($team) => [$team->id, $team->organization_id])->all();
     }
 
     /**
