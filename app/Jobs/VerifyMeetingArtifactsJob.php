@@ -75,9 +75,7 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
 
     private function gapFillUncoveredDecisions(IssueMergeService $issueMerge): void
     {
-        $uncovered = Decision::where('calendar_event_id', $this->event->id)
-            ->whereDoesntHave('issues')
-            ->get();
+        $uncovered = $this->getUncoveredDecisions();
 
         if ($uncovered->isEmpty()) {
             return;
@@ -116,6 +114,24 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
         ]);
     }
 
+    private function getUncoveredDecisions(): \Illuminate\Support\Collection
+    {
+        $decisionIds = Decision::where('calendar_event_id', $this->event->id)->pluck('id');
+
+        if ($decisionIds->isEmpty()) {
+            return collect();
+        }
+
+        $coveredIds = DB::table('decision_issue')
+            ->whereIn('decision_id', $decisionIds)
+            ->pluck('decision_id')
+            ->unique();
+
+        return Decision::whereIn('id', $decisionIds)
+            ->whereNotIn('id', $coveredIds)
+            ->get();
+    }
+
     private function buildDecisionDescription(Decision $decision): string
     {
         $title = $this->event->title ?? 'встреча';
@@ -134,9 +150,7 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
      */
     private function linkOrReportUncoveredDecisions(): Collection
     {
-        $stillUncovered = Decision::where('calendar_event_id', $this->event->id)
-            ->whereDoesntHave('issues')
-            ->get();
+        $stillUncovered = $this->getUncoveredDecisions();
 
         if ($stillUncovered->isEmpty()) {
             return collect();
