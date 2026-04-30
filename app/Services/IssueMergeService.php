@@ -139,7 +139,7 @@ class IssueMergeService
                     continue;
                 }
 
-                $result->push($this->updateIssue($existing, $decision, $event, $user));
+                $result->push($this->updateIssue($existing, $decision, $event, $team, $user));
                 continue;
             }
 
@@ -156,12 +156,13 @@ class IssueMergeService
         return $result;
     }
 
-    private function updateIssue(Issue $existing, array $decision, CalendarEvent $event, User $user): Issue
+    private function updateIssue(Issue $existing, array $decision, CalendarEvent $event, Team $team, User $user): Issue
     {
         $updates = [];
 
         if (!empty($decision['assignee_name'])) {
             $updates['assignee_name'] = $decision['assignee_name'];
+            $updates['assignee_id'] = $this->resolveAssigneeId($decision['assignee_name'], $event, $team);
         }
 
         if (!empty($decision['due_date'])) {
@@ -205,6 +206,8 @@ class IssueMergeService
 
     private function createIssue(array $item, CalendarEvent $event, Team $team, User $user): Issue
     {
+        $assigneeName = $item['assignee_name'] ?? null;
+
         return Issue::create([
             'user_id'         => $user->id,
             'organization_id' => $team->organization_id,
@@ -219,10 +222,46 @@ class IssueMergeService
                 $item['type'] ?? null
             )?->key ?? Issue::TYPE_DEVELOPMENT,
             'status'          => MeetingTaskStatus::OPEN->value,
-            'assignee_name'   => $item['assignee_name'] ?? null,
+            'assignee_name'   => $assigneeName,
+            'assignee_id'     => $this->resolveAssigneeId($assigneeName, $event, $team),
             'due_date'        => $this->parseDueDate($item['due_date'] ?? null),
             'priority'        => $this->mapPriority($item['priority'] ?? null),
         ]);
+    }
+
+    private function resolveAssigneeId(?string $assigneeName, CalendarEvent $event, Team $team): ?int
+    {
+        if (blank($assigneeName)) {
+            return null;
+        }
+
+        $needle = mb_strtolower(trim($assigneeName));
+
+        // Pass 1: event profiles (most precise — only matched participants)
+        $event->loadMissing('profiles.user');
+        $user = $event->profiles
+            ->map(fn ($profile) => $profile->user)
+            ->filter()
+            ->first(fn (User $user) => $this->nameMatches($user->name, $needle));
+
+        if ($user) {
+            return $user->id;
+        }
+
+        // Pass 2: all team members by name (covers participants whose profiles have no user_id)
+        return $team->users()
+            ->get(['users.id', 'users.name'])
+            ->first(fn (User $user) => $this->nameMatches($user->name, $needle))
+            ?->id;
+    }
+
+    private function nameMatches(string $userName, string $needle): bool
+    {
+        $haystack = mb_strtolower($userName);
+
+        return $haystack === $needle
+            || str_contains($haystack, $needle)
+            || str_contains($needle, $haystack);
     }
 
     private function mapPriority(?string $value): int
