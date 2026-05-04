@@ -24,7 +24,7 @@ class IssueController extends Controller
     {
         $query = Issue::query()
             ->visibleTo($request->user())
-            ->with(['assignee', 'issueType']);
+            ->with(['assignee', 'issueType', 'epic']);
 
         $filters = $request->getIndexFilters();
 
@@ -52,6 +52,10 @@ class IssueController extends Controller
 
         if ($filters['team_id']) {
             $query->where('team_id', $filters['team_id']);
+        }
+
+        if ($filters['epic_id']) {
+            $query->where('epic_id', $filters['epic_id']);
         }
 
         if ($filters['search']) {
@@ -105,6 +109,7 @@ class IssueController extends Controller
             'user_id' => $data['author_id'] ?? $request->user()->id,
             'organization_id' => $data['organization_id'],
             'team_id' => $data['team_id'] ?? null,
+            'epic_id' => $data['epic_id'] ?? null,
             'status' => $data['status'] ?? 'open',
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
@@ -172,7 +177,7 @@ class IssueController extends Controller
     {
         return Issue::query()
             ->visibleTo($user)
-            ->with(['assignee', 'issueType', 'agentFlow.steps.agentTask.latestRun'])
+            ->with(['assignee', 'issueType', 'agentFlow.steps.agentTask.latestRun', 'epic', 'childIssues'])
             ->findOrFail($issueId);
     }
 

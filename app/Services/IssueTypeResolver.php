@@ -48,6 +48,7 @@ class IssueTypeResolver
         return match ($key) {
             'development', 'frontend', 'backend', 'bug' => 'development',
             'organization', 'task' => 'organization',
+            'epic' => 'epic',
             default => $key,
         };
     }

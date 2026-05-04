@@ -123,10 +123,12 @@ class BuildDailyPlanTool implements ToolInterface
 
         $blockedBy = $issue->blockedBy->map(fn (Issue $b) => ['id' => $b->id, 'name' => $b->name])->values()->all();
         $blocking = $issue->blocking->map(fn (Issue $b) => ['id' => $b->id, 'name' => $b->name])->values()->all();
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
 
         return [
             'id' => $issue->id,
             'name' => $issue->name,
+            'url' => "{$frontendUrl}/dashboard/issues/{$issue->id}",
             'priority' => $this->priorityLabel($issue->priority),
             'priority_value' => $issue->priority,
             'due_date' => $issue->due_date?->toDateString(),

@@ -60,7 +60,11 @@ class CreateIssueTool extends AbstractAgentTool
                 'type' => [
                     'type' => 'string',
                     'enum' => Issue::TYPES,
-                    'description' => 'Issue type. Use frontend or backend for implementation work and organization for coordination or operational work.',
+                    'description' => 'Issue type. Use epic for high-level epics that group child issues. Use frontend or backend for implementation work and organization for coordination or operational work.',
+                ],
+                'epic_id' => [
+                    'type' => 'integer',
+                    'description' => 'Optional parent epic id. Link this issue to an existing epic.',
                 ],
                 'status' => [
                     'type' => 'string',
@@ -177,6 +181,7 @@ class CreateIssueTool extends AbstractAgentTool
             'user_id' => $user->id,
             'organization_id' => $organizationId,
             'team_id' => $teamId,
+            'epic_id' => isset($parameters['epic_id']) ? (int) $parameters['epic_id'] : null,
             'sourceable_type' => $sourceableType,
             'sourceable_id' => $sourceableId,
             'assignee_id' => $assigneeId ?? null,
@@ -198,6 +203,7 @@ class CreateIssueTool extends AbstractAgentTool
                 'status' => $issue->status,
                 'organization_id' => $issue->organization_id,
                 'team_id' => $issue->team_id,
+                'epic_id' => $issue->epic_id,
                 'assignee_name' => $issue->assignee_name,
                 'assignee_id' => $issue->assignee_id,
                 'due_date' => $issue->due_date?->toDateString(),

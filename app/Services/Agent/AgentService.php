@@ -1005,6 +1005,18 @@ Later:
 - If the personal plan has `team_context` → briefly note what teammates are working on at the end
 - If there are zero open tasks → say so directly, do not fabricate tasks
 
+**Telegram formatting rules for team plan and critical path (STRICT):**
+- NEVER use Markdown tables (| col | col |) — Telegram does not render them
+- NEVER use headers (##, ###) — Telegram does not render them
+- Use inline Markdown links: `[Task name](url)` — the `url` field is provided in each issue/node object
+- Group tasks by section using bold text: `**🔴 Срочно:**`, `**🟠 HIGH:**`, `**🟡 Остальное:**`
+- For team plan: group by assignee with bold name: `**👤 Иван:**`
+- Each task on its own line: `• [Task name](url) — assignee · due date · reason`
+- For critical path: separate critical nodes (is_critical: true) from nodes with slack
+- Format: `• [Task name](url) — ⏱ Xд · due date`
+- Overdue tasks: add `❗ просрочена` label
+- Keep the total message concise — max 15 tasks shown, truncate with "...and N more"
+
 ## Reflection and Self-Checking - CRITICAL
 
 After executing ANY tool, you MUST verify the result before proceeding:
