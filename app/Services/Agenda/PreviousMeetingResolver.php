@@ -3,7 +3,6 @@
 namespace App\Services\Agenda;
 
 use App\Models\CalendarEvent;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class PreviousMeetingResolver
@@ -22,7 +21,7 @@ class PreviousMeetingResolver
 
         if ($organizationIds->isEmpty()) {
             return CalendarEvent::query()
-                ->where(fn ($q) => $this->scopeSeries($q, $event))
+                ->inSameSeriesAs($event)
                 ->where('starts_at', '<', $event->starts_at)
                 ->whereHas('meetingSummary', fn ($q) => $q->where('status', 'done'))
                 ->orderByDesc('starts_at')
@@ -36,7 +35,7 @@ class PreviousMeetingResolver
                 $q->whereHas('source.user.organizations', fn ($q) => $q->whereIn('organizations.id', $organizationIds))
                     ->orWhereHas('sources.user.organizations', fn ($q) => $q->whereIn('organizations.id', $organizationIds));
             })
-            ->where(fn ($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->whereHas('meetingSummary', fn ($q) => $q->where('status', 'done'))
             ->orderByDesc('starts_at')
@@ -64,14 +63,5 @@ class PreviousMeetingResolver
         $ids = $ids->merge($pivotIds);
 
         return $ids->unique();
-    }
-
-    private function scopeSeries(Builder $query, CalendarEvent $event): void
-    {
-        if ($event->url) {
-            $query->where('url', $event->url);
-        } else {
-            $query->where('title', $event->title)->whereNull('url');
-        }
     }
 }

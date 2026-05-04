@@ -8,7 +8,6 @@ use App\Enums\AgendaStatus;
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
-use Illuminate\Database\Eloquent\Builder;
 use App\Models\MeetingAgenda;
 use App\Models\MeetingSeriesState;
 use App\Models\MeetingSummary;
@@ -43,7 +42,7 @@ class AgendaService
 
         // Issues linked to this meeting series (by sourceable CalendarEvent)
         $seriesEventIds = CalendarEvent::query()
-            ->where(fn ($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->pluck('id');
 
@@ -69,12 +68,12 @@ class AgendaService
 
         if (!$seriesState) {
             $seriesState = MeetingSeriesState::query()
-                ->whereHas('sourceEvent', fn ($q) => $this->scopeSeries($q, $event))
+                ->whereHas('sourceEvent', fn ($q) => $q->inSameSeriesAs($event))
                 ->orderByDesc('version')
                 ->first();
         }
 
-        // Upcoming agendas from participants (follow-ups from last meeting)
+        // Upcoming agendas from participants (follow-ups from last meeting in this series)
         $participantUserIds = $event->participants
             ->filter(fn ($p) => $p->profile?->user_id)
             ->pluck('profile.user_id')
@@ -82,6 +81,7 @@ class AgendaService
 
         $upcomingAgendas = $participantUserIds->isNotEmpty()
             ? UpcomingAgenda::whereIn('user_id', $participantUserIds)
+                ->where('series_key', $event->seriesKey())
                 ->where('status', AgendaStatus::DONE->value)
                 ->get()
             : collect();
@@ -370,7 +370,7 @@ class AgendaService
         }
 
         $eventIds = CalendarEvent::query()
-            ->where(fn ($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->pluck('id');
 
@@ -1185,7 +1185,7 @@ class AgendaService
     private function detectStuckTasks(Collection $issues, CalendarEvent $event): Collection
     {
         $previousEventIds = CalendarEvent::query()
-            ->where(fn ($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->orderByDesc('starts_at')
             ->pluck('id');
@@ -1203,15 +1203,6 @@ class AgendaService
             ->filter(fn ($i) => $stuckWindowIds->contains($i->sourceable_id))
             ->take(5)
             ->values();
-    }
-
-    private function scopeSeries(Builder $query, CalendarEvent $event): void
-    {
-        if ($event->url) {
-            $query->where('url', $event->url);
-        } else {
-            $query->where('title', $event->title)->whereNull('url');
-        }
     }
 
     private function renderPersonalContent(array $data, User $user): string

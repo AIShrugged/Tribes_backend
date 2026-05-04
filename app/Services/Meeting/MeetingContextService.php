@@ -5,7 +5,6 @@ namespace App\Services\Meeting;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class MeetingContextService
@@ -18,7 +17,7 @@ class MeetingContextService
     public function findPreviousEvents(CalendarEvent $event, int $limit = 10): Collection
     {
         return CalendarEvent::query()
-            ->where(fn($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->orderByDesc('starts_at')
             ->limit($limit)
@@ -31,7 +30,7 @@ class MeetingContextService
     public function findPreviousEventWithTasks(CalendarEvent $event): ?CalendarEvent
     {
         return CalendarEvent::query()
-            ->where(fn($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->whereHas('issues', fn($q) => $q->withoutTrashed()->whereNotIn('status', ['cancelled']))
             ->orderByDesc('starts_at')
@@ -44,7 +43,7 @@ class MeetingContextService
     public function findPreviousEventWithSummary(CalendarEvent $event): ?CalendarEvent
     {
         return CalendarEvent::query()
-            ->where(fn($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->whereHas('meetingSummary', fn($q) => $q->where('status', 'done'))
             ->orderByDesc('starts_at')
@@ -58,7 +57,7 @@ class MeetingContextService
     public function getSeriesEventIds(CalendarEvent $event): Collection
     {
         return CalendarEvent::query()
-            ->where(fn($q) => $this->scopeSeries($q, $event))
+            ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
             ->pluck('id');
     }
@@ -130,7 +129,7 @@ class MeetingContextService
         $taskCreatedAt = $issue->registration_date ?? $issue->created_at;
 
         return CalendarEvent::query()
-            ->where(fn($q) => $this->scopeSeries($q, $sourceEvent))
+            ->inSameSeriesAs($sourceEvent)
             ->where('starts_at', '>', $taskCreatedAt)
             ->count();
     }
@@ -149,7 +148,7 @@ class MeetingContextService
             if (! $event instanceof CalendarEvent) {
                 return '__no_event__';
             }
-            return $event->url ? 'url:' . $event->url : 'title:' . $event->title;
+            return $event->seriesKey();
         });
 
         foreach ($grouped as $key => $groupIssues) {
@@ -164,7 +163,7 @@ class MeetingContextService
 
             // Get all event dates in this series
             $eventDates = CalendarEvent::query()
-                ->where(fn($q) => $this->scopeSeries($q, $firstEvent))
+                ->inSameSeriesAs($firstEvent)
                 ->orderBy('starts_at')
                 ->pluck('starts_at');
 
@@ -179,17 +178,4 @@ class MeetingContextService
         return $counts;
     }
 
-    /**
-     * Scope query to match events in the same series.
-     * Uses meeting URL as stable identifier (survives renames);
-     * falls back to title when URL is absent.
-     */
-    private function scopeSeries(Builder $query, CalendarEvent $event): void
-    {
-        if ($event->url) {
-            $query->where('url', $event->url);
-        } else {
-            $query->where('title', $event->title)->whereNull('url');
-        }
-    }
 }

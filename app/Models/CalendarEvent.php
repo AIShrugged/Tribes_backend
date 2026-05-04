@@ -103,6 +103,25 @@ class CalendarEvent extends Model
         return $query->whereHas('sources', fn (Builder $q) => $q->where('user_id', $userId));
     }
 
+    /**
+     * Stable identifier of the meeting series this event belongs to.
+     * Prefers URL (survives renames); falls back to title when URL is absent.
+     */
+    public function seriesKey(): string
+    {
+        return $this->url
+            ? 'url:' . $this->url
+            : 'title:' . ($this->title ?? '');
+    }
+
+    public function scopeInSameSeriesAs(Builder $query, CalendarEvent $event): Builder
+    {
+        if ($event->url) {
+            return $query->where('url', $event->url);
+        }
+        return $query->where('title', $event->title)->whereNull('url');
+    }
+
     public function isRequiredBot(): bool
     {
         return DB::table('calendar_event_source')
