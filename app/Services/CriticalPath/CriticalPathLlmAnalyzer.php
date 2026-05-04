@@ -31,7 +31,14 @@ Duration rules, in work days:
 - Medium-complexity feature: 2-5
 - Large feature or refactoring: 5-10
 - CRITICAL-priority issue with no description: 3
+- Epic (type=epic): 0.5 — represents final review/closure overhead; real work is in child issues
 - Do NOT include issues with status done
+
+Epic rules:
+- Issues with type=epic are high-level containers; child issues already have explicit_blockers edges pointing to the epic
+- Do NOT add implicit_edges from child issues to their parent epic — those are already provided as explicit_blockers
+- You MAY add implicit_edges between epics and other epics or non-child issues when there is a clear work-order reason
+- An epic's duration represents only the overhead of closing/reviewing the epic itself
 
 Rules for implicit_edges:
 - Your job is to build a DAG of work order, not only to search for literal words such as "depends", "after", or "requires"
@@ -102,6 +109,7 @@ PROMPT;
         $issuesData = $issues->map(fn (Issue $issue) => [
             'id' => $issue->id,
             'name' => $issue->name,
+            'type' => $issue->type,
             'description' => $issue->description
                 ? mb_substr($issue->description, 0, self::MAX_DESCRIPTION_LENGTH)
                 : null,

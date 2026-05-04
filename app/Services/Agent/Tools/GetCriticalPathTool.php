@@ -22,10 +22,11 @@ class GetCriticalPathTool implements ToolInterface
     public function getDescription(): string
     {
         return 'Возвращает предварительно вычисленный граф критического пути (CPM) для команды или организации. '
-             .'Каждая нода содержит: ES (раннее начало), EF (раннее окончание), LS (позднее начало), LF (позднее окончание), '
-             .'slack (резерв времени в рабочих днях), is_critical (на критическом пути). '
+             .'Каждая нода содержит: issue_url (ссылка на задачу), ES (раннее начало), EF (раннее окончание), '
+             .'LS (позднее начало), LF (позднее окончание), slack (резерв времени в рабочих днях), is_critical (на критическом пути). '
              .'Используй для ответов на вопросы: «что блокирует проект?», «какие задачи без резерва?», '
-             .'«каков критический путь к завершению?». '
+             .'«каков критический путь к завершению?», «покажи план команды». '
+             .'При форматировании ответа используй issue_url из каждой ноды для создания кликабельных ссылок. '
              .'Граф обновляется автоматически при изменении задач. '
              .'Если status=computing — данные ещё вычисляются. status=ready — граф актуален.';
     }
@@ -66,12 +67,15 @@ class GetCriticalPathTool implements ToolInterface
             ];
         }
 
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+
         $nodes = $graph->nodes
             ->where('node_type', 'issue')
             ->map(fn ($node) => [
                 'node_id' => $node->id,
                 'issue_id' => $node->issue_id,
                 'issue_name' => $node->issue?->name,
+                'issue_url' => $node->issue_id ? "{$frontendUrl}/dashboard/issues/{$node->issue_id}" : null,
                 'status' => $node->issue?->status,
                 'priority' => $node->issue?->priority,
                 'due_date' => $node->issue?->due_date?->toDateString(),

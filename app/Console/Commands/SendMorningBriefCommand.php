@@ -38,7 +38,6 @@ class SendMorningBriefCommand extends Command
             $groups   = $this->taskGrouper->groupForUser($user);
 
             $hasIssues = ($groups['focused'] ?? collect())->isNotEmpty()
-                || $groups['overdue']->isNotEmpty()
                 || $groups['today']->isNotEmpty()
                 || $groups['current']->isNotEmpty();
 
@@ -120,8 +119,7 @@ class SendMorningBriefCommand extends Command
         $focused = $groups['focused'] ?? collect();
         $hasIssues = $focused->isNotEmpty()
             || $groups['today']->isNotEmpty()
-            || $groups['current']->isNotEmpty()
-            || $groups['overdue']->isNotEmpty();
+            || $groups['current']->isNotEmpty();
 
         if ($hasIssues) {
             $lines[] = '';
@@ -147,14 +145,6 @@ class SendMorningBriefCommand extends Command
                 $lines[] = '';
                 $lines[] = '🔵 <b>Текущие задачи:</b>';
                 foreach ($groups['current'] as $issue) {
-                    $lines[] = '• ' . $this->formatTaskLine($issue);
-                }
-            }
-
-            if ($groups['overdue']->isNotEmpty()) {
-                $lines[] = '';
-                $lines[] = '🔴 <b>Просроченные задачи:</b>';
-                foreach ($groups['overdue'] as $issue) {
                     $lines[] = '• ' . $this->formatTaskLine($issue);
                 }
             }
