@@ -23,6 +23,8 @@ class Issue extends Model
 
     public const TYPE_ORGANIZATION = 'organization';
 
+    public const TYPE_EPIC = 'epic';
+
     public const PRIORITY_CRITICAL = 500;
 
     public const PRIORITY_HIGH = 100;
@@ -42,6 +44,7 @@ class Issue extends Model
     public const TYPES = [
         self::TYPE_DEVELOPMENT,
         self::TYPE_ORGANIZATION,
+        self::TYPE_EPIC,
     ];
 
     protected $table = 'issues';
@@ -206,7 +209,7 @@ class Issue extends Model
     public static function normalizeType(?string $type): ?string
     {
         return match ($type) {
-            self::TYPE_DEVELOPMENT, self::TYPE_ORGANIZATION => $type,
+            self::TYPE_DEVELOPMENT, self::TYPE_ORGANIZATION, self::TYPE_EPIC => $type,
             self::TYPE_FRONTEND, self::TYPE_BACKEND, 'bug' => self::TYPE_DEVELOPMENT,
             'task' => self::TYPE_ORGANIZATION,
             default => null,
@@ -222,6 +225,21 @@ class Issue extends Model
         }
 
         return in_array($this->type, [self::TYPE_DEVELOPMENT, self::TYPE_FRONTEND, self::TYPE_BACKEND], true);
+    }
+
+    public function isEpic(): bool
+    {
+        return $this->issueType?->base_type === 'epic' || $this->type === self::TYPE_EPIC;
+    }
+
+    public function epic(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'epic_id');
+    }
+
+    public function childIssues(): HasMany
+    {
+        return $this->hasMany(self::class, 'epic_id');
     }
 
     public function blockedBy(): \Illuminate\Database\Eloquent\Relations\BelongsToMany

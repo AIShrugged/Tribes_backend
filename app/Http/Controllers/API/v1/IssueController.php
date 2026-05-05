@@ -26,7 +26,7 @@ class IssueController extends Controller
     {
         $query = Issue::query()
             ->visibleTo($request->user())
-            ->with(['assignee', 'issueType']);
+            ->with(['assignee', 'issueType', 'epic']);
 
         $filters = $request->getIndexFilters();
 
@@ -54,6 +54,10 @@ class IssueController extends Controller
 
         if ($filters['team_id']) {
             $query->where('team_id', $filters['team_id']);
+        }
+
+        if ($filters['epic_id']) {
+            $query->where('epic_id', $filters['epic_id']);
         }
 
         if ($filters['search']) {
@@ -135,6 +139,21 @@ class IssueController extends Controller
         $issue->refresh()->load(['assignee', 'issueType', 'user', 'attachments']);
 
         return ApiResponse::success(data: IssueResource::make($issue), status: 201);
+        $issue = Issue::create([
+            'user_id' => $data['author_id'] ?? $request->user()->id,
+            'organization_id' => $data['organization_id'],
+            'team_id' => $data['team_id'] ?? null,
+            'epic_id' => $data['epic_id'] ?? null,
+            'status' => $data['status'] ?? 'open',
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'type' => $data['type'],
+            'assignee_id' => $data['assignee_id'] ?? null,
+            'due_date' => $data['due_date'] ?? null,
+            'priority' => $data['priority'] ?? 0,
+        ]);
+
+        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load(['assignee', 'issueType', 'user'])), status: 201);
     }
 
     public function show(IssueRequest $request, int $issue): ApiResponse
@@ -192,7 +211,7 @@ class IssueController extends Controller
     {
         return Issue::query()
             ->visibleTo($user)
-            ->with(['assignee', 'issueType', 'agentFlow.steps.agentTask.latestRun'])
+            ->with(['assignee', 'issueType', 'agentFlow.steps.agentTask.latestRun', 'epic', 'childIssues'])
             ->findOrFail($issueId);
     }
 

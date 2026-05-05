@@ -266,6 +266,13 @@ class CriticalPathService
             }
         }
 
+        // Epic dependency: each child issue must complete before its parent epic
+        foreach ($issues as $issue) {
+            if ($issue->epic_id !== null && $issueIds->has($issue->epic_id)) {
+                $pairs[] = ['from' => $issue->id, 'to' => $issue->epic_id];
+            }
+        }
+
         return $pairs;
     }
 

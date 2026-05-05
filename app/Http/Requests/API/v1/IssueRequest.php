@@ -23,6 +23,7 @@ class IssueRequest extends FormRequest
                 'assignee' => ['nullable', 'integer', 'exists:users,id'],
                 'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
+                'epic_id' => ['nullable', 'integer', 'exists:issues,id'],
                 'offset' => ['nullable', 'integer', 'min:0'],
                 'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
                 'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at'])],
@@ -41,6 +42,7 @@ class IssueRequest extends FormRequest
                 'status' => ['nullable', Rule::in(self::VALID_STATUSES)],
                 'organization_id' => ['required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
+                'epic_id' => ['nullable', 'integer', 'exists:issues,id'],
                 'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
                 'author_id' => ['nullable', 'integer', 'exists:users,id'],
                 'due_date' => ['nullable', 'date'],
@@ -54,6 +56,7 @@ class IssueRequest extends FormRequest
                 'status' => ['sometimes', 'required', Rule::in(self::VALID_STATUSES)],
                 'organization_id' => ['sometimes', 'required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
+                'epic_id' => ['sometimes', 'nullable', 'integer', 'exists:issues,id'],
                 'assignee_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
                 'author_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
                 'due_date' => ['sometimes', 'nullable', 'date'],
@@ -92,6 +95,7 @@ class IssueRequest extends FormRequest
             'assignee_id' => $this->input('assignee'),
             'organization_id' => $this->input('organization_id'),
             'team_id' => $this->input('team_id'),
+            'epic_id' => $this->input('epic_id') !== null ? (int) $this->input('epic_id') : null,
             'sort' => filled($this->input('sort')) ? $this->input('sort') : 'updated_at',
             'order' => filled($this->input('order')) ? $this->input('order') : 'desc',
             'search' => $this->input('search'),
@@ -112,6 +116,7 @@ class IssueRequest extends FormRequest
             'status' => $this->input('status'),
             'organization_id' => $this->input('organization_id'),
             'team_id' => $this->input('team_id'),
+            'epic_id' => $this->input('epic_id'),
             'assignee_id' => $this->input('assignee_id'),
             'author_id' => $this->input('author_id'),
             'due_date' => $this->input('due_date'),
@@ -121,7 +126,7 @@ class IssueRequest extends FormRequest
 
     public function getUpdateData(): array
     {
-        return array_filter([
+        $data = array_filter([
             'name' => $this->input('name'),
             'description' => $this->input('description'),
             'type' => Issue::normalizeType($this->input('type')) ?? $this->input('type'),
@@ -133,5 +138,12 @@ class IssueRequest extends FormRequest
             'due_date' => $this->input('due_date'),
             'priority' => $this->input('priority'),
         ], static fn ($value) => $value !== null);
+
+        // epic_id is explicitly handled to allow null (removing from epic)
+        if ($this->has('epic_id')) {
+            $data['epic_id'] = $this->input('epic_id');
+        }
+
+        return $data;
     }
 }

@@ -205,46 +205,40 @@ class CriticalPathNotificationService
     {
         $frontendUrl = rtrim(config('app.frontend_url'), '/');
 
+        $executor = $items->filter(fn ($item) => $item['issue']->assignee_id === $user->id);
+        $assigner = $items->filter(fn ($item) => $item['issue']->user_id === $user->id && $item['issue']->assignee_id !== $user->id);
+
         $lines = [];
-        $lines[] = '📋 <b>Задачи на критическом пути на сегодня</b>';
-        $lines[] = '';
-        $lines[] = 'Эти задачи влияют на сроки всей команды. Любая задержка здесь двигает общий план.';
+        $lines[] = '📋 <b>Критический путь</b>';
 
-        foreach ($items->values() as $i => $item) {
-            /** @var Issue $issue */
-            $issue = $item['issue'];
-            $node = $item['node'];
-            $team = $item['team'] ?? null;
-            $num = $i + 1;
-            $url = "{$frontendUrl}/dashboard/issues/{$issue->id}";
-            $role = $this->participantRoleLabel($user, $issue);
-            $teamName = $team?->name ? ' · '.e($team->name) : '';
-            $due = $issue->due_date ? ' · 📅 '.$issue->due_date->format('d.m.Y') : '';
-            $duration = round($node->duration_days, 1);
-            $earlyStart = round($node->early_start ?? 0, 1);
-
+        if ($executor->isNotEmpty()) {
             $lines[] = '';
-            $lines[] = "{$num}. <a href=\"{$url}\">".e($issue->name).'</a>';
-            $lines[] = "   {$role}{$teamName}{$due}";
-            $lines[] = "   ⏱ {$duration}д · старт через {$earlyStart}д";
+            $lines[] = '⚡️ <b>Исполнитель:</b>';
+            foreach ($executor->values() as $item) {
+                $issue = $item['issue'];
+                $node = $item['node'];
+                $url = "{$frontendUrl}/dashboard/issues/{$issue->id}";
+                $dur = round($node->duration_days, 1);
+                $due = $issue->due_date ? ' · 📅 '.$issue->due_date->format('d.m') : '';
+                $lines[] = "• <a href=\"{$url}\">".e($issue->name)."</a> — {$dur}д{$due}";
+            }
+        }
+
+        if ($assigner->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = '📝 <b>Постановщик:</b>';
+            foreach ($assigner->values() as $item) {
+                $issue = $item['issue'];
+                $node = $item['node'];
+                $url = "{$frontendUrl}/dashboard/issues/{$issue->id}";
+                $assigneeName = $issue->assignee ? ' · '.e($issue->assignee->name) : '';
+                $dur = round($node->duration_days, 1);
+                $due = $issue->due_date ? ' · 📅 '.$issue->due_date->format('d.m') : '';
+                $lines[] = "• <a href=\"{$url}\">".e($issue->name)."</a>{$assigneeName} — {$dur}д{$due}";
+            }
         }
 
         return implode("\n", $lines);
-    }
-
-    private function participantRoleLabel(User $user, Issue $issue): string
-    {
-        $roles = [];
-
-        if ($issue->assignee_id === $user->id) {
-            $roles[] = 'исполнитель';
-        }
-
-        if ($issue->user_id === $user->id) {
-            $roles[] = 'постановщик';
-        }
-
-        return $roles ? implode(' + ', $roles) : 'участник';
     }
 
     private function sendToChat(TelegramChatRegistration $registration, string $text): void

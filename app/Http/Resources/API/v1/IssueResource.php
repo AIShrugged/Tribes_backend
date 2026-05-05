@@ -41,6 +41,13 @@ class IssueResource extends JsonResource
             }),
             'agent_flow_id' => $this->issue_agent_flow_id,
             'agent_flow' => $this->whenLoaded('agentFlow', fn () => IssueAgentFlowResource::make($this->agentFlow)),
+            'epic_id' => $this->epic_id,
+            'epic' => $this->whenLoaded('epic', fn () => $this->epic ? [
+                'id' => $this->epic->id,
+                'name' => $this->epic->name,
+                'status' => $this->epic->status,
+            ] : null),
+            'child_issues' => $this->whenLoaded('childIssues', fn () => IssueResource::collection($this->childIssues)),
             'assignee_id' => $this->assignee_id,
             'assignee' => $this->whenLoaded('assignee', fn () => UserResource::make($this->assignee)),
             'user_id' => $this->user_id,
