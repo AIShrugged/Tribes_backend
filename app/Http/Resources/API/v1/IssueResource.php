@@ -4,6 +4,7 @@ namespace App\Http\Resources\API\v1;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\Http\Resources\API\v1\IssueAttachmentResource;
 
 class IssueResource extends JsonResource
 {
@@ -59,8 +60,9 @@ class IssueResource extends JsonResource
             'priority' => $this->priority ?? 0,
             'registration_date' => $this->registration_date,
             'close_date' => $this->close_date,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
+            'created_at'  => $this->created_at,
+            'updated_at'  => $this->updated_at,
+            'attachments' => IssueAttachmentResource::collection($this->whenLoaded('attachments')),
         ];
     }
 }

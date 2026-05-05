@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\IssueRequest;
+use App\Http\Requests\API\v1\StoreOrphanAttachmentRequest;
 use App\Http\Resources\API\v1\IssueAttachmentResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\IssueAttachment;
@@ -87,6 +88,44 @@ class IssueAttachmentController extends Controller
             basename($record->file_path),
             ['Content-Disposition' => 'inline; filename="'.basename($record->file_path).'"']
         );
+    }
+
+    public function storePending(StoreOrphanAttachmentRequest $request): ApiResponse
+    {
+        $token = $request->input('upload_token');
+        $disk  = $this->attachmentDisk();
+        $file  = $request->file('file');
+
+        $blockedExtensions = ['php', 'php3', 'php4', 'php5', 'php7', 'phtml', 'phar', 'htaccess', 'sh', 'bash', 'exe', 'bat', 'cmd'];
+        if (in_array(strtolower($file->getClientOriginalExtension()), $blockedExtensions, true)) {
+            return ApiResponse::error('File type not allowed', 422);
+        }
+
+        $path = $file->store("attachments/pending/{$token}", $disk);
+
+        if ($path === false) {
+            return ApiResponse::error('Failed to store attachment', 500);
+        }
+
+        $attachment = IssueAttachment::create([
+            'file_path'           => $path,
+            'issue_id'            => null,
+            'upload_token'        => $token,
+            'uploaded_by_user_id' => $request->user()->id,
+            'uploaded_at'         => now(),
+        ]);
+
+        return ApiResponse::success(data: IssueAttachmentResource::make($attachment), status: 201);
+    }
+
+    public function destroyPending(Request $request, IssueAttachment $attachment): ApiResponse
+    {
+        $this->authorize('deletePending', $attachment);
+
+        Storage::disk($this->attachmentDisk())->delete($attachment->file_path);
+        $attachment->delete();
+
+        return ApiResponse::success();
     }
 
     private function findVisibleIssue(User $user, int $issueId): Issue

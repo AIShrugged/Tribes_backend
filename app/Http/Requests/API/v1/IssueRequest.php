@@ -47,6 +47,7 @@ class IssueRequest extends FormRequest
                 'author_id' => ['nullable', 'integer', 'exists:users,id'],
                 'due_date' => ['nullable', 'date'],
                 'priority' => ['nullable', 'integer', 'min:-1000000', 'max:1000000'],
+                'upload_token' => ['nullable', 'string', 'regex:/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i'],
             ],
             'issues.update' => [
                 'name' => ['sometimes', 'required', 'string', 'max:255'],

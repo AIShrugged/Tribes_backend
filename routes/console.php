@@ -106,3 +106,9 @@ Schedule::command('critical-path:send-daily-reminders')
     ->dailyAt('09:05')
     ->name('critical-path:send-daily-reminders')
     ->withoutOverlapping();
+
+// Prune pending (unbound) issue attachments older than 24 hours
+Schedule::command('attachments:prune-orphans')
+    ->hourly()
+    ->name('attachments:prune-orphans')
+    ->withoutOverlapping();
