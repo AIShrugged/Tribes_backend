@@ -216,6 +216,12 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('issues/{issue}/agent-flow/answer', [IssueAgentFlowController::class, 'answer'])->name('issues.agent-flow.answer');
         Route::post('issues/{issue}/attachments', [IssueAttachmentController::class, 'store'])->name('issues.attachments.store');
         Route::get('issues/{issue}/attachments', [IssueAttachmentController::class, 'index'])->name('issues.attachments.index');
+        // Pending routes must be declared BEFORE wildcard {attachment} routes to avoid shadowing.
+        Route::post('attachments/pending', [IssueAttachmentController::class, 'storePending'])
+            ->middleware('throttle:30,1')
+            ->name('attachments.pending.store');
+        Route::delete('attachments/pending/{attachment}', [IssueAttachmentController::class, 'destroyPending'])
+            ->name('attachments.pending.destroy');
         Route::delete('attachments/{attachment}', [IssueAttachmentController::class, 'destroy'])->name('attachments.destroy');
         Route::get('attachments/{attachment}/download', [IssueAttachmentController::class, 'downloadAuthenticated'])->name('attachments.download.auth');
 

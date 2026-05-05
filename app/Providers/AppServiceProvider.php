@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\IssueAttachment;
+use App\Policies\IssueAttachmentPolicy;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\ServiceProvider;
 
@@ -38,6 +41,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::policy(IssueAttachment::class, IssueAttachmentPolicy::class);
+
         Http::macro('withProxy', function () {
             if (! config('proxy.enabled', true)) {
                 return Http::withOptions([]);

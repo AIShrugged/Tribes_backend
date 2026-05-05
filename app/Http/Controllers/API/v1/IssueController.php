@@ -8,10 +8,12 @@ use App\Http\Resources\API\v1\IssueResource;
 use App\Http\Resources\API\v1\AgentTaskRunResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Issue;
+use App\Models\IssueAttachment;
 use App\Models\User;
 use App\Services\IssueAgentService;
 use App\Services\TenantScopeValidator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class IssueController extends Controller
@@ -101,20 +103,38 @@ class IssueController extends Controller
         );
         $this->assertAssigneeIsVisible($request->user(), $data['assignee_id'] ?? null);
 
-        $issue = Issue::create([
-            'user_id' => $data['author_id'] ?? $request->user()->id,
-            'organization_id' => $data['organization_id'],
-            'team_id' => $data['team_id'] ?? null,
-            'status' => $data['status'] ?? 'open',
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
-            'type' => $data['type'],
-            'assignee_id' => $data['assignee_id'] ?? null,
-            'due_date' => $data['due_date'] ?? null,
-            'priority' => $data['priority'] ?? 0,
-        ]);
+        // Extract before transaction — avoids capturing the full request object in closure.
+        $uploadToken = $request->input('upload_token');
+        $userId      = $request->user()->id;
 
-        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load(['assignee', 'issueType', 'user'])), status: 201);
+        $issue = DB::transaction(function () use ($data, $uploadToken, $userId) {
+            $issue = Issue::create([
+                'user_id'         => $data['author_id'] ?? $userId,
+                'organization_id' => $data['organization_id'],
+                'team_id'         => $data['team_id'] ?? null,
+                'status'          => $data['status'] ?? 'open',
+                'name'            => $data['name'],
+                'description'     => $data['description'] ?? null,
+                'type'            => $data['type'],
+                'assignee_id'     => $data['assignee_id'] ?? null,
+                'due_date'        => $data['due_date'] ?? null,
+                'priority'        => $data['priority'] ?? 0,
+            ]);
+
+            if ($uploadToken !== null) {
+                IssueAttachment::pending($uploadToken, $userId)
+                    ->update([
+                        'issue_id'     => $issue->id,
+                        'upload_token' => null,
+                    ]);
+            }
+
+            return $issue;
+        });
+
+        $issue->refresh()->load(['assignee', 'issueType', 'user', 'attachments']);
+
+        return ApiResponse::success(data: IssueResource::make($issue), status: 201);
     }
 
     public function show(IssueRequest $request, int $issue): ApiResponse
