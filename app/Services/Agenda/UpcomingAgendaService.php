@@ -64,7 +64,7 @@ class UpcomingAgendaService
     private function generateForUser(CalendarEvent $event, User $user): void
     {
         $agenda = UpcomingAgenda::updateOrCreate(
-            ['user_id' => $user->id],
+            ['user_id' => $user->id, 'series_key' => $event->seriesKey()],
             [
                 'source_calendar_event_id' => $event->id,
                 'status' => AgendaStatus::IN_PROGRESS->value,

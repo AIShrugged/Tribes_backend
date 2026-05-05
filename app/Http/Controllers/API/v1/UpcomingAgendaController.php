@@ -24,6 +24,7 @@ class UpcomingAgendaController extends Controller
     {
         $agenda = UpcomingAgenda::query()
             ->where('user_id', Auth::id())
+            ->orderByDesc('updated_at')
             ->with('sourceCalendarEvent.participants')
             ->first();
 

@@ -274,13 +274,14 @@ class TodayBriefingService
                 : $general->content;
         }
 
-        // 2. Try personal upcoming agenda — the latest one for this user.
-        //    Upcoming agenda is "preparation for next meeting" generated from a previous meeting.
-        //    Show it on the next unprocessed meeting of the day.
+        // 2. Try personal upcoming agenda for this meeting's series.
+        //    Upcoming agenda is "preparation for next meeting" generated from a previous meeting
+        //    in the same series — matched by series_key (URL or title).
         $upcoming = UpcomingAgenda::query()
             ->where('user_id', $user->id)
+            ->where('series_key', $event->seriesKey())
             ->where('status', 'done')
-            ->orderByDesc('created_at')
+            ->orderByDesc('updated_at')
             ->first();
 
         if ($upcoming && $upcoming->content) {
