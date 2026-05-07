@@ -159,4 +159,16 @@ return [
 
     'team_invite_expiry' => env('TEAM_INVITE_EXPIRY_HOURS', 24),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Password Reset Expiry
+    |--------------------------------------------------------------------------
+    |
+    | This value determines how many minutes the password reset token
+    | will be valid before expiring.
+    |
+    */
+
+    'password_reset_expiry' => env('PASSWORD_RESET_EXPIRY_MINUTES', 60),
+
 ];

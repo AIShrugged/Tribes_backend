@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\v1\AuthController;
+use App\Http\Controllers\API\v1\PasswordResetController;
 use App\Http\Controllers\API\v1\AgendaController;
 use App\Http\Controllers\API\v1\UpcomingAgendaController;
 use App\Http\Controllers\API\v1\AgentActivityLogController;
@@ -74,6 +75,12 @@ Route::group(['prefix' => 'v1'], function () {
         ->middleware('auth:sanctum');
     Route::delete('auth/tokens/{tokenId}', [AuthController::class, 'revokeToken'])
         ->middleware('auth:sanctum');
+
+    Route::post('auth/password/forgot', [PasswordResetController::class, 'forgot'])
+        ->middleware('throttle:6,1')
+        ->name('auth.password.forgot');
+    Route::post('auth/password/reset', [PasswordResetController::class, 'reset'])
+        ->name('auth.password.reset');
 
     Route::get('auth/email/verify/{token}', [EmailVerificationController::class, 'verify'])
         ->name('auth.email.verify');
