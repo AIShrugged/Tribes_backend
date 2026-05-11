@@ -16,7 +16,7 @@ use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
-use App\Services\Agenda\AgendaService;
+use App\Services\Agenda\AgendaRenderer;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
 use App\Models\Source;
@@ -270,7 +270,7 @@ class TodayBriefingService
 
         if ($general) {
             return $general->isGeneral() && !empty($general->raw_json)
-                ? AgendaService::renderForWeb($general->raw_json, $event)
+                ? AgendaRenderer::renderForWeb($general->raw_json, $event)
                 : $general->content;
         }
 

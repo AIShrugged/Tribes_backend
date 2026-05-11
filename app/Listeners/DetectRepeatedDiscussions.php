@@ -4,10 +4,17 @@ namespace App\Listeners;
 
 use App\Events\MeetingSummaryGenerated;
 use App\Services\Meeting\DetectRepeatedDiscussionsService;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class DetectRepeatedDiscussions
+class DetectRepeatedDiscussions implements ShouldQueueAfterCommit
 {
+    use Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 60;
+
     public function __construct(
         private readonly DetectRepeatedDiscussionsService $service,
     ) {}

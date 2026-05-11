@@ -39,7 +39,7 @@ class Decision extends Model
     public function issues(): BelongsToMany
     {
         return $this->belongsToMany(Issue::class, 'decision_issue')
-            ->withTimestamps(['created_at', null]);
+            ->withPivot('created_at');
     }
 
     public function team(): BelongsTo

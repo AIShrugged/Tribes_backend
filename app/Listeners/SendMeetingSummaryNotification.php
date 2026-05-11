@@ -6,11 +6,16 @@ use App\Events\MeetingSummaryGenerated;
 use App\Models\MeetingSummary;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
-class SendMeetingSummaryNotification
+class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
 {
+    use Queueable;
+
+    public int $tries = 1;
     public function handle(MeetingSummaryGenerated $event): void
     {
         $summary = $event->summary;

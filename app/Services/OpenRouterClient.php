@@ -15,7 +15,7 @@ class OpenRouterClient
     /**
      * @param MessageDTO[] $messages
      */
-    public static function chat(
+    public function chat(
         array $messages,
         string|array $model,
         int $maxTokens = 1024,
@@ -24,9 +24,9 @@ class OpenRouterClient
     ): string {
         $lastException = null;
 
-        foreach (self::resolveModelCandidates($model) as $candidate) {
+        foreach ($this->resolveModelCandidates($model) as $candidate) {
             try {
-                return self::chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse, $extraPayload);
+                return $this->chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse, $extraPayload);
             } catch (\Throwable $e) {
                 $lastException = $e;
 
@@ -43,7 +43,7 @@ class OpenRouterClient
     /**
      * @param MessageDTO[] $messages
      */
-    private static function chatOnce(
+    private function chatOnce(
         array $messages,
         string $model,
         int $maxTokens,
@@ -124,7 +124,7 @@ class OpenRouterClient
      * @param string|null $systemPrompt - System prompt (for Claude models)
      * @return array - Full API response
      */
-    public static function chatWithTools(
+    public function chatWithTools(
         array $messages,
         ?array $tools = null,
         string|array $model = 'anthropic/claude-3.5-sonnet',
@@ -133,9 +133,9 @@ class OpenRouterClient
     ): array {
         $lastException = null;
 
-        foreach (self::resolveModelCandidates($model) as $candidate) {
+        foreach ($this->resolveModelCandidates($model) as $candidate) {
             try {
-                return self::chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt);
+                return $this->chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt);
             } catch (\Throwable $e) {
                 $lastException = $e;
 
@@ -149,7 +149,7 @@ class OpenRouterClient
         throw $lastException ?? new AppException('Failed to ask AI', 'AI_REQUEST_FAILED');
     }
 
-    private static function chatWithToolsOnce(
+    private function chatWithToolsOnce(
         array $messages,
         ?array $tools,
         string $model,
@@ -207,7 +207,7 @@ class OpenRouterClient
      * @param string|array $model
      * @return array<int, string>
      */
-    private static function resolveModelCandidates(string|array $model): array
+    private function resolveModelCandidates(string|array $model): array
     {
         $fallbackModels = config('ai.providers.openrouter.fallback_models', []);
 

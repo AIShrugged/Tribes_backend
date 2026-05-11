@@ -5,11 +5,16 @@ namespace App\Listeners;
 use App\Events\MeetingReviewGenerated;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
-class SendMeetingReviewNotification
+class SendMeetingReviewNotification implements ShouldQueueAfterCommit
 {
+    use Queueable;
+
+    public int $tries = 1;
     public function handle(MeetingReviewGenerated $event): void
     {
         $review = $event->review;

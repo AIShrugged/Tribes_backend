@@ -3,7 +3,7 @@
 namespace App\Http\Resources\API\v1;
 
 use App\Models\CalendarEvent;
-use App\Services\Agenda\AgendaService;
+use App\Services\Agenda\AgendaRenderer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Str;
@@ -38,7 +38,7 @@ class CalendarEventDetailResource extends JsonResource
                     'type' => $agenda->type,
                     'status' => $agenda->status,
                     'content' => $agenda->isGeneral() && !empty($agenda->raw_json)
-                        ? AgendaService::renderForWeb($agenda->raw_json, $event)
+                        ? AgendaRenderer::renderForWeb($agenda->raw_json, $event)
                         : $agenda->content,
                     'user_id' => $agenda->user_id,
                     'sent_at' => $agenda->sent_at,

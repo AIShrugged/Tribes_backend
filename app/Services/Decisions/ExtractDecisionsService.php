@@ -117,7 +117,7 @@ class ExtractDecisionsService
         TXT;
 
         try {
-            $json = OpenRouterClient::chat(
+            $json = app(OpenRouterClient::class)->chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.meeting_summary', config('ai.providers.openrouter.models.meeting_summary')),
                 maxTokens: 2048,

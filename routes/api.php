@@ -167,8 +167,6 @@ Route::group(['prefix' => 'v1'], function () {
 
             Route::get('/{calendar_event_id}/tasks', [MeetingTaskController::class, 'index'])
                 ->name('calendar-events.tasks.index');
-            Route::post('/{calendar_event_id}/tasks/generate', [MeetingTaskController::class, 'generate'])
-                ->name('calendar-events.tasks.generate');
 
             Route::get('/{calendarEventId}/agendas', [AgendaController::class, 'index'])
                 ->name('calendar-events.agendas.index');

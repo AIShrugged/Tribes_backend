@@ -233,7 +233,7 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
         TXT;
 
         try {
-            $json = OpenRouterClient::chat(
+            $json = app(OpenRouterClient::class)->chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.meeting_tasks', config('ai.providers.openrouter.models.meeting_tasks')),
                 maxTokens: 2048,

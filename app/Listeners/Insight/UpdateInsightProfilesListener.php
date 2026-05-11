@@ -4,12 +4,16 @@ namespace App\Listeners\Insight;
 
 use App\Events\Insight\InsightItemsExtracted;
 use App\Services\Insight\InsightEvolutionService;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class UpdateInsightProfilesListener implements ShouldQueue
+class UpdateInsightProfilesListener implements ShouldQueueAfterCommit
 {
-    public string $queue = 'default';
+    use Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 60;
 
     public function handle(InsightItemsExtracted $event): void
     {

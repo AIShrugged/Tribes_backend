@@ -165,6 +165,11 @@ class InsightExtractionService
                 ['processed_at' => now()],
             );
 
+            // Idempotency: при повторном запуске стираем старые items/shortTermMemories
+            // и пересоздаём, иначе на каждый retry в БД накапливаются дубликаты
+            $source->items()->delete();
+            $source->shortTermMemories()->delete();
+
             foreach ($participant->items as $item) {
                 $source->items()->create([
                     'profile_id' => $profile->id,

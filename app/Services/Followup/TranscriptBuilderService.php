@@ -9,6 +9,7 @@ class TranscriptBuilderService
     public function build(CalendarEvent $event): string
     {
         return $event->transcriptEntries()
+            ->with('participant')
             ->orderBy('start_absolute')
             ->get()
             ->map(fn($entry) => sprintf(

@@ -72,7 +72,7 @@ PROMPT;
         $model = config('ai.providers.openrouter.models.critical_path', 'google/gemini-3.1-pro-preview');
 
         try {
-            $raw = OpenRouterClient::chat(
+            $raw = app(OpenRouterClient::class)->chat(
                 $messages,
                 $model,
                 8192,

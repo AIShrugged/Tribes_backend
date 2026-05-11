@@ -94,8 +94,6 @@ class FollowupService
                 ])->render()),
             ];
 
-            Log::info('messages', $messages);
-
             $json = $this->llm->chat(
                 messages: $messages,
                 model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),

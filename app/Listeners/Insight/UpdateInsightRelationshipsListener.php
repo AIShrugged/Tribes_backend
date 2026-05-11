@@ -4,12 +4,16 @@ namespace App\Listeners\Insight;
 
 use App\Events\Insight\InsightItemsExtracted;
 use App\Services\Insight\InsightRelationshipService;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class UpdateInsightRelationshipsListener implements ShouldQueue
+class UpdateInsightRelationshipsListener implements ShouldQueueAfterCommit
 {
-    public string $queue = 'default';
+    use Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 60;
 
     public function handle(InsightItemsExtracted $event): void
     {
@@ -29,6 +33,8 @@ class UpdateInsightRelationshipsListener implements ShouldQueue
                 'calendar_event_id' => $event->calendarEvent->id,
                 'error'             => $e->getMessage(),
             ]);
+
+            throw $e;
         }
     }
 }

@@ -5,12 +5,16 @@ namespace App\Listeners\Insight;
 use App\Events\Insight\InsightItemsExtracted;
 use App\Events\TranscriptParsed;
 use App\Services\Insight\InsightExtractionService;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class ExtractInsightItemsListener implements ShouldQueue
+class ExtractInsightItemsListener implements ShouldQueueAfterCommit
 {
-    public string $queue = 'default';
+    use Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 60;
 
     public function handle(TranscriptParsed $event): void
     {

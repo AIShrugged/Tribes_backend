@@ -12,6 +12,7 @@ use App\Models\Team;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class IssueMergeService
@@ -113,47 +114,49 @@ class IssueMergeService
         Team $team,
         User $user
     ): Collection {
-        $result = collect();
-        $existingById = $existingIssues->keyBy('id');
-        $processedIndexes = [];
+        return DB::transaction(function () use ($decisions, $items, $existingIssues, $event, $team, $user) {
+            $result = collect();
+            $existingById = $existingIssues->keyBy('id');
+            $processedIndexes = [];
 
-        foreach ($decisions as $decision) {
-            $index = $decision['index'] ?? null;
-            $action = $decision['action'] ?? 'create';
+            foreach ($decisions as $decision) {
+                $index = $decision['index'] ?? null;
+                $action = $decision['action'] ?? 'create';
 
-            if ($index === null || !isset($items[$index])) {
-                continue;
-            }
-
-            $processedIndexes[] = $index;
-
-            if ($action === 'skip') {
-                continue;
-            }
-
-            if ($action === 'update' && !empty($decision['existing_issue_id'])) {
-                $existing = $existingById->get($decision['existing_issue_id']);
-
-                if (!$existing) {
-                    $result->push($this->createIssue($items[$index], $event, $team, $user));
+                if ($index === null || !isset($items[$index])) {
                     continue;
                 }
 
-                $result->push($this->updateIssue($existing, $decision, $event, $team, $user));
-                continue;
-            }
+                $processedIndexes[] = $index;
 
-            $result->push($this->createIssue($items[$index], $event, $team, $user));
-        }
+                if ($action === 'skip') {
+                    continue;
+                }
 
-        // Items the LLM skipped entirely — create them to avoid silent data loss
-        foreach (array_keys($items) as $index) {
-            if (!in_array($index, $processedIndexes, strict: true)) {
+                if ($action === 'update' && !empty($decision['existing_issue_id'])) {
+                    $existing = $existingById->get($decision['existing_issue_id']);
+
+                    if (!$existing) {
+                        $result->push($this->createIssue($items[$index], $event, $team, $user));
+                        continue;
+                    }
+
+                    $result->push($this->updateIssue($existing, $decision, $event, $team, $user));
+                    continue;
+                }
+
                 $result->push($this->createIssue($items[$index], $event, $team, $user));
             }
-        }
 
-        return $result;
+            // Items the LLM skipped entirely — create them to avoid silent data loss
+            foreach (array_keys($items) as $index) {
+                if (!in_array($index, $processedIndexes, strict: true)) {
+                    $result->push($this->createIssue($items[$index], $event, $team, $user));
+                }
+            }
+
+            return $result;
+        });
     }
 
     private function updateIssue(Issue $existing, array $decision, CalendarEvent $event, Team $team, User $user): Issue

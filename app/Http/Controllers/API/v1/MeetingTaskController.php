@@ -8,7 +8,6 @@ use App\Http\Resources\API\v1\MeetingTaskResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
-use App\Services\Meeting\MeetingTaskService;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -102,22 +101,5 @@ class MeetingTaskController extends Controller
         $task = Issue::findOrFail($request->getTaskId());
 
         return ApiResponse::success(data: MeetingTaskResource::make($task));
-    }
-
-    /**
-     * Extract meeting tasks (for testing)
-     *
-     * @subgroup Meeting Tasks
-     * @authenticated
-     * @hideFromAPIDocumentation
-     */
-    public function generate(MeetingTaskRequest $request, MeetingTaskService $service): ApiResponse
-    {
-        $calendarEvent = CalendarEvent::owned(Auth::id())
-            ->findOrFail($request->getCalendarEventId());
-
-        $tasks = $service->extract($calendarEvent);
-
-        return ApiResponse::list(MeetingTaskResource::collection($tasks), $tasks->count());
     }
 }
