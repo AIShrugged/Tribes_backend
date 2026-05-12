@@ -9,6 +9,7 @@ use App\Services\Channel\ChannelBus;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\TelegramTypingIndicator;
 use App\Services\TelegramChatRegistrationService;
+use App\Services\TelegramLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -30,6 +31,7 @@ class TelegramBotController extends Controller
         private readonly ChannelRuntimeService $runtimeService,
         private readonly TelegramTypingIndicator $typingIndicator,
         private readonly TelegramChatRegistrationService $telegramChatRegistrationService,
+        private readonly TelegramLinkService $telegramLinkService,
     ) {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
@@ -124,6 +126,26 @@ class TelegramBotController extends Controller
                 // Find or create telegram user and resolve application user
                 $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
                 $user = $telegramUser->user;
+
+                if ($this->isLinkCommand($text)) {
+                    $token = $this->extractLinkToken($text);
+                    try {
+                        $this->telegramLinkService->consumeToken($token, $telegramUserId, $username);
+                        $this->sendTelegramMessage(
+                            $chatId,
+                            'Ваш Telegram аккаунт успешно привязан к приложению!',
+                            $messageThreadId,
+                        );
+                    } catch (\RuntimeException $e) {
+                        $this->sendTelegramMessage(
+                            $chatId,
+                            'Не удалось привязать аккаунт: '.$e->getMessage(),
+                            $messageThreadId,
+                        );
+                    }
+
+                    return response()->json(['ok' => true]);
+                }
 
                 $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
                 $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
@@ -377,6 +399,18 @@ class TelegramBotController extends Controller
     private function isBotMembershipInactive(?string $status): bool
     {
         return in_array($status, ['left', 'kicked'], true);
+    }
+
+    private function isLinkCommand(string $text): bool
+    {
+        return preg_match('/^\/start\s+[a-zA-Z0-9]{32}$/', trim($text)) === 1;
+    }
+
+    private function extractLinkToken(string $text): string
+    {
+        preg_match('/^\/start\s+([a-zA-Z0-9]{32})$/', trim($text), $matches);
+
+        return $matches[1] ?? '';
     }
 
     private function sendTelegramMessage(int $chatId, string $text, ?int $messageThreadId = null): void
