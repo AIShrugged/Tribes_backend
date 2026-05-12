@@ -5,6 +5,7 @@ namespace App\Services\Agenda;
 use Carbon\Carbon;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\AgendaStatus;
+use App\Models\AgendaTemplate;
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
@@ -26,6 +27,16 @@ class AgendaService
         private readonly AgendaDataCollector $dataCollector,
         private readonly AgendaRenderer $renderer,
     ) {}
+
+    private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
+    {
+        $teamId = $event->source?->user?->teams?->first()?->id;
+        if (! $teamId) {
+            return null;
+        }
+
+        return AgendaTemplate::where('team_id', $teamId)->first();
+    }
 
     public function generateForEvent(CalendarEvent $event): void
     {
@@ -142,14 +153,12 @@ class AgendaService
                 'user_id'           => null,
                 'type'              => 'general',
                 'status'            => AgendaStatus::IN_PROGRESS,
-                'send_scheduled_at' => $event->starts_at->subMinutes(15),
             ]);
         } else {
             $agenda->update([
-                'status'            => AgendaStatus::IN_PROGRESS,
-                'raw_json'          => null,
-                'content'           => null,
-                'send_scheduled_at' => $event->starts_at->subMinutes(15),
+                'status'  => AgendaStatus::IN_PROGRESS,
+                'raw_json' => null,
+                'content'  => null,
             ]);
         }
 
@@ -216,6 +225,7 @@ class AgendaService
             $tasksBetween = $this->dataCollector->getTasksBetweenMeetings($event, $previousEvent, $issues);
             $backlogStats = $this->dataCollector->getBacklogStats($issues, $previousEvent);
             $prevTopics   = $this->dataCollector->extractTopicsFromSummary($previousSummary?->summary);
+            $tgTopics     = $this->dataCollector->getTelegramTopics($event, $previousEvent);
 
             $renderData = [
                 'event'             => $event,
@@ -229,12 +239,15 @@ class AgendaService
                 'decisions_recap'   => $decisionsArray,
                 'tasks_between'     => $tasksBetween,
                 'backlog_stats'     => $backlogStats,
+                'tg_topics'         => $tgTopics,
             ];
+
+            $template = $this->resolveTemplate($event);
 
             $agenda->update([
                 'status'   => AgendaStatus::DONE,
                 'raw_json' => array_merge($renderData, $structuredData, ['event' => null]),
-                'content'  => $this->renderer->renderGeneralContent($renderData),
+                'content'  => $this->renderer->renderForWeb($renderData, $event, $template),
             ]);
 
             if ($event->source?->user) {
@@ -287,14 +300,12 @@ class AgendaService
                 'user_id'           => $user->id,
                 'type'              => 'personal',
                 'status'            => AgendaStatus::IN_PROGRESS,
-                'send_scheduled_at' => $event->starts_at->subMinutes(15),
             ]);
         } else {
             $agenda->update([
-                'status'            => AgendaStatus::IN_PROGRESS,
-                'raw_json'          => null,
-                'content'           => null,
-                'send_scheduled_at' => $event->starts_at->subMinutes(15),
+                'status'  => AgendaStatus::IN_PROGRESS,
+                'raw_json' => null,
+                'content'  => null,
             ]);
         }
 

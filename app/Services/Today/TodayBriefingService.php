@@ -13,6 +13,7 @@ use App\Domain\DTO\Today\TodayStaleTaskDTO;
 use App\Domain\DTO\Today\TodayTaskGroupsDTO;
 use App\Domain\DTO\Today\TodayWaitingTaskDTO;
 use App\Enums\AgendaStatus;
+use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
@@ -269,9 +270,11 @@ class TodayBriefingService
             ->first();
 
         if ($general) {
-            return $general->isGeneral() && !empty($general->raw_json)
-                ? AgendaRenderer::renderForWeb($general->raw_json, $event)
-                : $general->content;
+            if ($general->isGeneral() && ! empty($general->raw_json)) {
+                $template = $this->resolveTemplate($user);
+                return app(AgendaRenderer::class)->renderForWeb($general->raw_json, $event, $template);
+            }
+            return $general->content;
         }
 
         // 2. Try personal upcoming agenda for this meeting's series.
@@ -289,6 +292,16 @@ class TodayBriefingService
         }
 
         return null;
+    }
+
+    private function resolveTemplate(User $user): ?AgendaTemplate
+    {
+        $teamId = $user->teams()->first()?->id;
+        if (! $teamId) {
+            return null;
+        }
+
+        return AgendaTemplate::where('team_id', $teamId)->first();
     }
 
     private function buildMeetingTaskDTO(Issue $issue): TodayMeetingTaskDTO

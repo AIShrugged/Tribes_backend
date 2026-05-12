@@ -5,6 +5,8 @@ namespace App\Services\Agenda;
 use Carbon\Carbon;
 use App\Models\CalendarEvent;
 use App\Models\MeetingSummary;
+use App\Models\TelegramChatMessage;
+use App\Models\TelegramChatRegistration;
 use Illuminate\Support\Collection;
 
 class AgendaDataCollector
@@ -171,5 +173,43 @@ class AgendaDataCollector
         }
 
         return array_slice($topics, 0, 6);
+    }
+
+    public function getTelegramTopics(CalendarEvent $event, ?CalendarEvent $previousEvent): array
+    {
+        if ($previousEvent === null) {
+            return [];
+        }
+
+        $user = $event->source?->user;
+        if (! $user) {
+            return [];
+        }
+
+        $teamIds = $user->teams->pluck('id');
+        if ($teamIds->isEmpty()) {
+            return [];
+        }
+
+        $registrations = TelegramChatRegistration::whereIn('team_id', $teamIds)->get();
+        if ($registrations->isEmpty()) {
+            return [];
+        }
+
+        $since = $previousEvent->ends_at;
+
+        return TelegramChatMessage::whereIn('telegram_chat_id', $registrations->pluck('telegram_chat_id'))
+            ->where('role', 'user')
+            ->whereBetween('created_at', [$since, $event->starts_at])
+            ->with('telegramUser')
+            ->orderBy('created_at')
+            ->limit(30)
+            ->get()
+            ->map(fn ($m) => [
+                'text'       => mb_substr($m->content, 0, 200),
+                'created_at' => $m->created_at->format('d.m H:i'),
+                'author'     => $m->telegramUser?->telegram_username ?? 'Unknown',
+            ])
+            ->toArray();
     }
 }

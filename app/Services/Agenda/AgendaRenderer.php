@@ -2,32 +2,104 @@
 
 namespace App\Services\Agenda;
 
-use Carbon\Carbon;
+use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
 use App\Models\User;
+use Carbon\Carbon;
 
 class AgendaRenderer
 {
-    public static function renderForWeb(array $data, CalendarEvent $event): string
+    public function renderForTelegram(array $data, CalendarEvent $event, ?AgendaTemplate $template = null): string
     {
-        $lines = [];
+        $lines = [
+            "<b>{$event->title}</b>",
+            '🕐 ' . Carbon::parse($event->starts_at)->format('d.m.Y') . ' · ' . Carbon::parse($event->starts_at)->format('H:i'),
+        ];
 
-        $date = Carbon::parse($event->starts_at)->format('d.m.Y');
-        $time = Carbon::parse($event->starts_at)->format('H:i');
-        $lines[] = "📅 {$event->title}";
-        $lines[] = "🕐 {$date} · {$time}";
-
-        if (!empty($data['meeting_goal'])) {
-            $lines[] = '';
-            $lines[] = '🎯 Цель: ' . $data['meeting_goal'];
+        foreach ($this->sections($template) as $section) {
+            $body = $this->renderSection($section, $data, 'telegram');
+            if ($body !== '') {
+                $lines[] = '';
+                $lines[] = $body;
+            }
         }
 
-        if (!empty($data['discussion_topics'])) {
-            $lines[] = '';
-            $lines[] = '🗂 Темы для обсуждения';
-            foreach ($data['discussion_topics'] as $topic) {
-                $title = $topic['title'] ?? $topic;
-                $desc  = $topic['description'] ?? '';
+        return implode("\n", $lines);
+    }
+
+    public function renderForWeb(array $data, CalendarEvent $event, ?AgendaTemplate $template = null): string
+    {
+        $lines = [
+            "📅 {$event->title}",
+            '🕐 ' . Carbon::parse($event->starts_at)->format('d.m.Y') . ' · ' . Carbon::parse($event->starts_at)->format('H:i'),
+        ];
+
+        foreach ($this->sections($template) as $section) {
+            $body = $this->renderSection($section, $data, 'web');
+            if ($body !== '') {
+                $lines[] = '';
+                $lines[] = $body;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function sections(?AgendaTemplate $template): array
+    {
+        return $template?->orderedSections() ?? AgendaTemplate::DEFAULT_SECTIONS;
+    }
+
+    private function renderSection(string $section, array $data, string $mode): string
+    {
+        if (empty($data[$section]) && ! in_array($section, ['backlog_stats', 'commitments_check'], true)) {
+            return '';
+        }
+
+        return match ($section) {
+            'meeting_goal'         => $this->renderMeetingGoal($data['meeting_goal'] ?? null, $mode),
+            'discussion_topics'    => $this->renderDiscussionTopics($data['discussion_topics'] ?? [], $mode),
+            'main_problem'         => $this->renderMainProblem($data['main_problem'] ?? null, $mode),
+            'prev_topics'          => $this->renderPrevTopics($data['prev_topics'] ?? [], $mode),
+            'commitments_check'    => $this->renderCommitmentsCheck($data, $mode),
+            'tasks_between'        => $this->renderTasksBetween($data['tasks_between'] ?? [], $mode),
+            'backlog_stats'        => $this->renderBacklogStats($data['backlog_stats'] ?? null, $mode),
+            'tg_topics'            => $this->renderTgTopics($data['tg_topics'] ?? [], $mode),
+            'next_meeting_context' => $this->renderNextMeetingContext($data['next_meeting_context'] ?? null, $mode),
+            'follow_up_items'      => $this->renderFollowUpItems($data['follow_up_items'] ?? [], $mode),
+            'open_questions'       => $this->renderOpenQuestions($data['open_questions'] ?? [], $mode),
+            'focus_areas'          => $this->renderFocusAreas($data['focus_areas'] ?? [], $mode),
+            default                => '',
+        };
+    }
+
+    private function renderMeetingGoal(?string $value, string $mode): string
+    {
+        if (! $value) {
+            return '';
+        }
+
+        return $mode === 'telegram'
+            ? '<b>Цель:</b> ' . e($value)
+            : '🎯 Цель: ' . $value;
+    }
+
+    private function renderDiscussionTopics(array $topics, string $mode): string
+    {
+        if (empty($topics)) {
+            return '';
+        }
+
+        $lines = [$mode === 'telegram' ? '<b>Темы для обсуждения</b>' : '🗂 Темы для обсуждения'];
+        foreach ($topics as $topic) {
+            $title = $topic['title'] ?? $topic;
+            $desc  = $topic['description'] ?? '';
+            if ($mode === 'telegram') {
+                $lines[] = '● ' . e($title);
+                if ($desc) {
+                    $lines[] = '  <i>' . e($desc) . '</i>';
+                }
+            } else {
                 $lines[] = "● {$title}";
                 if ($desc) {
                     $lines[] = "  {$desc}";
@@ -35,195 +107,193 @@ class AgendaRenderer
             }
         }
 
-        if (!empty($data['main_problem'])) {
-            $lines[] = '';
-            $lines[] = '⚠️ Главная проблематика';
-            $lines[] = $data['main_problem'];
+        return implode("\n", $lines);
+    }
+
+    private function renderMainProblem(?string $value, string $mode): string
+    {
+        if (! $value) {
+            return '';
         }
 
-        if (!empty($data['prev_topics'])) {
-            $lines[] = '';
-            $lines[] = '🔙 Темы прошлого митинга';
-            foreach ($data['prev_topics'] as $topic) {
-                $topic   = trim(str_replace(['**', '*'], '', $topic));
-                $lines[] = "● {$topic}";
-            }
+        return $mode === 'telegram'
+            ? "<b>Главная проблематика</b>\n" . e($value)
+            : "⚠️ Главная проблематика\n{$value}";
+    }
+
+    private function renderPrevTopics(array $topics, string $mode): string
+    {
+        if (empty($topics)) {
+            return '';
         }
 
-        if (!empty($data['commitments_check'])) {
-            $done  = $data['commitments_done'] ?? 0;
-            $total = $data['commitments_total'] ?? count($data['commitments_check']);
-            $pct   = $total > 0 ? round($done / $total * 100) : 0;
+        $lines = [$mode === 'telegram' ? '<b>Темы прошлого митинга</b>' : '🔙 Темы прошлого митинга'];
+        foreach ($topics as $topic) {
+            $clean = trim(str_replace(['**', '*'], '', $topic));
+            $lines[] = $mode === 'telegram' ? '● ' . e($clean) : "● {$clean}";
+        }
 
-            $lines[] = '';
+        return implode("\n", $lines);
+    }
+
+    private function renderCommitmentsCheck(array $data, string $mode): string
+    {
+        $check = $data['commitments_check'] ?? [];
+        if (empty($check)) {
+            return '';
+        }
+
+        $done  = $data['commitments_done']  ?? 0;
+        $total = $data['commitments_total'] ?? count($check);
+        $pct   = $total > 0 ? round($done / $total * 100) : 0;
+
+        $lines = [];
+        if ($mode === 'telegram') {
+            $lines[] = '<b>Задачи с прошлого митинга</b>';
+            $lines[] = "Выполнено — {$done} из {$total} ({$pct}%)";
+        } else {
             $lines[] = "📋 Задачи с прошлого митинга — {$done} из {$total} ({$pct}%)";
-            foreach ($data['commitments_check'] as $c) {
-                $statusIcon = match ($c['status']) {
-                    'готово'   => '✅',
-                    'в работе' => '🔄',
-                    'отменено' => '❌',
-                    default    => '⏳',
-                };
-                $deadline = $c['deadline'] ? " ({$c['deadline']})" : '';
-                $lines[]  = "{$statusIcon} {$c['person']} — {$c['commitment']}{$deadline}";
+        }
+
+        foreach ($check as $c) {
+            $icon     = match ($c['status']) {
+                'готово'   => '✅',
+                'в работе' => '🔄',
+                'отменено' => '❌',
+                default    => '⏳',
+            };
+            $deadline = $c['deadline'] ?? null;
+            if ($mode === 'telegram') {
+                $tail = $deadline ? " <i>({$deadline})</i>" : '';
+                $lines[] = "{$icon} <b>" . e($c['person']) . '</b> — ' . e($c['commitment']) . $tail;
+            } else {
+                $tail = $deadline ? " ({$deadline})" : '';
+                $lines[] = "{$icon} {$c['person']} — {$c['commitment']}{$tail}";
             }
         }
 
-        if (!empty($data['tasks_between'])) {
-            $btTotal = count($data['tasks_between']);
-            $btDone  = count(array_filter($data['tasks_between'], fn ($t) => $t['status'] === 'done'));
+        return implode("\n", $lines);
+    }
 
-            $lines[] = '';
-            $lines[] = "🔵 Задачи между митингами — {$btDone} из {$btTotal}";
-            foreach ($data['tasks_between'] as $t) {
-                $icon    = $t['status'] === 'done' ? '✅' : '🔵';
+    private function renderTasksBetween(array $tasks, string $mode): string
+    {
+        if (empty($tasks)) {
+            return '';
+        }
+
+        $total = count($tasks);
+        $done  = count(array_filter($tasks, fn ($t) => ($t['status'] ?? null) === 'done'));
+
+        $lines = [];
+        if ($mode === 'telegram') {
+            $lines[] = '<b>Задачи между митингами</b>';
+            $lines[] = "Выполнено — {$done} из {$total}";
+        } else {
+            $lines[] = "🔵 Задачи между митингами — {$done} из {$total}";
+        }
+
+        foreach ($tasks as $t) {
+            $icon = ($t['status'] ?? null) === 'done' ? '✅' : '🔵';
+            if ($mode === 'telegram') {
+                $lines[] = "{$icon} <b>" . e($t['assignee']) . '</b> — ' . e($t['name']);
+            } else {
                 $lines[] = "{$icon} {$t['assignee']} — {$t['name']}";
             }
         }
 
-        if (!empty($data['backlog_stats'])) {
-            $bs        = $data['backlog_stats'];
-            $openDelta = $bs['delta_open'] ? " (+{$bs['delta_open']})" : '';
-            $doneDelta = $bs['delta_done'] ? " (+{$bs['delta_done']})" : '';
-            $lines[]   = '';
-            $lines[]   = '📊 Прогресс по бэклогу';
-            $lines[]   = "Всего: {$bs['total']} | Открыто: {$bs['open']}{$openDelta} | В работе: {$bs['in_progress']} | Закрыто: {$bs['done']}{$doneDelta}";
-            if ($bs['total'] > 0) {
-                $pct     = round($bs['done'] / $bs['total'] * 100);
-                $lines[] = "Прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
+        return implode("\n", $lines);
+    }
+
+    private function renderBacklogStats(?array $bs, string $mode): string
+    {
+        if (! $bs) {
+            return '';
+        }
+
+        $openDelta = ! empty($bs['delta_open']) ? " (+{$bs['delta_open']})" : '';
+        $doneDelta = ! empty($bs['delta_done']) ? " (+{$bs['delta_done']})" : '';
+
+        $lines = [];
+        $lines[] = $mode === 'telegram' ? '<b>Прогресс по бэклогу</b>' : '📊 Прогресс по бэклогу';
+        $lines[] = "Всего: {$bs['total']} | Открыто: {$bs['open']}{$openDelta} | В работе: {$bs['in_progress']} | Закрыто: {$bs['done']}{$doneDelta}";
+
+        if (($bs['total'] ?? 0) > 0) {
+            $pct = round(($bs['done'] ?? 0) / $bs['total'] * 100);
+            $lines[] = "Прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderTgTopics(array $topics, string $mode): string
+    {
+        if (empty($topics)) {
+            return '';
+        }
+
+        $lines = [$mode === 'telegram' ? '📱 <b>Новые темы из Telegram:</b>' : '📱 Новые темы из Telegram:'];
+        foreach ($topics as $topic) {
+            $created = $topic['created_at'] ?? '';
+            $author  = $topic['author'] ?? '';
+            $text    = $topic['text'] ?? '';
+            if ($mode === 'telegram') {
+                $lines[] = '• [' . e($created) . '] ' . e($author) . ': ' . e($text);
+            } else {
+                $lines[] = "• [{$created}] {$author}: {$text}";
             }
         }
 
         return implode("\n", $lines);
     }
 
-    public static function renderForTelegram(array $data, CalendarEvent $event): string
+    private function renderNextMeetingContext(?string $value, string $mode): string
     {
-        $lines = [];
-
-        $date = Carbon::parse($event->starts_at)->format('d.m.Y');
-        $time = Carbon::parse($event->starts_at)->format('H:i');
-        $lines[] = "<b>{$event->title}</b>";
-        $lines[] = "🕐 {$date} · {$time}";
-
-        if (!empty($data['meeting_goal'])) {
-            $lines[] = '';
-            $lines[] = '<b>Цель:</b> ' . e($data['meeting_goal']);
+        if (! $value) {
+            return '';
         }
 
-        if (!empty($data['discussion_topics'])) {
-            $lines[] = '';
-            $lines[] = '<b>1. Темы для обсуждения</b>';
-            foreach ($data['discussion_topics'] as $topic) {
-                $title = e($topic['title'] ?? $topic);
-                $desc  = e($topic['description'] ?? '');
-                $lines[] = "● {$title}";
-                if ($desc) {
-                    $lines[] = "  <i>{$desc}</i>";
-                }
-            }
+        return $mode === 'telegram'
+            ? "<b>🎯 Контекст следующей встречи</b>\n" . e($value)
+            : "🎯 Контекст следующей встречи\n{$value}";
+    }
+
+    private function renderFollowUpItems(array $items, string $mode): string
+    {
+        if (empty($items)) {
+            return '';
         }
 
-        if (!empty($data['main_problem'])) {
-            $lines[] = '';
-            $lines[] = '<b>2. Главная проблематика</b>';
-            $lines[] = e($data['main_problem']);
-        }
-
-        if (!empty($data['prev_topics'])) {
-            $lines[] = '';
-            $lines[] = '<b>3. Темы прошлого митинга</b>';
-            foreach ($data['prev_topics'] as $topic) {
-                $topic   = trim(str_replace(['**', '*'], '', $topic));
-                $lines[] = '● ' . e($topic);
-            }
-        }
-
-        if (!empty($data['commitments_check'])) {
-            $done  = $data['commitments_done'] ?? 0;
-            $total = $data['commitments_total'] ?? count($data['commitments_check']);
-            $pct   = $total > 0 ? round($done / $total * 100) : 0;
-
-            $lines[] = '';
-            $lines[] = '<b>4. Задачи с прошлого митинга</b>';
-            $lines[] = "Выполнено — {$done} из {$total} ({$pct}%)";
-            foreach ($data['commitments_check'] as $c) {
-                $statusIcon = match ($c['status']) {
-                    'готово'   => '✅',
-                    'в работе' => '🔄',
-                    'отменено' => '❌',
-                    default    => '⏳',
-                };
-                $deadline = $c['deadline'] ? " <i>({$c['deadline']})</i>" : '';
-                $lines[]  = "{$statusIcon} <b>" . e($c['person']) . '</b> — ' . e($c['commitment']) . $deadline;
-            }
-        }
-
-        if (!empty($data['tasks_between'])) {
-            $btTotal = count($data['tasks_between']);
-            $btDone  = count(array_filter($data['tasks_between'], fn ($t) => $t['status'] === 'done'));
-
-            $lines[] = '';
-            $lines[] = '<b>5. Задачи между митингами</b>';
-            $lines[] = "Выполнено — {$btDone} из {$btTotal}";
-            foreach ($data['tasks_between'] as $t) {
-                $icon    = $t['status'] === 'done' ? '✅' : '🔵';
-                $lines[] = "{$icon} <b>" . e($t['assignee']) . '</b> — ' . e($t['name']);
-            }
-        }
-
-        if (!empty($data['backlog_stats'])) {
-            $bs        = $data['backlog_stats'];
-            $openDelta = $bs['delta_open'] ? " (+{$bs['delta_open']})" : '';
-            $doneDelta = $bs['delta_done'] ? " (+{$bs['delta_done']})" : '';
-            $lines[]   = '';
-            $lines[]   = '<b>6. Прогресс по бэклогу</b>';
-            $lines[]   = "Всего: {$bs['total']} | Открыто: {$bs['open']}{$openDelta} | В работе: {$bs['in_progress']} | Закрыто: {$bs['done']}{$doneDelta}";
-            if ($bs['total'] > 0) {
-                $pct     = round($bs['done'] / $bs['total'] * 100);
-                $lines[] = "Прогресс — {$bs['done']} из {$bs['total']} ({$pct}%)";
-            }
+        $lines = [$mode === 'telegram' ? '<b>✅ Follow-up</b>' : '✅ Follow-up'];
+        foreach ($items as $item) {
+            $lines[] = $mode === 'telegram' ? '● ' . e($item) : "● {$item}";
         }
 
         return implode("\n", $lines);
     }
 
-    public function renderGeneralContent(array $data): string
+    private function renderOpenQuestions(array $questions, string $mode): string
     {
-        $event = $data['event'] ?? null;
-        $lines = [];
-
-        $title = $event?->title ?? 'Встреча';
-        $date  = $event ? Carbon::parse($event->starts_at)->format('d.m.Y') : '';
-        $time  = $event ? Carbon::parse($event->starts_at)->format('H:i') : '';
-        $lines[] = "{$title}";
-        $lines[] = "{$date}  ·  {$time}";
-
-        if (!empty($data['discussion_topics'])) {
-            $lines[] = '';
-            $lines[] = '1. Темы для обсуждения';
-            foreach ($data['discussion_topics'] as $topic) {
-                $title = $topic['title'] ?? $topic;
-                $desc  = $topic['description'] ?? '';
-                $lines[] = "● {$title}";
-                if ($desc) {
-                    $lines[] = "  {$desc}";
-                }
-            }
+        if (empty($questions)) {
+            return '';
         }
 
-        if (!empty($data['main_problem'])) {
-            $lines[] = '';
-            $lines[] = '2. Главная проблематика';
-            $lines[] = $data['main_problem'];
+        $lines = [$mode === 'telegram' ? '<b>❓ Открытые вопросы</b>' : '❓ Открытые вопросы'];
+        foreach ($questions as $q) {
+            $lines[] = $mode === 'telegram' ? '● ' . e($q) : "● {$q}";
         }
 
-        if (!empty($data['prev_topics'])) {
-            $lines[] = '';
-            $lines[] = '3. Темы прошлого митинга';
-            foreach ($data['prev_topics'] as $topic) {
-                $lines[] = "● {$topic}";
-            }
+        return implode("\n", $lines);
+    }
+
+    private function renderFocusAreas(array $areas, string $mode): string
+    {
+        if (empty($areas)) {
+            return '';
+        }
+
+        $lines = [$mode === 'telegram' ? '<b>🔍 Фокус на следующей встрече</b>' : '🔍 Фокус на следующей встрече'];
+        foreach ($areas as $area) {
+            $lines[] = $mode === 'telegram' ? '● ' . e($area) : "● {$area}";
         }
 
         return implode("\n", $lines);
@@ -231,26 +301,27 @@ class AgendaRenderer
 
     public function renderPersonalContent(array $data, User $user): string
     {
-        $lines   = [];
-        $lines[] = "👤 Личная агенда: {$user->name}";
-        $lines[] = '';
+        $lines = [
+            "👤 Личная агенда: {$user->name}",
+            '',
+        ];
 
-        if (!empty($data['previous_meeting_recap'])) {
+        if (! empty($data['previous_meeting_recap'])) {
             $lines[] = '🔙 Прошлый митинг:';
             $lines[] = $data['previous_meeting_recap'];
             $lines[] = '';
         }
 
-        if (!empty($data['assigned_tasks'])) {
+        if (! empty($data['assigned_tasks'])) {
             $lines[] = '📋 Текущие задачи:';
             foreach ($data['assigned_tasks'] as $task) {
-                $due     = !empty($task['due_date']) ? " (срок: {$task['due_date']})" : '';
+                $due     = ! empty($task['due_date']) ? " (срок: {$task['due_date']})" : '';
                 $lines[] = "- [{$task['status']}] {$task['name']}{$due}";
             }
             $lines[] = '';
         }
 
-        if (!empty($data['due_by_this_meeting'])) {
+        if (! empty($data['due_by_this_meeting'])) {
             $lines[] = '⏰ Дедлайн до этого митинга:';
             foreach ($data['due_by_this_meeting'] as $task) {
                 $lines[] = "- {$task['name']}";
@@ -258,16 +329,16 @@ class AgendaRenderer
             $lines[] = '';
         }
 
-        if (!empty($data['completed_since_last'])) {
+        if (! empty($data['completed_since_last'])) {
             $lines[] = '✅ Завершённые задачи:';
             foreach ($data['completed_since_last'] as $task) {
-                $closed  = !empty($task['close_date']) ? " ({$task['close_date']})" : '';
+                $closed  = ! empty($task['close_date']) ? " ({$task['close_date']})" : '';
                 $lines[] = "- {$task['name']}{$closed}";
             }
             $lines[] = '';
         }
 
-        if (!empty($data['discussion_points'])) {
+        if (! empty($data['discussion_points'])) {
             $lines[] = '💬 Темы для обсуждения:';
             foreach ($data['discussion_points'] as $i => $point) {
                 $lines[] = ($i + 1) . '. ' . $point;

@@ -4,6 +4,7 @@ namespace App\Services\Agenda;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Enums\AgendaStatus;
+use App\Models\AgendaTemplate;
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
@@ -15,6 +16,11 @@ use Illuminate\Support\Facades\Log;
 
 class UpcomingAgendaService
 {
+    public function __construct(
+        private readonly AgendaRenderer $renderer,
+    ) {}
+
+
     public function generateForEvent(CalendarEvent $event): void
     {
         $event->loadMissing(
@@ -100,10 +106,12 @@ class UpcomingAgendaService
                 throw new \RuntimeException('LLM returned invalid JSON: ' . substr($matches[0], 0, 200));
             }
 
+            $template = $this->resolveTemplate($user);
+
             $agenda->update([
                 'status' => AgendaStatus::DONE->value,
                 'raw_json' => $data,
-                'content' => $this->renderContent($data, $event),
+                'content' => $this->renderer->renderForWeb($data, $event, $template),
             ]);
 
             AgentActivityLog::recordActivity(
@@ -178,42 +186,13 @@ class UpcomingAgendaService
         return implode("\n", $parts);
     }
 
-    private function renderContent(array $data, CalendarEvent $event): string
+    private function resolveTemplate(User $user): ?AgendaTemplate
     {
-        $lines = [];
-        $lines[] = "📋 Подготовка к следующей встрече";
-        $lines[] = "По итогам: {$event->title} ({$event->starts_at->format('d.m.Y')})";
-        $lines[] = '';
-
-        if (! empty($data['next_meeting_context'])) {
-            $lines[] = '🎯 Контекст:';
-            $lines[] = $data['next_meeting_context'];
-            $lines[] = '';
+        $teamId = $user->teams()->first()?->id;
+        if (! $teamId) {
+            return null;
         }
 
-        if (! empty($data['follow_up_items'])) {
-            $lines[] = '✅ Follow-up:';
-            foreach ($data['follow_up_items'] as $item) {
-                $lines[] = "● {$item}";
-            }
-            $lines[] = '';
-        }
-
-        if (! empty($data['open_questions'])) {
-            $lines[] = '❓ Открытые вопросы:';
-            foreach ($data['open_questions'] as $q) {
-                $lines[] = "● {$q}";
-            }
-            $lines[] = '';
-        }
-
-        if (! empty($data['focus_areas'])) {
-            $lines[] = '🔍 Фокус на следующей встрече:';
-            foreach ($data['focus_areas'] as $area) {
-                $lines[] = "● {$area}";
-            }
-        }
-
-        return implode("\n", $lines);
+        return AgendaTemplate::where('team_id', $teamId)->first();
     }
 }

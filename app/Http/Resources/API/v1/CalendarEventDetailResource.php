@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\API\v1;
 
+use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
 use App\Services\Agenda\AgendaRenderer;
 use Illuminate\Http\Request;
@@ -20,6 +21,9 @@ class CalendarEventDetailResource extends JsonResource
         /** @var CalendarEvent $event */
         $event = $this->resource;
 
+        $template = $this->resolveTemplate($event);
+        $renderer = app(AgendaRenderer::class);
+
         return [
             'event' => array_merge(
                 CalendarEventResource::make($event)->resolve($request),
@@ -37,8 +41,8 @@ class CalendarEventDetailResource extends JsonResource
                     'id' => $agenda->id,
                     'type' => $agenda->type,
                     'status' => $agenda->status,
-                    'content' => $agenda->isGeneral() && !empty($agenda->raw_json)
-                        ? AgendaRenderer::renderForWeb($agenda->raw_json, $event)
+                    'content' => $agenda->isGeneral() && ! empty($agenda->raw_json)
+                        ? $renderer->renderForWeb($agenda->raw_json, $event, $template)
                         : $agenda->content,
                     'user_id' => $agenda->user_id,
                     'sent_at' => $agenda->sent_at,
@@ -183,6 +187,16 @@ class CalendarEventDetailResource extends JsonResource
     private function excerpt(string $text, int $limit = 140): string
     {
         return Str::limit(preg_replace('/\s+/', ' ', trim($text)) ?? $text, $limit);
+    }
+
+    private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
+    {
+        $teamId = $event->source?->user?->teams?->first()?->id;
+        if (! $teamId) {
+            return null;
+        }
+
+        return AgendaTemplate::where('team_id', $teamId)->first();
     }
 
     private function taskExcerpt(mixed $task): string

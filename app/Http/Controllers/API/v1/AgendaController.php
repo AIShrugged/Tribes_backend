@@ -63,7 +63,9 @@ class AgendaController extends Controller
             })
             ->whereHas('calendarEvent', fn ($q) => $q->where('starts_at', '>=', now()))
             ->with('calendarEvent:id,title,starts_at,ends_at')
-            ->orderBy('send_scheduled_at')
+            ->join('calendar_events', 'meeting_agendas.calendar_event_id', '=', 'calendar_events.id')
+            ->orderBy('calendar_events.starts_at')
+            ->select('meeting_agendas.*')
             ->get();
 
         return ApiResponse::list($agendas, $agendas->count());

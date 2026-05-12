@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\AgendaStatus;
+use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
 use App\Models\MeetingAgenda;
 use App\Models\TeamNotificationSetting;
@@ -119,8 +120,9 @@ class SendAgendaNotificationsJob implements ShouldQueue
     {
         $rawJson = $agenda->raw_json ?? [];
 
-        if ($agenda->isGeneral() && !empty($rawJson)) {
-            return AgendaRenderer::renderForTelegram($rawJson, $event);
+        if ($agenda->isGeneral() && ! empty($rawJson)) {
+            $template = $this->resolveTemplate($event);
+            return app(AgendaRenderer::class)->renderForTelegram($rawJson, $event, $template);
         }
 
         // Personal agenda — plain text fallback
@@ -131,5 +133,15 @@ class SendAgendaNotificationsJob implements ShouldQueue
         $lines[] = e($agenda->content);
 
         return implode("\n", $lines);
+    }
+
+    private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
+    {
+        $teamId = $event->source?->user?->teams?->first()?->id;
+        if (! $teamId) {
+            return null;
+        }
+
+        return AgendaTemplate::where('team_id', $teamId)->first();
     }
 }

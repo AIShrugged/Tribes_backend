@@ -11,7 +11,8 @@ class TeamNotificationSetting extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'enabled' => 'boolean',
+        'enabled'        => 'boolean',
+        'minutes_before' => 'integer',
     ];
 
     public function team(): BelongsTo

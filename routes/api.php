@@ -35,6 +35,8 @@ use App\Http\Controllers\API\v1\TeamDecisionController;
 use App\Http\Controllers\API\v1\TeamKeyPointController;
 use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamNotificationSettingController;
+use App\Http\Controllers\API\v1\MeetingSummaryTemplateController;
+use App\Http\Controllers\API\v1\AgendaTemplateController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\TodayBriefingController;
@@ -251,6 +253,12 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'store']);
         Route::patch('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'update']);
         Route::delete('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'destroy']);
+
+        Route::get('teams/{team}/meeting-summary-template', [MeetingSummaryTemplateController::class, 'show']);
+        Route::put('teams/{team}/meeting-summary-template', [MeetingSummaryTemplateController::class, 'upsert']);
+
+        Route::get('teams/{team}/agenda-template', [AgendaTemplateController::class, 'show']);
+        Route::put('teams/{team}/agenda-template', [AgendaTemplateController::class, 'upsert']);
 
         Route::get('teams/{team}/invites', [TeamInviteController::class, 'index']);
         Route::post('teams/{team}/invites', [TeamInviteController::class, 'store']);

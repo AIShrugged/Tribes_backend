@@ -58,6 +58,23 @@ class CalendarEventController extends Controller
             ]);
         }
 
+        $calendarEvents = match ($request->getScope()) {
+            'past'     => $calendarEvents->where('ends_at', '<', now()),
+            'upcoming' => $calendarEvents->where('starts_at', '>', now()),
+            default    => $calendarEvents,
+        };
+
+        if ($teamId = $request->getTeamId()) {
+            $calendarEvents->where(function ($q) use ($teamId) {
+                $q->whereHas('sources.user.teams', fn ($inner) => $inner->where('teams.id', $teamId))
+                    ->orWhereHas('participants.profile.user.teams', fn ($inner) => $inner->where('teams.id', $teamId));
+            });
+        }
+
+        if ($participantId = $request->getParticipantId()) {
+            $calendarEvents->whereHas('participants', fn ($q) => $q->where('participants.id', $participantId));
+        }
+
         $count = $calendarEvents->count();
 
         $calendarEvents = $calendarEvents->offset($request->getOffset())

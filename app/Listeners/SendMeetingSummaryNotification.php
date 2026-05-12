@@ -3,11 +3,15 @@
 namespace App\Listeners;
 
 use App\Events\MeetingSummaryGenerated;
+use App\Models\Issue;
 use App\Models\MeetingSummary;
+use App\Models\MeetingSummaryTemplate;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -16,6 +20,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
     use Queueable;
 
     public int $tries = 1;
+
     public function handle(MeetingSummaryGenerated $event): void
     {
         $summary = $event->summary;
@@ -32,6 +37,17 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             return;
         }
 
+        $calendarEvent->loadMissing(['participants', 'issues.assignee']);
+
+        $newTasks = Issue::forMeeting($calendarEvent->id)->with('assignee')->get();
+
+        $updatedTasks = Issue::whereHas('comments', fn ($q) =>
+            $q->where('calendar_event_id', $calendarEvent->id)->whereNull('user_id')
+        )
+            ->whereNotIn('id', $newTasks->pluck('id'))
+            ->with('assignee')
+            ->get();
+
         foreach ($teams as $team) {
             $settings = TeamNotificationSetting::query()
                 ->where('team_id', $team->id)
@@ -41,6 +57,12 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
                 ->with('notifiable')
                 ->get();
 
+            $template = Cache::remember(
+                "meeting_summary_template:{$team->id}",
+                300,
+                fn () => MeetingSummaryTemplate::where('team_id', $team->id)->first()
+            );
+
             foreach ($settings as $setting) {
                 /** @var TelegramChatRegistration $registration */
                 $registration = $setting->notifiable;
@@ -49,17 +71,15 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
                     continue;
                 }
 
-                $this->send($registration, $summary);
+                $this->send($registration, $summary, $newTasks, $updatedTasks, $template);
             }
         }
     }
 
-    private function send(TelegramChatRegistration $registration, MeetingSummary $summary): void
+    private function send(TelegramChatRegistration $registration, MeetingSummary $summary, Collection $newTasks, Collection $updatedTasks, ?MeetingSummaryTemplate $template): void
     {
         try {
-            $summary->refresh();
-            $summary->calendarEvent->loadMissing(['participants']);
-            $text = $this->formatMessage($summary);
+            $text = $this->formatMessage($summary, $newTasks, $updatedTasks, $template);
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
@@ -82,7 +102,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         }
     }
 
-    private function formatMessage(MeetingSummary $summary): string
+    private function formatMessage(MeetingSummary $summary, Collection $newTasks, Collection $updatedTasks, ?MeetingSummaryTemplate $template): string
     {
         $lines = [];
         $lines[] = '📋 <b>Meeting Summary</b>';
@@ -96,59 +116,141 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             $lines[] = '';
         }
 
-        $hasKeyPoints = ! empty($summary->key_points);
-        $hasDecisions = ! empty($summary->decisions);
+        $sections = $template?->sections ?? MeetingSummaryTemplate::DEFAULT_SECTIONS;
 
-        if ($hasKeyPoints || $hasDecisions) {
-            if ($hasKeyPoints) {
-                $lines[] = '<b>Ключевые тезисы:</b>';
-                foreach ($summary->key_points as $point) {
-                    $lines[] = '• '.e($point);
+        $renderers = [
+            'key_points'           => fn () => $this->renderKeyPoints($summary),
+            'decisions'            => fn () => $this->renderDecisions($summary),
+            'tasks'                => fn () => $this->renderTasks($newTasks, $updatedTasks),
+            'commitments'          => fn () => $this->renderCommitments($summary),
+            'repeated_discussions' => fn () => $this->renderRepeatedDiscussions($summary),
+        ];
+
+        foreach ($sections as $section) {
+            if (isset($renderers[$section])) {
+                $block = ($renderers[$section])();
+                if ($block) {
+                    $lines[] = $block;
                 }
-                $lines[] = '';
             }
-
-            if ($hasDecisions) {
-                $lines[] = '<b>Решения:</b>';
-                foreach ($summary->decisions as $decision) {
-                    $lines[] = '• '.e($decision);
-                }
-                $lines[] = '';
-            }
-        } elseif ($summary->summary) {
-            $lines[] = $this->markdownToTelegramHtml($summary->summary);
-            $lines[] = '';
-        }
-
-        $repeated = $summary->repeated_discussions ?? [];
-        if (! empty($repeated)) {
-            $lines[] = '🔁 <b>Повторяющиеся обсуждения:</b>';
-            foreach ($repeated as $item) {
-                $newDecision = e($item['new_decision'] ?? '');
-                $prevDecision = e($item['previous_decision'] ?? '');
-                $prevDate = $item['previous_date'] ?? '';
-                $prevTitle = $item['previous_meeting_title'] ?? '';
-
-                $when = $prevDate ? ' ('.\Carbon\Carbon::parse($prevDate)->format('d.m.Y').')' : '';
-
-                $eventId = $item['previous_calendar_event_id'] ?? null;
-                $meetingLink = $eventId
-                    ? config('app.frontend_url').'/dashboard/meetings/'.$eventId
-                    : null;
-
-                $titlePart = $meetingLink
-                    ? '<a href="'.e($meetingLink).'">'.e($prevTitle ?: 'встреча').'</a>'
-                    : ($prevTitle ? '«'.e($prevTitle).'»' : '');
-
-                $where = $titlePart ? ' на '.$titlePart : '';
-
-                $lines[] = "⚠️ «{$newDecision}»";
-                $lines[] = "   Уже решалось{$when}{$where}: «{$prevDecision}»";
-            }
-            $lines[] = '';
         }
 
         return trim(implode("\n", $lines));
+    }
+
+    private function renderKeyPoints(MeetingSummary $summary): ?string
+    {
+        if (empty($summary->key_points)) {
+            if (! $summary->summary) {
+                return null;
+            }
+            return $this->markdownToTelegramHtml($summary->summary);
+        }
+
+        $lines = ['<b>Ключевые тезисы:</b>'];
+        foreach ($summary->key_points as $point) {
+            $lines[] = '• '.e($point);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderDecisions(MeetingSummary $summary): ?string
+    {
+        if (empty($summary->decisions)) {
+            return null;
+        }
+
+        $lines = ['<b>Решения:</b>'];
+        foreach ($summary->decisions as $decision) {
+            $lines[] = '• '.e($decision);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderTasks(Collection $newTasks, Collection $updatedTasks): ?string
+    {
+        if ($newTasks->isEmpty() && $updatedTasks->isEmpty()) {
+            return null;
+        }
+
+        $lines = [];
+
+        if ($newTasks->isNotEmpty()) {
+            $lines[] = '✨ <b>Новые задачи и цели:</b>';
+            foreach ($newTasks as $task) {
+                $assignee = $task->assignee?->name ?? '—';
+                $lines[] = '• '.$this->inlineMarkdown($task->title).' ('.$assignee.')';
+            }
+        }
+
+        if ($updatedTasks->isNotEmpty()) {
+            if ($newTasks->isNotEmpty()) {
+                $lines[] = '';
+            }
+            $lines[] = '✨ <b>Обновлённые задачи и цели:</b>';
+            foreach ($updatedTasks as $task) {
+                $assignee = $task->assignee?->name ?? '—';
+                $lines[] = '• '.$this->inlineMarkdown($task->title).' ['.$task->status.'] ('.$assignee.')';
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderCommitments(MeetingSummary $summary): ?string
+    {
+        $commitments = $summary->commitments ?? [];
+        if (empty($commitments)) {
+            return null;
+        }
+
+        $lines = ['<b>Обязательства:</b>'];
+        foreach ($commitments as $c) {
+            $who = e($c['who'] ?? '—');
+            $what = e($c['what'] ?? '');
+            $deadline = isset($c['deadline']) && $c['deadline']
+                ? ' <i>('.e($c['deadline']).')</i>'
+                : '';
+            $lines[] = "• <b>{$who}</b>: {$what}{$deadline}";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderRepeatedDiscussions(MeetingSummary $summary): ?string
+    {
+        $repeated = $summary->repeated_discussions ?? [];
+        if (empty($repeated)) {
+            return null;
+        }
+
+        $lines = ['🔁 <b>Повторяющиеся обсуждения:</b>'];
+        foreach ($repeated as $item) {
+            $newDecision = e($item['new_decision'] ?? '');
+            $prevDecision = e($item['previous_decision'] ?? '');
+            $prevDate = $item['previous_date'] ?? '';
+            $prevTitle = $item['previous_meeting_title'] ?? '';
+
+            $when = $prevDate ? ' ('.\Carbon\Carbon::parse($prevDate)->format('d.m.Y').')' : '';
+
+            $eventId = $item['previous_calendar_event_id'] ?? null;
+            $meetingLink = $eventId
+                ? config('app.frontend_url').'/dashboard/meetings/'.$eventId
+                : null;
+
+            $titlePart = $meetingLink
+                ? '<a href="'.e($meetingLink).'">'.e($prevTitle ?: 'встреча').'</a>'
+                : ($prevTitle ? '«'.e($prevTitle).'»' : '');
+
+            $where = $titlePart ? ' на '.$titlePart : '';
+
+            $lines[] = "⚠️ «{$newDecision}»";
+            $lines[] = "   Уже решалось{$when}{$where}: «{$prevDecision}»";
+        }
+
+        return implode("\n", $lines);
     }
 
     private function markdownToTelegramHtml(string $markdown): string
