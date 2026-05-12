@@ -37,6 +37,7 @@ use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamNotificationSettingController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
+use App\Http\Controllers\API\v1\TelegramLinkController;
 use App\Http\Controllers\API\v1\TodayBriefingController;
 use App\Http\Controllers\API\v1\TodayMessageController;
 use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
@@ -126,6 +127,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::group(['prefix' => 'google'], function () {
             Route::post('oauth', [GoogleCalendarController::class, 'attach']);
         });
+
+        Route::post('telegram/link', [TelegramLinkController::class, 'generate']);
 
         Route::group(['prefix' => 'calendar-events'], function () {
             Route::get('/organization', [OrganizationCalendarController::class, 'index'])->name('calendar-events.organization');
