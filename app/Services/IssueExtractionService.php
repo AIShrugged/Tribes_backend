@@ -124,6 +124,7 @@ Return JSON strictly in the following format:
       "name": "Verb + what exactly to do (up to 80 characters)",
       "description": "## Context\nWhy this is needed — what was discussed at the meeting, what problem exists.\n\n## Steps\n1. Concrete step 1\n2. Concrete step 2\n\n## Definition of done\nHow to know the task is complete.",
       "type": "frontend | backend | organization",
+      "author_name": "First Last | null",
       "assignee_name": "First Last | null",
       "due_date": "YYYY-MM-DD | null",
       "priority": "critical | high | normal | low | minimal"
@@ -144,6 +145,13 @@ Return JSON strictly in the following format:
 - "frontend" — UI, web app, client-side work
 - "backend" — APIs, services, infrastructure, data, integrations
 - "organization" — coordination, process, operations, or non-implementation work
+
+**author_name** — the name of the person who INITIATED or FORMULATED the task during the meeting. Examples:
+- "Pete, please handle the auth bug" → author = the speaker who said this (NOT Pete; Pete is the assignee).
+- "I'll take care of the deployment" → author = the speaker (same person as assignee).
+- "We need to fix the API by Friday" (no clear initiator) → null.
+
+The author is the one whose VOICE proposed the task. If unclear from the transcript — null.
 
 **assignee_name** — the name of the person who EXPLICITLY took the task or was EXPLICITLY assigned it in the conversation. If unclear — null.
 

@@ -63,7 +63,7 @@ class IssueObserver
             } else {
                 $this->dispatchQuickCpmRemove($issue);
             }
-        } elseif ($issue->isDirty(['priority', 'due_date', 'description', 'name'])) {
+        } elseif ($issue->isDirty(['priority', 'due_date', 'description', 'name', 'epic_id'])) {
             $this->queueCpmPending($issue);
         }
     }

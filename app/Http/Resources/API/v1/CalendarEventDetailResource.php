@@ -4,6 +4,7 @@ namespace App\Http\Resources\API\v1;
 
 use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
+use App\Models\Decision;
 use App\Services\Agenda\AgendaRenderer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -57,6 +58,7 @@ class CalendarEventDetailResource extends JsonResource
             'review' => $event->meetingReview
                 ? MeetingReviewResource::make($event->meetingReview)->resolve($request)
                 : null,
+            'decisions' => $this->buildDecisions($event),
             'previous_meeting' => $this->previousMeeting ? [
                 'id' => $this->previousMeeting->id,
                 'title' => $this->previousMeeting->title,
@@ -68,6 +70,37 @@ class CalendarEventDetailResource extends JsonResource
             ] : null,
             'key_takeaways' => $this->buildKeyTakeaways($event, $request),
         ];
+    }
+
+    /**
+     * Decisions из таблицы (а не из summary JSON) — со связанными задачами и флагом покрытия.
+     * Обходит коллизию имени `MeetingSummary::decisions` (JSON cast vs hasMany relation) явным запросом.
+     */
+    private function buildDecisions(CalendarEvent $event): array
+    {
+        return Decision::query()
+            ->where('calendar_event_id', $event->id)
+            ->with(['issues:id,name,status', 'authorUser:id,name'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Decision $decision) => [
+                'id'              => $decision->id,
+                'text'            => $decision->text,
+                'topic'           => $decision->topic,
+                'author_raw_name' => $decision->author_raw_name,
+                'author'          => $decision->authorUser ? [
+                    'id'   => $decision->authorUser->id,
+                    'name' => $decision->authorUser->name,
+                ] : null,
+                'linked_issues'   => $decision->issues->map(fn ($issue) => [
+                    'id'     => $issue->id,
+                    'name'   => $issue->name,
+                    'status' => $issue->status,
+                ])->values()->all(),
+                'is_uncovered'    => $decision->issues->isEmpty(),
+            ])
+            ->values()
+            ->all();
     }
 
     private function buildKeyTakeaways(CalendarEvent $event, Request $request): array

@@ -50,6 +50,8 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
             );
         }
 
+        ExtractEpicsFromTranscriptJob::dispatch($this->event, $this->team, $this->user);
+
         Log::info('VerifyMeetingArtifactsJob: done', [
             'calendar_event_id'   => $this->event->id,
             'incomplete_count'    => $incomplete->count(),

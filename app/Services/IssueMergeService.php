@@ -10,6 +10,7 @@ use App\Models\IssueComment;
 use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Decisions\DecisionAuthorResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ class IssueMergeService
     public function __construct(
         private readonly OpenRouterClient $llm,
         private readonly IssueTypeResolver $issueTypeResolver,
+        private readonly DecisionAuthorResolver $authorResolver,
     ) {}
 
     /**
@@ -183,12 +185,13 @@ class IssueMergeService
             $existing->update($updates);
         }
 
-        $updateText = $decision['update_description'] ?? '';
-        $dateStr = $event->starts_at->toDateString();
+        $updateText  = $decision['update_description'] ?? '';
+        $dateStr     = $event->starts_at->toDateString();
+        $commentAuthorId = $this->resolveCommentAuthorUserId($decision['author_name'] ?? null, $event);
 
         IssueComment::create([
             'issue_id'          => $existing->id,
-            'user_id'           => null,
+            'user_id'           => $commentAuthorId,
             'parent_id'         => null,
             'calendar_event_id' => $event->id,
             'content'           => "**Обновление по встрече \"{$event->title}\" от {$dateStr}:**\n\n{$updateText}",
@@ -202,6 +205,15 @@ class IssueMergeService
         return $existing->fresh();
     }
 
+    private function resolveCommentAuthorUserId(?string $authorName, CalendarEvent $event): ?int
+    {
+        if (blank($authorName)) {
+            return null;
+        }
+
+        return $this->authorResolver->resolve($event, $authorName)['user_id'] ?? null;
+    }
+
     private function createAll(array $items, CalendarEvent $event, Team $team, User $user): Collection
     {
         return collect($items)->map(fn (array $item) => $this->createIssue($item, $event, $team, $user));
@@ -210,9 +222,10 @@ class IssueMergeService
     private function createIssue(array $item, CalendarEvent $event, Team $team, User $user): Issue
     {
         $assigneeName = $item['assignee_name'] ?? null;
+        $authorName   = $item['author_name'] ?? null;
 
         return Issue::create([
-            'user_id'         => $user->id,
+            'user_id'         => $this->resolveAuthorUserId($authorName, $event, $user),
             'organization_id' => $team->organization_id,
             'team_id'         => $team->id,
             'sourceable_type' => CalendarEvent::class,
@@ -230,6 +243,17 @@ class IssueMergeService
             'due_date'        => $this->parseDueDate($item['due_date'] ?? null),
             'priority'        => $this->mapPriority($item['priority'] ?? null),
         ]);
+    }
+
+    private function resolveAuthorUserId(?string $authorName, CalendarEvent $event, User $fallback): int
+    {
+        if (blank($authorName)) {
+            return $fallback->id;
+        }
+
+        $resolved = $this->authorResolver->resolve($event, $authorName);
+
+        return $resolved['user_id'] ?? $fallback->id;
     }
 
     private function resolveAssigneeId(?string $assigneeName, CalendarEvent $event, Team $team): ?int
@@ -329,6 +353,7 @@ Return JSON strictly in this format:
       "action": "update",
       "existing_issue_id": 42,
       "update_description": "New context from this meeting: ...",
+      "author_name": "First Last | null",
       "assignee_name": null,
       "due_date": null,
       "priority": null
@@ -345,6 +370,8 @@ Return JSON strictly in this format:
 **existing_issue_id** — ID from "existing_issues". Required.
 
 **update_description** — concise summary of what NEW information this meeting added. Do NOT repeat what is already in the existing description. 1-5 sentences.
+
+**author_name** — name of the speaker who CONTRIBUTED this update during the meeting (raised the new context, made the decision, asked for the change). Look at the transcript and identify whose voice introduced the new information. If unclear — null.
 
 **assignee_name** — only if this meeting explicitly assigned or reassigned someone. Otherwise null.
 

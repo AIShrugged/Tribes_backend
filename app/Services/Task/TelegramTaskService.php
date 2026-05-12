@@ -80,6 +80,7 @@ class TelegramTaskService
             ->where('role', 'user')
             ->where('created_at', '>=', now()->subHours(self::SCAN_WINDOW_HOURS))
             ->orderBy('created_at')
+            ->with('authorIdentity:id,user_id')
             ->get();
 
         if ($recentMessages->isEmpty()) {
@@ -111,10 +112,12 @@ class TelegramTaskService
                 continue;
             }
 
-            $messageId = $taskData['message_id'] ?? $recentMessages->last()->id;
+            $messageId = (int) ($taskData['message_id'] ?? $recentMessages->last()->id);
+            $authorMessage = $recentMessages->firstWhere('id', $messageId);
+            $authorUserId = $authorMessage?->authorIdentity?->user_id ?? $conversation->user_id;
 
             Issue::create([
-                'user_id' => $conversation->user_id,
+                'user_id' => $authorUserId,
                 'organization_id' => $conversation->organization_id,
                 'team_id' => $conversation->team_id,
                 'sourceable_type' => ChannelMessage::class,
@@ -134,6 +137,7 @@ class TelegramTaskService
                 'conversation_id' => $conversationId,
                 'name' => $name,
                 'message_id' => $messageId,
+                'author_user_id' => $authorUserId,
             ]);
         }
 
