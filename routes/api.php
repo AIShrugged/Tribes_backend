@@ -59,6 +59,7 @@ use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\UserController;
 use App\Http\Controllers\API\v1\UserFocusController;
 use App\Http\Controllers\API\v1\UserPreferencesController;
+use App\Http\Controllers\API\v1\OnboardingController;
 use App\Http\Controllers\API\v1\WorkspaceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -268,6 +269,13 @@ Route::group(['prefix' => 'v1'], function () {
         });
 
         Route::apiResource('organizations', OrganizationController::class);
+        Route::post('organizations/{organization}/generate-structure', [OnboardingController::class, 'generate'])
+            ->middleware('throttle:10,1')
+            ->name('organizations.generate-structure');
+        Route::post('organizations/{organization}/accept-structure', [OnboardingController::class, 'accept'])
+            ->name('organizations.accept-structure');
+        Route::get('organizations/{organization}/drafts/latest', [OnboardingController::class, 'latestDraft'])
+            ->name('organizations.drafts.latest');
         Route::apiResource('workspaces', WorkspaceController::class);
         Route::get('workspaces/{workspace}/contents', [WorkspaceController::class, 'contents']);
         Route::get('workspaces/{workspace}/file', [WorkspaceController::class, 'readFile']);

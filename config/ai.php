@@ -17,6 +17,7 @@ return [
                 'agenda'          => 'google/gemini-3.1-pro-preview',
                 'today_nudge'     => 'google/gemini-3.1-pro-preview',
                 'critical_path'   => env('AI_MODEL_CRITICAL_PATH', 'google/gemini-3.1-pro-preview'),
+                'onboarding'      => env('AI_MODEL_ONBOARDING', 'google/gemini-3.1-pro-preview'),
             ],
             'fallback_models' => [
                 'anthropic/claude-3.5-sonnet',

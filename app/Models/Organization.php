@@ -13,6 +13,14 @@ class Organization extends Model
 {
     protected $guarded = [];
 
+    protected function casts(): array
+    {
+        return [
+            'onboarded_at' => 'datetime',
+            'team_map'     => 'array',
+        ];
+    }
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class)
