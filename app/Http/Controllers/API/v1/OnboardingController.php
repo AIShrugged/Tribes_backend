@@ -21,7 +21,7 @@ class OnboardingController extends Controller
         GenerateOrganizationStructureRequest $request,
         Organization $organization,
     ): ApiResponse {
-        Gate::authorize('update', $organization);
+        Gate::authorize('onboard', $organization);
 
         OrganizationOnboardingDraft::where('organization_id', $organization->id)
             ->whereIn('status', ['pending', 'processing'])
@@ -59,7 +59,7 @@ class OnboardingController extends Controller
         AcceptOrganizationStructureRequest $request,
         Organization $organization,
     ): ApiResponse {
-        Gate::authorize('update', $organization);
+        Gate::authorize('onboard', $organization);
 
         if ($organization->onboarded_at !== null) {
             return ApiResponse::error('Онбординг для этой организации уже был проведён', null, 422);

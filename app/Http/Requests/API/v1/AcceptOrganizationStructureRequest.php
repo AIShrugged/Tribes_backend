@@ -29,7 +29,7 @@ class AcceptOrganizationStructureRequest extends FormRequest
             'team'                            => ['nullable', 'array'],
             'team.*.name'                     => ['required', 'string', 'max:255'],
             'team.*.email'                    => ['nullable', 'email', 'max:255'],
-            'team.*.role'                     => ['nullable', 'string', 'max:255'],
+            'team.*.role'                     => ['nullable', Rule::in(['manager', 'employee'])],
         ];
     }
 }
