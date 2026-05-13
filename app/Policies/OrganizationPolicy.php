@@ -29,6 +29,11 @@ class OrganizationPolicy
         return $user->isOrganizationMember($organization);
     }
 
+    public function onboard(User $user, Organization $organization): bool
+    {
+        return $user->isOrganizationManager($organization);
+    }
+
     public function delete(User $user, Organization $organization): bool
     {
         return $user->isOrganizationMember($organization);

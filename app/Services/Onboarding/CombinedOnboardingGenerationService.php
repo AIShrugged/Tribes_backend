@@ -234,6 +234,8 @@ Based on all provided information:
    Each task has a type: "development" (coding/technical) or "organization" (process/non-technical).
 3. Map the team: list every person you can identify from documents, links, commits, or transcripts.
    For each person, note where they were found and whether they match an existing system member.
+   The "role" field must be one of: "manager" or "employee". Use "manager" only for owners, leads,
+   and decision-makers; use "employee" for everyone else.
 
 ## IMPORTANT — insufficient information
 If the information provided is too vague or generic to generate a specific and meaningful plan
@@ -265,12 +267,13 @@ Include 2–5 targeted questions that, once answered, would provide enough conte
   "team": [
     {
       "name": "...",
-      "email": "...",
-      "role": "...",
+      "email": "user@example.com or null if unknown",
+      "role": "manager|employee",
       "found_in": ["github", "documents", "transcripts"]
     }
   ]
 }
+IMPORTANT: if email is unknown, set it to JSON null — never use "N/A", "n/a", "unknown", or empty string.
 TASK;
     }
 
@@ -317,11 +320,14 @@ TASK;
             fn($g) => $g['title'] !== '',
         ));
 
+        $validRoles    = ['manager', 'employee'];
+        $nullishEmails = ['n/a', 'na', 'null', 'none', 'unknown', ''];
+
         $team = array_values(array_filter(
             array_map(fn($m) => [
                 'name'     => (string) ($m['name'] ?? ''),
-                'email'    => isset($m['email']) ? (string) $m['email'] : null,
-                'role'     => isset($m['role']) ? (string) $m['role'] : null,
+                'email'    => $this->normalizeEmail($m['email'] ?? null, $nullishEmails),
+                'role'     => in_array($m['role'] ?? '', $validRoles, true) ? $m['role'] : 'employee',
                 'found_in' => is_array($m['found_in'] ?? null) ? $m['found_in'] : [],
             ], $data['team'] ?? []),
             fn($m) => $m['name'] !== '',
@@ -382,6 +388,21 @@ TASK;
         }, $result['team']);
 
         return $result;
+    }
+
+    private function normalizeEmail(mixed $value, array $nullish): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $str = strtolower(trim((string) $value));
+
+        if (in_array($str, $nullish, true) || !filter_var($str, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+
+        return $str;
     }
 
     private function loadParticipantNames(Organization $org): string
