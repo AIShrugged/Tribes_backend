@@ -55,22 +55,6 @@ class IssueAttachmentController extends Controller
         return ApiResponse::success();
     }
 
-    public function download(int $attachment): StreamedResponse
-    {
-        $record = IssueAttachment::query()->findOrFail($attachment);
-        $disk = $this->attachmentDisk();
-
-        if (!Storage::disk($disk)->exists($record->file_path)) {
-            abort(404, 'Attachment file not found');
-        }
-
-        return Storage::disk($disk)->response(
-            $record->file_path,
-            basename($record->file_path),
-            ['Content-Disposition' => 'inline; filename="'.basename($record->file_path).'"']
-        );
-    }
-
     public function downloadAuthenticated(Request $request, int $attachment): StreamedResponse
     {
         $record = IssueAttachment::query()
@@ -110,6 +94,7 @@ class IssueAttachmentController extends Controller
         $attachment = IssueAttachment::create([
             'file_path'           => $path,
             'issue_id'            => null,
+            'organization_id'     => $request->input('organization_id'),
             'upload_token'        => $token,
             'uploaded_by_user_id' => $request->user()->id,
             'uploaded_at'         => now(),

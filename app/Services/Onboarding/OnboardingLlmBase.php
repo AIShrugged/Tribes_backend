@@ -13,14 +13,14 @@ abstract class OnboardingLlmBase
     protected const MAX_URL_CHARS         = 5000;
     protected const MAX_FILE_CHARS        = 8000;
 
-    protected function readUploadedFiles(?string $uploadToken, int $userId): string
+    protected function readUploadedFiles(?string $uploadToken, int $userId, ?int $organizationId = null): string
     {
         if (!$uploadToken) {
             return '';
         }
 
         $disk        = (string) config('filesystems.issue_attachments_disk', config('filesystems.default', 'local'));
-        $attachments = IssueAttachment::pending($uploadToken, $userId)->get();
+        $attachments = IssueAttachment::pending($uploadToken, $userId, $organizationId)->get();
         $parts       = [];
 
         foreach ($attachments as $attachment) {

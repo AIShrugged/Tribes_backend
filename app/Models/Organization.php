@@ -13,6 +13,8 @@ class Organization extends Model
 {
     protected $guarded = [];
 
+    public const TEMPLATES = ['IT'];
+
     protected function casts(): array
     {
         return [
@@ -67,6 +69,11 @@ class Organization extends Model
                     ?? $group->first();
             })
             ->values();
+    }
+
+    public function links(): HasMany
+    {
+        return $this->hasMany(OrganizationLink::class);
     }
 
     public function workspaces(): HasMany
