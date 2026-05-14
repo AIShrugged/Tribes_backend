@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\API\v1;
 
+use App\Models\Organization;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -26,6 +27,7 @@ class AcceptOrganizationStructureRequest extends FormRequest
             'goals.*.tasks.*.description'     => ['nullable', 'string', 'max:2000'],
             'goals.*.tasks.*.type'            => ['nullable', Rule::in(['development', 'organization'])],
             'goals.*.tasks.*.priority'        => ['nullable', 'integer'],
+            'template'                        => ['nullable', Rule::in(Organization::TEMPLATES)],
             'team'                            => ['nullable', 'array'],
             'team.*.name'                     => ['required', 'string', 'max:255'],
             'team.*.email'                    => ['nullable', 'email', 'max:255'],

@@ -10,6 +10,7 @@ use App\Jobs\GenerateOrganizationStructureJob;
 use App\Models\Issue;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
+use App\Models\OrganizationLink;
 use App\Models\OrganizationOnboardingDraft;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +32,7 @@ class OnboardingController extends Controller
             'organization_id' => $organization->id,
             'user_id'         => $request->user()->id,
             'status'          => 'pending',
-            'payload'         => $request->only(['description', 'upload_token', 'links']),
+            'payload'         => $request->only(['description', 'upload_token', 'links', 'template']),
         ]);
 
         GenerateOrganizationStructureJob::dispatch($draft->id);
@@ -80,13 +81,28 @@ class OnboardingController extends Controller
         $goals   = $request->input('goals');
         $team    = $request->input('team', []);
 
-        DB::transaction(function () use ($organization, $orgData, $goals, $team, $epicType, $userId): void {
+        $draft = OrganizationOnboardingDraft::where('organization_id', $organization->id)
+            ->where('status', 'completed')
+            ->latest()
+            ->first();
+
+        $draftLinks = array_filter((array) ($draft?->payload['links'] ?? []));
+
+        DB::transaction(function () use ($organization, $orgData, $goals, $team, $epicType, $userId, $draftLinks): void {
             $organization->update([
                 'name'         => $orgData['name'],
                 'context'      => $orgData['description'],
                 'team_map'     => $team ?: null,
+                'template'     => $request->input('template'),
                 'onboarded_at' => now(),
             ]);
+
+            foreach ($draftLinks as $url) {
+                OrganizationLink::firstOrCreate([
+                    'organization_id' => $organization->id,
+                    'url'             => $url,
+                ]);
+            }
 
             foreach ($goals as $goal) {
                 $epic = Issue::create([
@@ -116,6 +132,6 @@ class OnboardingController extends Controller
             }
         });
 
-        return ApiResponse::success('Success', $organization->refresh()->only(['id', 'name', 'slug', 'context', 'onboarded_at']));
+        return ApiResponse::success('Success', $organization->refresh()->only(['id', 'name', 'slug', 'context', 'template', 'onboarded_at']));
     }
 }

@@ -25,17 +25,18 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         $description  = $payload['description'] ?? null;
         $uploadToken  = $payload['upload_token'] ?? null;
         $links        = $payload['links'] ?? [];
+        $template     = $payload['template'] ?? null;
 
-        $fileTexts     = $this->readUploadedFiles($uploadToken, $userId);
+        $fileTexts     = $this->readUploadedFiles($uploadToken, $userId, $org->id);
         $participants  = $this->loadParticipantNames($org);
         $existingUsers = $org->users()->select(['users.id', 'users.name', 'users.email'])->get();
 
         $model = config('ai.providers.openrouter.models.onboarding');
 
         if (!empty($links)) {
-            $raw = $this->runWithBrowsing($org, $description, $fileTexts, $participants, $existingUsers, $links, $model);
+            $raw = $this->runWithBrowsing($org, $description, $fileTexts, $participants, $existingUsers, $links, $model, $template);
         } else {
-            $messages = $this->buildMessages($org, $description, $fileTexts, $participants, $existingUsers);
+            $messages = $this->buildMessages($org, $description, $fileTexts, $participants, $existingUsers, $template);
             $raw      = OpenRouterClient::chat($messages, $model, 8192, true);
         }
 
@@ -58,8 +59,9 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         \Illuminate\Support\Collection $existingUsers,
         array $links,
         string $model,
+        ?string $template,
     ): string {
-        $messages = $this->buildBrowsingMessages($org, $description, $fileTexts, $participants, $existingUsers, $links);
+        $messages = $this->buildBrowsingMessages($org, $description, $fileTexts, $participants, $existingUsers, $links, $template);
         $tool     = $this->fetchUrlToolDefinition();
 
         for ($i = 0; $i < self::MAX_BROWSE_ITERATIONS; $i++) {
@@ -108,10 +110,11 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         string $fileTexts,
         string $participants,
         \Illuminate\Support\Collection $existingUsers,
+        ?string $template,
     ): array {
         $system = $this->systemPrompt();
 
-        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $participants, $existingUsers);
+        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $participants, $existingUsers, $template);
         $userParts[] = $this->taskSection();
 
         return [
@@ -127,10 +130,11 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         string $participants,
         \Illuminate\Support\Collection $existingUsers,
         array $links,
+        ?string $template,
     ): array {
         $system = $this->systemPromptBrowsing();
 
-        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $participants, $existingUsers);
+        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $participants, $existingUsers, $template);
         $linkList    = implode("\n", array_map(fn($l) => "- {$l}", array_slice($links, 0, 5)));
         $userParts[] = "## Links to investigate:\n{$linkList}";
         $userParts[] = $this->taskSectionBrowsing();
@@ -147,9 +151,20 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         string $fileTexts,
         string $participants,
         \Illuminate\Support\Collection $existingUsers,
+        ?string $template,
     ): array {
         $parts   = [];
         $parts[] = "## Organization\nName: {$org->name}\nCurrent description: " . ($org->context ?? 'not set');
+
+        if ($template !== null) {
+            $hints = match ($template) {
+                'IT' => 'Use software engineering terminology. Goals should reflect product delivery, infrastructure, and technical quality. Task types: "development" for coding/technical work, "organization" for process/management work.',
+                default => '',
+            };
+            if ($hints !== '') {
+                $parts[] = "## Domain template: {$template}\n{$hints}";
+            }
+        }
 
         if ($description) {
             $parts[] = "## Description from the product owner:\n{$description}";
@@ -407,9 +422,20 @@ TASK;
 
     private function loadParticipantNames(Organization $org): string
     {
-        $orgUserIds = $org->users()->pluck('users.id');
+        $teamIds = $org->teams()->pluck('id');
 
-        $eventIds = \App\Models\CalendarEvent::whereIn('creator_user_id', $orgUserIds)->pluck('id');
+        if ($teamIds->isEmpty()) {
+            return '';
+        }
+
+        $eventIds = \Illuminate\Support\Facades\DB::table('followups')
+            ->whereIn('team_id', $teamIds)
+            ->whereNotNull('calendar_event_id')
+            ->pluck('calendar_event_id');
+
+        if ($eventIds->isEmpty()) {
+            return '';
+        }
 
         $names = Participant::whereIn('calendar_event_id', $eventIds)
             ->distinct('name')

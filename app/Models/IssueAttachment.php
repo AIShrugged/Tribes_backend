@@ -40,12 +40,13 @@ class IssueAttachment extends Model
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
     }
 
-    public function scopePending(Builder $query, string $token, int $userId): Builder
+    public function scopePending(Builder $query, string $token, int $userId, ?int $organizationId = null): Builder
     {
         return $query
             ->whereNull('issue_id')
             ->where('upload_token', $token)
             ->where('uploaded_by_user_id', $userId)
-            ->where('uploaded_at', '>=', now()->subHours(self::ORPHAN_TTL_HOURS));
+            ->where('uploaded_at', '>=', now()->subHours(self::ORPHAN_TTL_HOURS))
+            ->when($organizationId !== null, fn($q) => $q->where('organization_id', $organizationId));
     }
 }

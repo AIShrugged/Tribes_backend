@@ -97,9 +97,7 @@ Route::group(['prefix' => 'v1'], function () {
 
     // Telegram bot webhook
     Route::post('telegram/webhook', [TelegramBotController::class, 'webhook']);
-    Route::get('attachments/{attachment}/download', [IssueAttachmentController::class, 'download'])
-        ->middleware('signed')
-        ->name('attachments.download');
+
     Route::post('internal/agent-task-runs/{run}/tool-calls', [SandboxToolGatewayController::class, 'store']);
     Route::post('internal/agent-task-runs/{run}/llm-completions', [SandboxToolGatewayController::class, 'complete']);
     Route::post('internal/paperclip/issues/{paperclipIssueId}/status', [PaperclipIssueStatusController::class, 'store']);
