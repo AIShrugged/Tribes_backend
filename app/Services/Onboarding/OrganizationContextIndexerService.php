@@ -2,6 +2,7 @@
 
 namespace App\Services\Onboarding;
 
+use App\Models\IssueAttachment;
 use App\Models\OrganizationContext;
 use App\Models\OrganizationLink;
 use App\Services\OpenRouterClient;
@@ -38,6 +39,32 @@ class OrganizationContextIndexerService extends OnboardingLlmBase
         );
     }
 
+    public function indexAttachment(IssueAttachment $attachment): OrganizationContext
+    {
+        $rawText  = $this->extractAttachmentText($attachment) ?? '';
+        $filename = basename($attachment->file_path);
+        $text     = $this->compactDocument($filename, $rawText);
+
+        Log::info('Organization context indexed from attachment', [
+            'organization_id' => $attachment->organization_id,
+            'attachment_id'   => $attachment->id,
+            'filename'        => $filename,
+            'chars'           => strlen($text),
+        ]);
+
+        return OrganizationContext::updateOrCreate(
+            [
+                'source_type' => IssueAttachment::class,
+                'source_id'   => $attachment->id,
+            ],
+            [
+                'organization_id' => $attachment->organization_id,
+                'text'            => $text,
+                'indexed_at'      => now(),
+            ]
+        );
+    }
+
     private function compact(string $url, string $rawText): string
     {
         if (trim($rawText) === '' || str_starts_with($rawText, 'Error fetching')) {
@@ -58,6 +85,32 @@ SYS,
             [
                 'role'    => 'user',
                 'content' => "URL: {$url}\n\nPage content:\n{$rawText}",
+            ],
+        ];
+
+        return OpenRouterClient::chat($messages, $model, 2048);
+    }
+
+    private function compactDocument(string $filename, string $rawText): string
+    {
+        if (trim($rawText) === '') {
+            return '[Empty document]';
+        }
+
+        $model = config('ai.providers.openrouter.models.onboarding');
+
+        $messages = [
+            [
+                'role'    => 'system',
+                'content' => <<<'SYS'
+You are extracting structured context about an organization from an uploaded document.
+Extract key facts: what the organization does, tech stack, team members mentioned, processes, goals, milestones.
+Be concise — plain text, no JSON. Maximum ~800 words.
+SYS,
+            ],
+            [
+                'role'    => 'user',
+                'content' => "Document: {$filename}\n\nContent:\n{$rawText}",
             ],
         ];
 

@@ -19,28 +19,36 @@ abstract class OnboardingLlmBase
             return '';
         }
 
-        $disk        = (string) config('filesystems.issue_attachments_disk', config('filesystems.default', 'local'));
         $attachments = IssueAttachment::pending($uploadToken, $userId, $organizationId)->get();
         $parts       = [];
 
         foreach ($attachments as $attachment) {
-            $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
-            $raw = Storage::disk($disk)->get($attachment->file_path);
-
-            if ($raw === null) {
+            $text = $this->extractAttachmentText($attachment);
+            if ($text === null) {
                 continue;
             }
-
-            $text = match ($ext) {
-                'pdf'  => $this->extractPdf($raw),
-                'docx' => $this->extractDocx($raw),
-                default => $raw,
-            };
-
             $parts[] = '=== File: ' . basename($attachment->file_path) . " ===\n" . mb_substr($text, 0, self::MAX_FILE_CHARS);
         }
 
         return implode("\n\n", $parts);
+    }
+
+    protected function extractAttachmentText(IssueAttachment $attachment): ?string
+    {
+        $disk = (string) config('filesystems.issue_attachments_disk', config('filesystems.default', 'local'));
+        $raw  = Storage::disk($disk)->get($attachment->file_path);
+
+        if ($raw === null) {
+            return null;
+        }
+
+        $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+
+        return match ($ext) {
+            'pdf'  => $this->extractPdf($raw),
+            'docx' => $this->extractDocx($raw),
+            default => $raw,
+        };
     }
 
     protected function extractPdf(string $raw): string
