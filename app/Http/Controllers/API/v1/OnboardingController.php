@@ -7,7 +7,9 @@ use App\Http\Requests\API\v1\AcceptOrganizationStructureRequest;
 use App\Http\Requests\API\v1\GenerateOrganizationStructureRequest;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\GenerateOrganizationStructureJob;
+use App\Jobs\IndexOrganizationAttachmentJob;
 use App\Jobs\IndexOrganizationLinkJob;
+use App\Models\IssueAttachment;
 use App\Models\Issue;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
@@ -88,9 +90,17 @@ class OnboardingController extends Controller
             ->latest()
             ->first();
 
-        $draftLinks = array_filter((array) ($draft?->payload['links'] ?? []));
+        $draftLinks       = array_filter((array) ($draft?->payload['links'] ?? []));
+        $draftUploadToken = $draft?->payload['upload_token'] ?? null;
 
-        DB::transaction(function () use ($organization, $orgData, $goals, $team, $template, $epicType, $userId, $draftLinks): void {
+        $draftAttachments = $draftUploadToken
+            ? IssueAttachment::whereNull('issue_id')
+                ->where('upload_token', $draftUploadToken)
+                ->where('organization_id', $organization->id)
+                ->get()
+            : collect();
+
+        DB::transaction(function () use ($organization, $orgData, $goals, $team, $template, $epicType, $userId, $draftLinks, $draftAttachments): void {
             $organization->update([
                 'name'         => $orgData['name'],
                 'context'      => $orgData['description'],
@@ -105,6 +115,10 @@ class OnboardingController extends Controller
                     'url'             => $url,
                 ]);
                 IndexOrganizationLinkJob::dispatch($link->id);
+            }
+
+            foreach ($draftAttachments as $attachment) {
+                IndexOrganizationAttachmentJob::dispatch($attachment->id);
             }
 
             foreach ($goals as $goal) {
