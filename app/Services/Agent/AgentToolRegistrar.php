@@ -36,6 +36,7 @@ use App\Services\Agent\Tools\GitHubGetTreeTool;
 use App\Services\Agent\Tools\ListWorkspaceFilesTool;
 use App\Services\Agent\Tools\ListWorkspacesTool;
 use App\Services\Agent\Tools\MoveWorkspaceFileTool;
+use App\Services\Agent\Tools\GetOrganizationContextTool;
 use App\Services\Agent\Tools\QueryTribesDataTool;
 use App\Services\Agent\Tools\ReadWorkspaceFileTool;
 use App\Services\Agent\Tools\SaveMethodologyTool;
@@ -91,6 +92,7 @@ class AgentToolRegistrar
         Auth::setUser($user);
 
         $toolRegistry->register(new QueryTribesDataTool($user, $this->agentMemoryLookupService));
+        $toolRegistry->register(new GetOrganizationContextTool($user, $organizationId));
         $toolRegistry->register(new CreateEntityTool($user, $this->tenantScopeValidator, $this->schemaValidationService, $organizationId, $teamId));
         $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $channel ?? 'web', $organizationId, $teamId));
         $toolRegistry->register(new GetTranscriptTool);

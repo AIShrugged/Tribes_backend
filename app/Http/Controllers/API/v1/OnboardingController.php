@@ -7,6 +7,7 @@ use App\Http\Requests\API\v1\AcceptOrganizationStructureRequest;
 use App\Http\Requests\API\v1\GenerateOrganizationStructureRequest;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\GenerateOrganizationStructureJob;
+use App\Jobs\IndexOrganizationLinkJob;
 use App\Models\Issue;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
@@ -98,10 +99,11 @@ class OnboardingController extends Controller
             ]);
 
             foreach ($draftLinks as $url) {
-                OrganizationLink::firstOrCreate([
+                $link = OrganizationLink::firstOrCreate([
                     'organization_id' => $organization->id,
                     'url'             => $url,
                 ]);
+                IndexOrganizationLinkJob::dispatch($link->id);
             }
 
             foreach ($goals as $goal) {

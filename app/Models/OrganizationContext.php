@@ -4,20 +4,26 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-class OrganizationLink extends Model
+class OrganizationContext extends Model
 {
     protected $guarded = [];
+
+    protected function casts(): array
+    {
+        return [
+            'indexed_at' => 'datetime',
+        ];
+    }
 
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
     }
 
-    public function context(): HasOne
+    public function source(): MorphTo
     {
-        return $this->hasOne(OrganizationContext::class, 'source_id')
-            ->where('source_type', self::class);
+        return $this->morphTo();
     }
 }

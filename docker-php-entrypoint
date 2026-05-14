@@ -85,7 +85,7 @@ case "$command" in
       --queue="${queue_names}" \
       --sleep=1 \
       --tries=3 \
-      --timeout=90 \
+      --timeout=660 \
       --no-interaction
   ;;
 
