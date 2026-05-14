@@ -77,10 +77,11 @@ class OnboardingController extends Controller
             return ApiResponse::error('Тип эпика не настроен в системе', null, 422);
         }
 
-        $userId  = $request->user()->id;
-        $orgData = $request->input('organization');
-        $goals   = $request->input('goals');
-        $team    = $request->input('team', []);
+        $userId   = $request->user()->id;
+        $orgData  = $request->input('organization');
+        $goals    = $request->input('goals');
+        $team     = $request->input('team', []);
+        $template = $request->input('template');
 
         $draft = OrganizationOnboardingDraft::where('organization_id', $organization->id)
             ->where('status', 'completed')
@@ -89,12 +90,12 @@ class OnboardingController extends Controller
 
         $draftLinks = array_filter((array) ($draft?->payload['links'] ?? []));
 
-        DB::transaction(function () use ($organization, $orgData, $goals, $team, $epicType, $userId, $draftLinks): void {
+        DB::transaction(function () use ($organization, $orgData, $goals, $team, $template, $epicType, $userId, $draftLinks): void {
             $organization->update([
                 'name'         => $orgData['name'],
                 'context'      => $orgData['description'],
                 'team_map'     => $team ?: null,
-                'template'     => $request->input('template'),
+                'template'     => $template,
                 'onboarded_at' => now(),
             ]);
 
