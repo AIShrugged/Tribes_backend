@@ -12,7 +12,6 @@ use App\Services\TelegramChatRegistrationService;
 use App\Services\TelegramLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
 use Telegram\Bot\Api;
 use Telegram\Bot\Exceptions\TelegramSDKException;
 
@@ -64,7 +63,7 @@ class TelegramBotController extends Controller
                 if (in_array($chatType, ['group', 'supergroup'], true)) {
                     if ($this->isBotMembershipActive($newStatus)) {
                         $conversation = $this->channelBus->forTelegram($chatId);
-                        $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
+                        $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle);
                     }
 
                     if ($this->isBotMembershipInactive($newStatus)) {
@@ -73,6 +72,7 @@ class TelegramBotController extends Controller
                             'chat_type' => $chatType,
                             'chat_title' => $chatTitle,
                         ]);
+                        $this->telegramChatRegistrationService->unbindGroupConversation($chatId);
                     }
                 }
 
@@ -90,13 +90,7 @@ class TelegramBotController extends Controller
 
                 if ($this->isBotAddedEvent($message)) {
                     $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
-                    $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
-
-                    $this->sendTelegramMessage(
-                        $chatId,
-                        'This chat is detected. Finish the binding in the backend, get a one-time code, then send /attach CODE here.',
-                        $messageThreadId,
-                    );
+                    $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle);
 
                     return response()->json(['ok' => true]);
                 }
@@ -148,45 +142,13 @@ class TelegramBotController extends Controller
                 }
 
                 $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
-                $this->telegramChatRegistrationService->registerConversation($conversation, $chatType, $chatTitle);
 
-                if ($this->isAttachCommand($text)) {
-                    if (! $user) {
-                        $this->sendTelegramMessage(
-                            $chatId,
-                            'Link your Telegram account to the application first, then repeat /attach CODE.',
-                            $messageThreadId,
-                        );
+                if (in_array($chatType, ['group', 'supergroup'], true)) {
+                    $registration = $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle);
 
+                    if ($registration->bound_at === null) {
                         return response()->json(['ok' => true]);
                     }
-
-                    try {
-                        $code = $this->extractAttachCode($text);
-                        $registration = $this->telegramChatRegistrationService->attachConversationByCode(
-                            $conversation,
-                            $code,
-                            $user,
-                        );
-
-                        $this->sendTelegramMessage(
-                            $chatId,
-                            sprintf(
-                                'Chat attached to organization #%d%s.',
-                                $registration->organization_id,
-                                $registration->team_id ? ' and team #'.$registration->team_id : ''
-                            ),
-                            $messageThreadId,
-                        );
-                    } catch (ValidationException $exception) {
-                        $this->sendTelegramMessage(
-                            $chatId,
-                            collect($exception->errors())->flatten()->first() ?? 'Attach failed.',
-                            $messageThreadId,
-                        );
-                    }
-
-                    return response()->json(['ok' => true]);
                 }
 
                 if ($chatType === 'private' && $user) {
@@ -372,18 +334,6 @@ class TelegramBotController extends Controller
         $username = $newChatMember->getUser()?->getUsername();
 
         return mb_strtolower((string) $username) === mb_strtolower($botUsername);
-    }
-
-    private function isAttachCommand(string $text): bool
-    {
-        return preg_match('/^\/attach(?:@\w+)?\s+[A-Z]{3}-[A-Z]{3}$/i', trim($text)) === 1;
-    }
-
-    private function extractAttachCode(string $text): string
-    {
-        preg_match('/^\/attach(?:@\w+)?\s+([A-Z]{3}-[A-Z]{3})$/i', trim($text), $matches);
-
-        return mb_strtoupper($matches[1] ?? '');
     }
 
     private function removeMention(string $text, string $botUsername): string

@@ -18,55 +18,10 @@ class TelegramChatRegistrationControllerTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
-    public function manager_can_list_and_issue_attach_code_for_discovered_chat(): void
+    public function manager_can_list_chats(): void
     {
         $manager = User::factory()->create();
-        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
-
-        $conversation = ChannelConversation::create([
-            'channel_type' => ConversationChannelType::TELEGRAM->value,
-            'conversation_key' => ChannelConversation::keyForTelegram(123456789, 777),
-            'telegram_chat_id' => 123456789,
-            'message_thread_id' => 777,
-        ]);
-
-        $registration = TelegramChatRegistration::create([
-            'channel_conversation_id' => $conversation->id,
-            'telegram_chat_id' => 123456789,
-            'message_thread_id' => 777,
-            'chat_type' => 'supergroup',
-            'chat_title' => 'Engineering',
-        ]);
-
-        $this->actingAs($manager)
-            ->getJson('/api/v1/telegram/chats')
-            ->assertStatus(200)
-            ->assertJsonFragment([
-                'id' => $registration->id,
-                'telegram_chat_id' => 123456789,
-                'chat_title' => 'Engineering',
-            ]);
-
-        $this->actingAs($manager)
-            ->postJson("/api/v1/telegram/chats/{$registration->id}/attach-code", [
-                'organization_id' => $organization->id,
-                'team_id' => $team->id,
-            ])->assertStatus(200)
-            ->assertJsonPath('data.organization_id', $organization->id)
-            ->assertJsonPath('data.team_id', $team->id);
-
-        $registration->refresh();
-
-        $this->assertMatchesRegularExpression('/^[A-Z]{3}-[A-Z]{3}$/', (string) $registration->attach_code);
-        $this->assertNotNull($registration->attach_code_expires_at);
-        $this->assertSame($manager->id, $registration->attach_requested_by_user_id);
-    }
-
-    #[Test]
-    public function employee_cannot_issue_attach_code(): void
-    {
-        $employee = User::factory()->create();
-        [$organization] = $this->createTenantContextFor($employee, 'employee');
+        [$organization] = $this->createTenantContextFor($manager, 'manager');
 
         $conversation = ChannelConversation::create([
             'channel_type' => ConversationChannelType::TELEGRAM->value,
@@ -74,20 +29,113 @@ class TelegramChatRegistrationControllerTest extends TestCase
             'telegram_chat_id' => 123456789,
         ]);
 
-        $registration = TelegramChatRegistration::create([
+        TelegramChatRegistration::create([
             'channel_conversation_id' => $conversation->id,
             'telegram_chat_id' => 123456789,
-            'chat_type' => 'group',
-            'chat_title' => 'Ops',
+            'chat_type' => 'supergroup',
+            'chat_title' => 'Engineering',
+            'organization_id' => $organization->id,
+            'bound_at' => now(),
         ]);
 
+        $this->actingAs($manager)
+            ->getJson('/api/v1/telegram/chats')
+            ->assertStatus(200)
+            ->assertJsonFragment([
+                'telegram_chat_id' => 123456789,
+                'chat_title' => 'Engineering',
+                'is_bound' => true,
+            ]);
+    }
+
+    #[Test]
+    public function manager_can_create_workspace_chat(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
+
+        $this->actingAs($manager)
+            ->postJson('/api/v1/telegram/chats', [
+                'name' => 'Product Team',
+                'telegram_chat_id' => 987654321,
+                'organization_id' => $organization->id,
+                'team_id' => $team->id,
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.telegram_chat_id', 987654321)
+            ->assertJsonPath('data.chat_title', 'Product Team')
+            ->assertJsonPath('data.is_bound', false);
+
+        $this->assertDatabaseHas('telegram_chat_registrations', [
+            'telegram_chat_id' => 987654321,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+        ]);
+    }
+
+    #[Test]
+    public function employee_cannot_create_workspace_chat(): void
+    {
+        $employee = User::factory()->create();
+        [$organization] = $this->createTenantContextFor($employee, 'employee');
+
         $this->actingAs($employee)
-            ->postJson("/api/v1/telegram/chats/{$registration->id}/attach-code", [
+            ->postJson('/api/v1/telegram/chats', [
+                'name' => 'Ops Chat',
+                'telegram_chat_id' => 111222333,
+                'organization_id' => $organization->id,
+            ])->assertStatus(422);
+    }
+
+    #[Test]
+    public function manager_cannot_register_duplicate_chat_id(): void
+    {
+        $manager = User::factory()->create();
+        [$organization] = $this->createTenantContextFor($manager, 'manager');
+
+        $this->actingAs($manager)
+            ->postJson('/api/v1/telegram/chats', [
+                'name' => 'First',
+                'telegram_chat_id' => 555000,
+                'organization_id' => $organization->id,
+            ])->assertStatus(200);
+
+        $this->actingAs($manager)
+            ->postJson('/api/v1/telegram/chats', [
+                'name' => 'Duplicate',
+                'telegram_chat_id' => 555000,
                 'organization_id' => $organization->id,
             ])->assertStatus(422)
-            ->assertJsonValidationErrors(['organization_id']);
+            ->assertJsonValidationErrors(['telegram_chat_id']);
+    }
 
-        $this->assertNull($registration->fresh()->attach_code);
+    #[Test]
+    public function manager_can_delete_workspace_chat(): void
+    {
+        $manager = User::factory()->create();
+        [$organization] = $this->createTenantContextFor($manager, 'manager');
+
+        $conversation = ChannelConversation::create([
+            'channel_type' => ConversationChannelType::TELEGRAM->value,
+            'conversation_key' => ChannelConversation::keyForTelegram(777888999, null),
+            'telegram_chat_id' => 777888999,
+        ]);
+
+        $registration = TelegramChatRegistration::create([
+            'channel_conversation_id' => $conversation->id,
+            'telegram_chat_id' => 777888999,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'To Delete',
+            'organization_id' => $organization->id,
+            'bound_at' => now(),
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/v1/telegram/chats/{$registration->id}")
+            ->assertStatus(200);
+
+        $this->assertDatabaseMissing('telegram_chat_registrations', ['id' => $registration->id]);
+        $this->assertDatabaseMissing('channel_conversations', ['id' => $conversation->id]);
     }
 
     #[Test]
@@ -131,33 +179,6 @@ class TelegramChatRegistrationControllerTest extends TestCase
             ->assertJsonPath('data.0.telegram_chat_id', 200001)
             ->assertJsonPath('data.0.chat_type', 'private')
             ->assertJsonPath('data.0.user_id', $user->id);
-    }
-
-    #[Test]
-    public function private_chat_cannot_receive_attach_code(): void
-    {
-        $manager = User::factory()->create();
-        [$organization] = $this->createTenantContextFor($manager, 'manager');
-
-        $conversation = ChannelConversation::create([
-            'channel_type' => ConversationChannelType::TELEGRAM->value,
-            'conversation_key' => ChannelConversation::keyForTelegram(333444, null),
-            'telegram_chat_id' => 333444,
-            'user_id' => $manager->id,
-        ]);
-
-        $registration = TelegramChatRegistration::create([
-            'channel_conversation_id' => $conversation->id,
-            'telegram_chat_id' => 333444,
-            'chat_type' => 'private',
-            'chat_title' => 'Direct chat',
-        ]);
-
-        $this->actingAs($manager)
-            ->postJson("/api/v1/telegram/chats/{$registration->id}/attach-code", [
-                'organization_id' => $organization->id,
-            ])->assertStatus(422)
-            ->assertJsonValidationErrors(['telegram_chat']);
     }
 
     private function createTenantContextFor(User $user, string $role): array
