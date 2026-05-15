@@ -2,7 +2,7 @@
 
 namespace App\Listeners;
 
-use App\Events\MeetingSummaryGenerated;
+use App\Events\MeetingArtifactsReady;
 use App\Models\Issue;
 use App\Models\MeetingSummary;
 use App\Models\MeetingSummaryTemplate;
@@ -21,12 +21,16 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
 
     public int $tries = 1;
 
-    public function handle(MeetingSummaryGenerated $event): void
+    public function handle(MeetingArtifactsReady $event): void
     {
-        $summary = $event->summary;
-        $calendarEvent = $summary->calendarEvent;
+        $calendarEvent = $event->event;
+        $summary = $calendarEvent->meetingSummary;
 
-        if (! $calendarEvent?->source?->user) {
+        if (! $summary) {
+            return;
+        }
+
+        if (! $calendarEvent->source?->user) {
             return;
         }
 
@@ -107,7 +111,14 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         $lines = [];
         $lines[] = '📋 <b>Meeting Summary</b>';
         $lines[] = '';
-        $lines[] = '<b>'.e($summary->title).'</b>';
+
+        $frontend = rtrim((string) config('app.frontend_url'), '/');
+        $protocolUrl = "{$frontend}/dashboard/meetings/{$summary->calendar_event_id}";
+        $lines[] = '<b><a href="'.e($protocolUrl).'">'.e($summary->title).'</a></b>';
+
+        if ($summary->calendarEvent?->starts_at) {
+            $lines[] = '📅 '.e($summary->calendarEvent->starts_at->format('d.m.Y H:i'));
+        }
         $lines[] = '';
 
         $attendees = $summary->calendarEvent->participants->pluck('name')->filter()->values();
@@ -124,15 +135,38 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             'tasks'                => fn () => $this->renderTasks($newTasks, $updatedTasks),
             'commitments'          => fn () => $this->renderCommitments($summary),
             'repeated_discussions' => fn () => $this->renderRepeatedDiscussions($summary),
+            'conflicts'            => fn () => $this->renderConflicts($summary),
         ];
 
+        $configuredVisible = $template?->visible_sections;
+        $visibleSections = is_array($configuredVisible) && ! empty($configuredVisible)
+            ? array_values(array_intersect($configuredVisible, $sections))
+            : MeetingSummaryTemplate::DEFAULT_VISIBLE_SECTIONS;
+
         foreach ($sections as $section) {
-            if (isset($renderers[$section])) {
-                $block = ($renderers[$section])();
-                if ($block) {
-                    $lines[] = $block;
-                }
+            if (! isset($renderers[$section]) || ! in_array($section, $visibleSections, true)) {
+                continue;
             }
+            $block = ($renderers[$section])();
+            if ($block) {
+                $lines[] = $block;
+            }
+        }
+
+        $detailBlocks = [];
+        foreach ($sections as $section) {
+            if (! isset($renderers[$section]) || in_array($section, $visibleSections, true)) {
+                continue;
+            }
+            $block = ($renderers[$section])();
+            if ($block) {
+                $detailBlocks[] = $block;
+            }
+        }
+
+        if (! empty($detailBlocks)) {
+            $lines[] = '';
+            $lines[] = '<blockquote expandable>'.implode("\n\n", $detailBlocks).'</blockquote>';
         }
 
         return trim(implode("\n", $lines));
@@ -175,13 +209,16 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             return null;
         }
 
+        $frontend = rtrim((string) config('app.frontend_url'), '/');
+        $taskLink = fn (Issue $task): string => '<a href="'.e("{$frontend}/dashboard/issues/{$task->id}").'">'.$this->inlineMarkdown($task->name).'</a>';
+
         $lines = [];
 
         if ($newTasks->isNotEmpty()) {
             $lines[] = '✨ <b>Новые задачи и цели:</b>';
             foreach ($newTasks as $task) {
                 $assignee = $task->assignee?->name ?? '—';
-                $lines[] = '• '.$this->inlineMarkdown($task->title).' ('.$assignee.')';
+                $lines[] = '• '.$taskLink($task).' ('.e($assignee).')';
             }
         }
 
@@ -192,7 +229,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             $lines[] = '✨ <b>Обновлённые задачи и цели:</b>';
             foreach ($updatedTasks as $task) {
                 $assignee = $task->assignee?->name ?? '—';
-                $lines[] = '• '.$this->inlineMarkdown($task->title).' ['.$task->status.'] ('.$assignee.')';
+                $lines[] = '• '.$taskLink($task).' ['.e($task->status).'] ('.e($assignee).')';
             }
         }
 
@@ -248,6 +285,70 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
 
             $lines[] = "⚠️ «{$newDecision}»";
             $lines[] = "   Уже решалось{$when}{$where}: «{$prevDecision}»";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function renderConflicts(MeetingSummary $summary): ?string
+    {
+        $conflicts = $summary->conflicts ?? [];
+        if (empty($conflicts)) {
+            return null;
+        }
+
+        $frontend = rtrim((string) config('app.frontend_url'), '/');
+        $fieldLabels = [
+            'requirements' => 'требования',
+            'due_date'     => 'дедлайн',
+            'assignee'     => 'исполнитель',
+        ];
+
+        $lines = ['⚠️ <b>Найденные конфликты:</b>'];
+        $memberIds = [];
+        foreach ($conflicts as $group) {
+            foreach (($group['members'] ?? []) as $member) {
+                if (isset($member['issue_id'])) {
+                    $memberIds[(int) $member['issue_id']] = true;
+                }
+            }
+        }
+        $issues = ! empty($memberIds)
+            ? Issue::whereIn('id', array_keys($memberIds))->get(['id', 'name'])->keyBy('id')
+            : collect();
+
+        foreach ($conflicts as $group) {
+            $members = $group['members'] ?? [];
+            $links = [];
+            foreach ($members as $member) {
+                $id = (int) ($member['issue_id'] ?? 0);
+                if ($id === 0) {
+                    continue;
+                }
+                $name = $issues->get($id)?->name ?? "Issue #{$id}";
+                $url  = "{$frontend}/dashboard/issues/{$id}";
+                $links[] = '<a href="'.e($url).'">'.e($name).'</a>';
+            }
+
+            if (empty($links)) {
+                continue;
+            }
+
+            $fields = array_map(
+                fn (string $f) => $fieldLabels[$f] ?? $f,
+                (array) ($group['fields'] ?? [])
+            );
+            $fieldsStr = $fields ? ' ('.e(implode(', ', $fields)).')' : '';
+            $summaryStr = e(trim((string) ($group['summary'] ?? '')));
+
+            $lines[] = '• '.implode(', ', $links).$fieldsStr;
+            if ($summaryStr !== '') {
+                $lines[] = '   '.$summaryStr;
+            }
+        }
+
+        if (count($lines) === 1) {
+            return null;
         }
 
         return implode("\n", $lines);

@@ -17,6 +17,7 @@ class MeetingSummary extends Model
             'decisions'            => 'array',
             'commitments'          => 'array',
             'repeated_discussions' => 'array',
+            'conflicts'            => 'array',
         ];
     }
 

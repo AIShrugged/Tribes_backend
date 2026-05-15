@@ -97,6 +97,7 @@ class AgendaDataCollector
             ->filter(fn ($i) => $i->created_at >= $previousEvent->starts_at
                 && $i->created_at < $event->starts_at)
             ->map(fn ($i) => [
+                'id'       => $i->id,
                 'name'     => $i->name,
                 'assignee' => $i->assignee?->name ?? $i->assignee_name,
                 'status'   => match ($i->status) {

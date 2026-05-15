@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\MeetingArtifactsReady;
 use App\Jobs\VerifyMeetingArtifactsJob;
 use App\Models\CalendarEvent;
 use App\Models\Decision;
@@ -16,6 +17,7 @@ use App\Services\IssueMergeService;
 use App\Services\Meeting\MeetingSummaryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -172,6 +174,28 @@ class VerifyMeetingArtifactsJobTest extends TestCase
 
         $linkCount = DB::table('decision_issue')->where('decision_id', $decision->id)->count();
         $this->assertEquals(1, $linkCount, 'decision_issue was duplicated on second run');
+    }
+
+    // ── 4. MeetingArtifactsReady is emitted by the auto-pipeline dispatcher when no
+    //      issues are eligible (the typical case for a meeting that produced no issues).
+    //      When issues are present, DetectIssueConflictsJob emits the event instead;
+    //      that path is covered in DetectIssueConflictsJobTest.
+
+    #[Test]
+    public function emits_meeting_artifacts_ready_when_no_eligible_issues(): void
+    {
+        $this->createCompleteSummary();
+
+        Event::fake([MeetingArtifactsReady::class]);
+
+        $mockSummary = Mockery::mock(MeetingSummaryService::class);
+        $mockSummary->shouldNotReceive('generate');
+
+        $this->runJob($mockSummary);
+
+        Event::assertDispatched(MeetingArtifactsReady::class, function (MeetingArtifactsReady $e) {
+            return $e->event->id === $this->event->id;
+        });
     }
 
     protected function tearDown(): void

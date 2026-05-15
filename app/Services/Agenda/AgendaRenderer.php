@@ -11,10 +11,7 @@ class AgendaRenderer
 {
     public function renderForTelegram(array $data, CalendarEvent $event, ?AgendaTemplate $template = null): string
     {
-        $lines = [
-            "<b>{$event->title}</b>",
-            '🕐 ' . Carbon::parse($event->starts_at)->format('d.m.Y') . ' · ' . Carbon::parse($event->starts_at)->format('H:i'),
-        ];
+        $lines = $this->renderTelegramHeader($event);
 
         foreach ($this->sections($template) as $section) {
             $body = $this->renderSection($section, $data, 'telegram');
@@ -25,6 +22,98 @@ class AgendaRenderer
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Pre-meeting agenda header — relative-time line, title, time range with duration,
+     * Join meeting link, and attendee split based on calendar_event_profile.response_status.
+     *
+     * @return string[]
+     */
+    private function renderTelegramHeader(CalendarEvent $event): array
+    {
+        $startsAt = Carbon::parse($event->starts_at);
+        $endsAt   = $event->ends_at ? Carbon::parse($event->ends_at) : null;
+        $now      = Carbon::now();
+
+        $relative = $this->renderRelativeTime($startsAt, $endsAt, $now);
+
+        $timeRange = $startsAt->format('H:i');
+        if ($endsAt) {
+            $duration  = abs((int) $startsAt->diffInMinutes($endsAt));
+            $timeRange = $startsAt->format('H:i') . ' — ' . $endsAt->format('H:i')
+                . ' (' . $duration . ' min)';
+        }
+
+        $lines = [];
+        if ($relative !== null) {
+            $lines[] = $relative;
+            $lines[] = '';
+        }
+        $lines[] = '<b>' . e($event->title) . '</b>';
+        $lines[] = '🕐 ' . e($timeRange);
+
+        if ($event->url) {
+            $lines[] = '🔗 <a href="' . e($event->url) . '">Join meeting</a>';
+        }
+
+        [$attending, $declined] = $this->splitAttendees($event);
+
+        if (! empty($attending)) {
+            $lines[] = '👥 ' . e(implode(', ', $attending));
+        }
+        if (! empty($declined)) {
+            $lines[] = '⚠️ Not attending: ' . e(implode(', ', $declined));
+        }
+
+        return $lines;
+    }
+
+    private function renderRelativeTime(Carbon $startsAt, ?Carbon $endsAt, Carbon $now): ?string
+    {
+        if ($startsAt->isFuture()) {
+            $minutes = (int) ceil($now->diffInMinutes($startsAt, false));
+            if ($minutes < 60) {
+                return '📅 Upcoming meeting in ' . $minutes . ' minute' . ($minutes === 1 ? '' : 's');
+            }
+            $hours    = intdiv($minutes, 60);
+            $leftover = $minutes % 60;
+            return '📅 Upcoming meeting in ' . $hours . 'h' . ($leftover ? ' ' . $leftover . 'm' : '');
+        }
+
+        if ($endsAt && $endsAt->isFuture()) {
+            return '🔴 Meeting in progress';
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{0: string[], 1: string[]}  [attending, declined]
+     */
+    private function splitAttendees(CalendarEvent $event): array
+    {
+        $event->loadMissing('profiles.user');
+
+        $attending = [];
+        $declined  = [];
+
+        foreach ($event->profiles as $profile) {
+            $name = $profile->user?->name ?? $profile->channel_identifier;
+            if (! $name) {
+                continue;
+            }
+
+            // Pivot exposes response_status via the BelongsToMany pivot accessor.
+            $status = $profile->pivot?->response_status ?? null;
+            if ($status === 'declined') {
+                $declined[] = $name;
+            } else {
+                $attending[] = $name;
+            }
+        }
+
+        return [$attending, $declined];
     }
 
     public function renderForWeb(array $data, CalendarEvent $event, ?AgendaTemplate $template = null): string
@@ -155,6 +244,8 @@ class AgendaRenderer
             $lines[] = "📋 Задачи с прошлого митинга — {$done} из {$total} ({$pct}%)";
         }
 
+        $frontend = $mode === 'telegram' ? rtrim((string) config('app.frontend_url'), '/') : null;
+
         foreach ($check as $c) {
             $icon     = match ($c['status']) {
                 'готово'   => '✅',
@@ -165,7 +256,10 @@ class AgendaRenderer
             $deadline = $c['deadline'] ?? null;
             if ($mode === 'telegram') {
                 $tail = $deadline ? " <i>({$deadline})</i>" : '';
-                $lines[] = "{$icon} <b>" . e($c['person']) . '</b> — ' . e($c['commitment']) . $tail;
+                $commitmentPart = !empty($c['issue_id'])
+                    ? '<a href="' . e("{$frontend}/dashboard/issues/{$c['issue_id']}") . '">' . e($c['commitment']) . '</a>'
+                    : e($c['commitment']);
+                $lines[] = "{$icon} <b>" . e($c['person']) . '</b> — ' . $commitmentPart . $tail;
             } else {
                 $tail = $deadline ? " ({$deadline})" : '';
                 $lines[] = "{$icon} {$c['person']} — {$c['commitment']}{$tail}";
@@ -192,10 +286,15 @@ class AgendaRenderer
             $lines[] = "🔵 Задачи между митингами — {$done} из {$total}";
         }
 
+        $frontend = $mode === 'telegram' ? rtrim((string) config('app.frontend_url'), '/') : null;
+
         foreach ($tasks as $t) {
             $icon = ($t['status'] ?? null) === 'done' ? '✅' : '🔵';
             if ($mode === 'telegram') {
-                $lines[] = "{$icon} <b>" . e($t['assignee']) . '</b> — ' . e($t['name']);
+                $namePart = isset($t['id'])
+                    ? '<a href="' . e("{$frontend}/dashboard/issues/{$t['id']}") . '">' . e($t['name']) . '</a>'
+                    : e($t['name']);
+                $lines[] = "{$icon} <b>" . e($t['assignee'] ?? '—') . '</b> — ' . $namePart;
             } else {
                 $lines[] = "{$icon} {$t['assignee']} — {$t['name']}";
             }

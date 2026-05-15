@@ -7,9 +7,11 @@ use App\Domain\DTO\Insight\InsightExtractedDataDTO;
 use App\Models\CalendarEvent;
 use App\Models\AgentActivityLog;
 use App\Models\Channel;
+use App\Models\InsightShortTerm;
 use App\Models\InsightSource;
 use App\Models\Participant;
 use App\Models\Profile;
+use App\Services\Decisions\DecisionAuthorResolver;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -21,6 +23,7 @@ class InsightExtractionService
         private readonly OpenRouterClient $llm,
         private readonly TranscriptBuilderService $transcriptBuilder,
         private readonly InsightPromptBuilder $promptBuilder,
+        private readonly DecisionAuthorResolver $authorResolver,
     ) {}
 
     /**
@@ -75,25 +78,44 @@ class InsightExtractionService
     }
 
     /**
-     * Build a name => Profile map for participants with known google_calendar profiles.
+     * Build a name => Profile map for participants resolved to a google_calendar profile.
+     *
+     * Uses DecisionAuthorResolver's cascade so we don't only depend on participant.profile_id
+     * (which is null in production — see CLAUDE.md "Связь пользователей с CalendarEvent").
+     * The cascade also covers:
+     *   - event_profile_pivot: name-match against profile.user.name
+     *   - event_profile_email: name-match against User found by orphan-profile email
+     *
+     * Insight extraction needs google_calendar profiles specifically — channel_identifier
+     * is the LLM-visible handle for that participant.
      *
      * @return array<string, Profile>
      */
     private function buildProfileMap(CalendarEvent $event): array
     {
         $gcChannelId = Channel::idFor('google_calendar');
-
         if (!$gcChannelId) {
             return [];
         }
 
-        return $event->participants()
-            ->with('profile')
-            ->get()
-            ->filter(fn(Participant $p) => $p->profile?->channel_identifier)
-            ->filter(fn(Participant $p) => $p->profile->channel_id === $gcChannelId)
-            ->mapWithKeys(fn(Participant $p) => [$p->name => $p->profile])
-            ->all();
+        $map = [];
+
+        foreach ($event->participants()->get() as $participant) {
+            $result = $this->authorResolver->resolve($event, $participant->name, $participant->id);
+
+            if (!$result['profile_id']) {
+                continue;
+            }
+
+            $profile = Profile::find($result['profile_id']);
+            if (!$profile || $profile->channel_id !== $gcChannelId || !$profile->channel_identifier) {
+                continue;
+            }
+
+            $map[$participant->name] = $profile;
+        }
+
+        return $map;
     }
 
     private function callLLM(CalendarEvent $event, string $transcript, array $participantMap): ?InsightExtractedDataDTO
@@ -165,10 +187,9 @@ class InsightExtractionService
                 ['processed_at' => now()],
             );
 
-            // Idempotency: при повторном запуске стираем старые items/shortTermMemories
-            // и пересоздаём, иначе на каждый retry в БД накапливаются дубликаты
+            // Idempotency for items: wipe-this-source then recreate. Items have no global
+            // uniqueness so delete+insert is safe across event runs.
             $source->items()->delete();
-            $source->shortTermMemories()->delete();
 
             foreach ($participant->items as $item) {
                 $source->items()->create([
@@ -179,15 +200,25 @@ class InsightExtractionService
                 ]);
             }
 
+            // ShortTerm has a GLOBAL unique key (profile_id, context_type) — one row per
+            // profile+context across ALL meetings. Latest run wins: upsert by the unique key
+            // so a later meeting overwrites stale emotional/work-context snapshots. Plain
+            // delete+insert would explode on cross-event duplicates (e.g. profile 4 already
+            // has emotional_state from a previous meeting).
             foreach ($participant->shortTerm as $shortTerm) {
                 $ttlDays = $shortTerm->contextType === 'emotional_state' ? 7 : 30;
 
-                $source->shortTermMemories()->create([
-                    'profile_id'   => $profile->id,
-                    'context_type' => $shortTerm->contextType,
-                    'content'      => $shortTerm->content,
-                    'expires_at'   => now()->addDays($ttlDays),
-                ]);
+                InsightShortTerm::updateOrCreate(
+                    [
+                        'profile_id'   => $profile->id,
+                        'context_type' => $shortTerm->contextType,
+                    ],
+                    [
+                        'content'           => $shortTerm->content,
+                        'expires_at'        => now()->addDays($ttlDays),
+                        'insight_source_id' => $source->id,
+                    ],
+                );
             }
 
             $source->update(['processed_at' => now()]);

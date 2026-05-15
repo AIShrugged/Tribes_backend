@@ -167,6 +167,24 @@ PROMPT;
                 return null;
             }
 
+            // LLM sometimes returns malformed shapes (missing keys, wrong key names) despite
+            // the schema in the prompt. Treat any partial response as "no usable observation"
+            // — the listener has tries=3, but retrying on a deterministic LLM quirk produces
+            // the same failure. Skipping is safer than letting an Undefined array key
+            // ErrorException kill the whole pair-evolution batch.
+            if (!isset($data['observation'], $data['relationship_type'])
+                || !is_string($data['observation'])
+                || !is_string($data['relationship_type'])
+                || trim($data['observation']) === ''
+            ) {
+                Log::warning('InsightRelationshipService: incomplete LLM pair observation, skipping', [
+                    'profile_id_a' => $profileA->id,
+                    'profile_id_b' => $profileB->id,
+                    'response_keys' => array_keys($data),
+                ]);
+                return null;
+            }
+
             return $data;
         } catch (\Throwable $e) {
             Log::error('InsightRelationshipService: pair observation failed', [

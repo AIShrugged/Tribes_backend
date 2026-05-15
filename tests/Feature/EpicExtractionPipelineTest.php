@@ -175,7 +175,7 @@ class EpicExtractionPipelineTest extends TestCase
         $this->mockLlmEpics([[
             'action'             => 'update',
             'existing_epic_id'   => $existingEpic->id,
-            'name'               => 'Old epic',
+            'name'               => 'New name proposed by LLM',
             'description'        => "## Контекст\nновый контекст\n\n## Пункты\n1. one\n2. two",
             'scope'              => 'team',
             'author_name'        => 'Sergey Speaker',
@@ -190,12 +190,52 @@ class EpicExtractionPipelineTest extends TestCase
         $this->assertCount(1, $result['updated']);
 
         $existingEpic->refresh();
-        $this->assertStringContainsString('новый контекст', $existingEpic->description);
+        // US-7.1: name/description on existing epic must remain immutable during merge.
+        $this->assertSame('Old epic', $existingEpic->name);
+        $this->assertSame("## Контекст\nстарый\n\n## Пункты\n1. one", $existingEpic->description);
 
         $comment = IssueComment::firstOrFail();
         $this->assertSame($existingEpic->id, $comment->issue_id);
         $this->assertSame($this->speaker->id, $comment->user_id, 'Comment author must be resolved speaker');
         $this->assertStringContainsString('Добавили пункт 2', $comment->content);
+
+        $child->refresh();
+        $this->assertSame($existingEpic->id, $child->epic_id);
+    }
+
+    #[Test]
+    public function extract_update_with_blank_update_description_creates_no_comment(): void
+    {
+        $existingEpic = Issue::create([
+            'user_id'         => $this->owner->id,
+            'organization_id' => $this->org->id,
+            'team_id'         => $this->team->id,
+            'name'            => 'Old epic',
+            'description'     => "## Контекст\nстарый\n\n## Пункты\n1. one",
+            'type'            => Issue::TYPE_EPIC,
+            'status'          => 'open',
+        ]);
+        $child = $this->makeMeetingIssue('Step');
+
+        $this->mockLlmEpics([[
+            'action'             => 'update',
+            'existing_epic_id'   => $existingEpic->id,
+            'name'               => 'Old epic',
+            'description'        => "## Контекст\nстарый\n\n## Пункты\n1. one",
+            'scope'              => 'team',
+            'author_name'        => null,
+            'update_description' => '',
+            'child_issue_ids'    => [$child->id],
+        ]]);
+
+        $service = $this->app->make(EpicExtractionService::class);
+        $result = $service->extract($this->event, $this->team, $this->owner, collect([$child]));
+
+        $this->assertCount(1, $result['updated']);
+        $this->assertSame(0, IssueComment::count(), 'Blank update_description must not produce a comment');
+
+        $existingEpic->refresh();
+        $this->assertSame('Old epic', $existingEpic->name);
 
         $child->refresh();
         $this->assertSame($existingEpic->id, $child->epic_id);

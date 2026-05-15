@@ -6,8 +6,8 @@ use App\Models\CalendarEvent;
 use App\Models\Participant;
 use App\Models\Profile;
 use App\Models\User;
+use App\Support\NameNormalizer;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Str;
 
 class DecisionAuthorResolver
 {
@@ -124,7 +124,7 @@ class DecisionAuthorResolver
 
     private function normalize(string $name): string
     {
-        return Str::lower(trim(preg_replace('/\s+/', ' ', $name)));
+        return NameNormalizer::normalize($name);
     }
 
     private function result(?int $userId, ?int $profileId, ?string $rawName, string $matchedBy): array

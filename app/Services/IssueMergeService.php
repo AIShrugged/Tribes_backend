@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Decisions\DecisionAuthorResolver;
+use App\Support\NameNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -36,10 +37,15 @@ class IssueMergeService
             return collect();
         }
 
+        // Load FULL models (no select(): Issue::saving hook calls IssueTypeResolver on EVERY
+        // save and uses the model's `type` + `organization_id` + `issue_type_id`. A partial-
+        // select hydration would leave those null, the resolver would fall back to default,
+        // and the saving hook would silently overwrite type to 'development' on update —
+        // demoting epics among others.
         $existingIssues = Issue::query()
             ->where('team_id', $team->id)
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
-            ->get(['id', 'name', 'description']);
+            ->get();
 
         if ($existingIssues->isEmpty()) {
             return $this->createAll($items, $event, $team, $user);
@@ -187,7 +193,7 @@ class IssueMergeService
 
         $updateText  = $decision['update_description'] ?? '';
         $dateStr     = $event->starts_at->toDateString();
-        $commentAuthorId = $this->resolveCommentAuthorUserId($decision['author_name'] ?? null, $event);
+        $commentAuthorId = $this->resolveCommentAuthorUserId($decision['author_name'] ?? null, $event, $user);
 
         IssueComment::create([
             'issue_id'          => $existing->id,
@@ -205,13 +211,21 @@ class IssueMergeService
         return $existing->fresh();
     }
 
-    private function resolveCommentAuthorUserId(?string $authorName, CalendarEvent $event): ?int
+    /**
+     * Resolve a comment author. Always returns a user id — falls back to the caller user
+     * when the LLM didn't emit an author or the resolver couldn't match the name (US-6.8:
+     * comment.author_id must be populated, never null).
+     */
+    private function resolveCommentAuthorUserId(?string $authorName, CalendarEvent $event, User $fallback): int
     {
-        if (blank($authorName)) {
-            return null;
+        if (!blank($authorName)) {
+            $resolved = $this->authorResolver->resolve($event, $authorName)['user_id'] ?? null;
+            if ($resolved) {
+                return $resolved;
+            }
         }
 
-        return $this->authorResolver->resolve($event, $authorName)['user_id'] ?? null;
+        return $fallback->id;
     }
 
     private function createAll(array $items, CalendarEvent $event, Team $team, User $user): Collection
@@ -262,14 +276,12 @@ class IssueMergeService
             return null;
         }
 
-        $needle = mb_strtolower(trim($assigneeName));
-
         // Pass 1: event profiles (most precise — only matched participants)
         $event->loadMissing('profiles.user');
         $user = $event->profiles
             ->map(fn ($profile) => $profile->user)
             ->filter()
-            ->first(fn (User $user) => $this->nameMatches($user->name, $needle));
+            ->first(fn (User $user) => $this->nameMatches($user->name, $assigneeName));
 
         if ($user) {
             return $user->id;
@@ -278,13 +290,14 @@ class IssueMergeService
         // Pass 2: all team members by name (covers participants whose profiles have no user_id)
         return $team->users()
             ->get(['users.id', 'users.name'])
-            ->first(fn (User $user) => $this->nameMatches($user->name, $needle))
+            ->first(fn (User $user) => $this->nameMatches($user->name, $assigneeName))
             ?->id;
     }
 
     private function nameMatches(string $userName, string $needle): bool
     {
-        $haystack = mb_strtolower($userName);
+        $haystack = NameNormalizer::normalize($userName);
+        $needle = NameNormalizer::normalize($needle);
 
         return $haystack === $needle
             || str_contains($haystack, $needle)

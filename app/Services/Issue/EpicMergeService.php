@@ -32,7 +32,8 @@ class EpicMergeService
         Team $team,
         User $owner,
         Collection $existingEpics,
-        Collection $meetingIssueIds
+        Collection $meetingIssueIds,
+        Collection $meetingDecisionIds = new Collection(),
     ): array {
         $created = collect();
         $updated = collect();
@@ -41,7 +42,7 @@ class EpicMergeService
             return ['created' => $created, 'updated' => $updated];
         }
 
-        DB::transaction(function () use ($items, $event, $team, $owner, $existingEpics, $meetingIssueIds, &$created, &$updated): void {
+        DB::transaction(function () use ($items, $event, $team, $owner, $existingEpics, $meetingIssueIds, $meetingDecisionIds, &$created, &$updated): void {
             $existingById = $existingEpics->keyBy('id');
 
             foreach ($items as $item) {
@@ -58,16 +59,16 @@ class EpicMergeService
                     $existing = $epicId !== null ? $existingById->get((int) $epicId) : null;
 
                     if ($existing) {
-                        $this->updateEpic($existing, $item, $event);
+                        $this->updateEpic($existing, $item, $event, $owner);
                         $updated->push($existing->fresh());
                         $epic = $existing;
                     } else {
                         // Defensive: LLM returned a non-existent epic id → degrade to create.
-                        $epic = $this->createEpic($item, $event, $team, $owner);
+                        $epic = $this->createEpic($item, $event, $team, $owner, $meetingDecisionIds);
                         $created->push($epic);
                     }
                 } else { // create
-                    $epic = $this->createEpic($item, $event, $team, $owner);
+                    $epic = $this->createEpic($item, $event, $team, $owner, $meetingDecisionIds);
                     $created->push($epic);
                 }
 
@@ -86,48 +87,43 @@ class EpicMergeService
         return ['created' => $created, 'updated' => $updated];
     }
 
-    private function createEpic(array $item, CalendarEvent $event, Team $team, User $owner): Issue
+    private function createEpic(array $item, CalendarEvent $event, Team $team, User $owner, Collection $meetingDecisionIds): Issue
     {
         $scope    = $item['scope'] ?? 'team';
         $teamId   = $scope === 'organization' ? null : $team->id;
         $authorId = $this->resolveAuthorUserId($item['author_name'] ?? null, $event, $owner);
 
+        // US-6.10: tie the epic to the decision that motivated it. Trust the LLM only if the id
+        // came from this meeting's decisions[] — defends against hallucinated ids.
+        $sourceDecisionId = isset($item['source_decision_id']) && $meetingDecisionIds->contains((int) $item['source_decision_id'])
+            ? (int) $item['source_decision_id']
+            : null;
+
         return Issue::create([
-            'user_id'         => $authorId,
-            'organization_id' => $team->organization_id,
-            'team_id'         => $teamId,
-            'sourceable_type' => CalendarEvent::class,
-            'sourceable_id'   => $event->id,
-            'name'            => trim((string) ($item['name'] ?? '')),
-            'description'     => $item['description'] ?? null,
-            'type'            => Issue::TYPE_EPIC,
-            'status'          => MeetingTaskStatus::OPEN->value,
+            'user_id'                 => $authorId,
+            'organization_id'         => $team->organization_id,
+            'team_id'                 => $teamId,
+            'sourceable_type'         => CalendarEvent::class,
+            'sourceable_id'           => $event->id,
+            'name'                    => trim((string) ($item['name'] ?? '')),
+            'description'             => $item['description'] ?? null,
+            'type'                    => Issue::TYPE_EPIC,
+            'status'                  => MeetingTaskStatus::OPEN->value,
+            'source_protocol_item_id' => $sourceDecisionId,
         ]);
     }
 
-    private function updateEpic(Issue $existing, array $item, CalendarEvent $event): void
+    private function updateEpic(Issue $existing, array $item, CalendarEvent $event, User $fallback): void
     {
-        $newName        = trim((string) ($item['name'] ?? ''));
-        $newDescription = $item['description'] ?? null;
-
-        $updates = [];
-        if ($newName !== '' && $newName !== $existing->name) {
-            $updates['name'] = $newName;
-        }
-        if ($newDescription !== null && $newDescription !== $existing->description) {
-            $updates['description'] = $newDescription;
-        }
-        if (! empty($updates)) {
-            $existing->update($updates);
-        }
-
-        $updateText = $item['update_description'] ?? '';
-        if (trim((string) $updateText) === '') {
+        // Per US-7.1: existing epic name/description are immutable during merge.
+        // All meeting-driven updates are recorded as IssueComment entries instead.
+        $updateText = trim((string) ($item['update_description'] ?? ''));
+        if ($updateText === '') {
             return;
         }
 
         $dateStr  = $event->starts_at->toDateString();
-        $authorId = $this->resolveCommentAuthorUserId($item['author_name'] ?? null, $event);
+        $authorId = $this->resolveCommentAuthorUserId($item['author_name'] ?? null, $event, $fallback);
 
         IssueComment::create([
             'issue_id'          => $existing->id,
@@ -169,12 +165,19 @@ class EpicMergeService
         return $this->authorResolver->resolve($event, $authorName)['user_id'] ?? $fallback->id;
     }
 
-    private function resolveCommentAuthorUserId(?string $authorName, CalendarEvent $event): ?int
+    /**
+     * Always returns a user id — falls back to the caller user when LLM didn't emit
+     * an author or the resolver couldn't match. Mirrors IssueMergeService (US-6.8).
+     */
+    private function resolveCommentAuthorUserId(?string $authorName, CalendarEvent $event, User $fallback): int
     {
-        if (blank($authorName)) {
-            return null;
+        if (!blank($authorName)) {
+            $resolved = $this->authorResolver->resolve($event, $authorName)['user_id'] ?? null;
+            if ($resolved) {
+                return $resolved;
+            }
         }
 
-        return $this->authorResolver->resolve($event, $authorName)['user_id'] ?? null;
+        return $fallback->id;
     }
 }

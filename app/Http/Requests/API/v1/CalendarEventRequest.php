@@ -25,6 +25,7 @@ class CalendarEventRequest extends FormRequest
             $rules['date']           = ['nullable', 'date_format:Y-m-d'];
             $rules['scope']          = ['nullable', 'string', 'in:past,upcoming'];
             $rules['team_id']        = ['nullable', 'integer', 'exists:teams,id'];
+            $rules['user_id']        = ['nullable', 'integer', 'exists:users,id'];
             $rules['participant_id'] = ['nullable', 'integer', 'exists:participants,id'];
         }
 
@@ -58,6 +59,11 @@ class CalendarEventRequest extends FormRequest
     public function getParticipantId(): ?int
     {
         return $this->validated('participant_id') ? (int) $this->validated('participant_id') : null;
+    }
+
+    public function getUserId(): ?int
+    {
+        return $this->validated('user_id') ? (int) $this->validated('user_id') : null;
     }
 
     public function getDate(): ?Carbon

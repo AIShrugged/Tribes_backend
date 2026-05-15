@@ -101,9 +101,18 @@ class FollowupService
                 forceJsonResponse: true
             );
 
+            // gemini-3-pro-preview sometimes wraps JSON in markdown fences despite forceJsonResponse.
+            // Extract bare JSON object — same pattern as MeetingSummaryService, IssueExtractionService, etc.
+            if (!preg_match('/\{[\s\S]*\}/s', (string) $json, $matches)) {
+                throw new \RuntimeException('No JSON in LLM response');
+            }
+            if (json_decode($matches[0], true) === null) {
+                throw new \RuntimeException('Invalid JSON in LLM response');
+            }
+
             $followup->update([
                 'status' => FollowupStatus::DONE->value,
-                'text'   => $json,
+                'text'   => $matches[0],
             ]);
 
             AgentActivityLog::recordActivity(

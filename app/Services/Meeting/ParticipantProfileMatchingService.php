@@ -11,6 +11,17 @@ use App\Models\Setting;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * @deprecated Not wired into the production pipeline. `participant.profile_id` is therefore
+ *             null in prod, and consumers should resolve participants to users via the
+ *             cascade in {@see \App\Services\Decisions\DecisionAuthorResolver} instead
+ *             (4 paths: participant.profile_id → event-profile-pivot by name → orphan-GC
+ *             profile by email → global user name match).
+ *
+ *             Tracked in docs/transcript-pipeline-refactor.md (ADR-6). Either re-wire this
+ *             service as a pre-step before TranscriptParsed listeners, or delete it entirely.
+ *             Until then: do NOT add new callers.
+ */
 class ParticipantProfileMatchingService
 {
     public function __construct(
@@ -21,6 +32,8 @@ class ParticipantProfileMatchingService
     /**
      * Matches participants of the event to system profiles via LLM.
      * Updates participant.profile_id, profile_confidence, profile_matched_by.
+     *
+     * @deprecated See class-level note.
      */
     public function match(CalendarEvent $event): void
     {

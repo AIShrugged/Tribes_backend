@@ -75,6 +75,13 @@ class CalendarEventController extends Controller
             $calendarEvents->whereHas('participants', fn ($q) => $q->where('participants.id', $participantId));
         }
 
+        if ($userId = $request->getUserId()) {
+            $calendarEvents->where(function ($q) use ($userId) {
+                $q->whereHas('sources', fn ($inner) => $inner->where('user_id', $userId))
+                    ->orWhereHas('profiles', fn ($inner) => $inner->where('user_id', $userId));
+            });
+        }
+
         $count = $calendarEvents->count();
 
         $calendarEvents = $calendarEvents->offset($request->getOffset())

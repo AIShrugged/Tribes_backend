@@ -190,12 +190,13 @@ class AgendaService
                     $deadline   = isset($c['deadline']) && $c['deadline']
                         ? Carbon::parse($c['deadline'])->format('d.m.Y')
                         : null;
-                    $status           = $this->commitmentAnalyzer->matchCommitmentStatus($person, $commitment, $issues);
+                    $match            = $this->commitmentAnalyzer->matchCommitmentToIssue($person, $commitment, $issues);
                     $commitmentsCheck[] = [
                         'person'     => $person,
                         'commitment' => $commitment,
                         'deadline'   => $deadline,
-                        'status'     => $status,
+                        'status'     => $match['status'],
+                        'issue_id'   => $match['issue_id'],
                         'question'   => $questions[$i] ?? 'статус?',
                     ];
                 }
@@ -203,12 +204,13 @@ class AgendaService
                 $commitments = $this->commitmentAnalyzer->extractCommitmentsFromSummary($previousSummary?->summary);
                 foreach ($commitments as $i => $raw) {
                     $parsed           = $this->commitmentAnalyzer->parseCommitment($raw, $prevDate);
-                    $status           = $this->commitmentAnalyzer->matchCommitmentStatus($parsed['person'], $parsed['commitment'], $issues);
+                    $match            = $this->commitmentAnalyzer->matchCommitmentToIssue($parsed['person'], $parsed['commitment'], $issues);
                     $commitmentsCheck[] = [
                         'person'     => $parsed['person'],
                         'commitment' => $parsed['commitment'],
                         'deadline'   => $parsed['deadline'],
-                        'status'     => $status,
+                        'status'     => $match['status'],
+                        'issue_id'   => $match['issue_id'],
                         'question'   => $questions[$i] ?? 'статус?',
                     ];
                 }

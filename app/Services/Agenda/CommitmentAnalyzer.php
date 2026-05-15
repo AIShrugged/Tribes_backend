@@ -85,6 +85,17 @@ class CommitmentAnalyzer
 
     public function matchCommitmentStatus(string $person, string $commitment, Collection $issues): string
     {
+        return $this->matchCommitmentToIssue($person, $commitment, $issues)['status'];
+    }
+
+    /**
+     * Same matching as {@see self::matchCommitmentStatus} but also returns the matched
+     * Issue id so callers (agenda renderer) can link the commitment to its issue page.
+     *
+     * @return array{status: string, issue_id: ?int}
+     */
+    public function matchCommitmentToIssue(string $person, string $commitment, Collection $issues): array
+    {
         $nameVariants = $this->getNameVariants($person);
 
         $personIssues = $issues->filter(function ($issue) use ($nameVariants) {
@@ -98,7 +109,7 @@ class CommitmentAnalyzer
         });
 
         if ($personIssues->isEmpty()) {
-            return 'ожидание';
+            return ['status' => 'ожидание', 'issue_id' => null];
         }
 
         $commitmentWords = array_filter(
@@ -115,17 +126,21 @@ class CommitmentAnalyzer
                 }
             }
             if ($matchCount >= 2 || ($matchCount >= 1 && count($commitmentWords) <= 2)) {
-                return match ($issue->status) {
+                $status = match ($issue->status) {
                     'done'        => 'готово',
                     'in_progress' => 'в работе',
                     'cancelled'   => 'отменено',
                     default       => 'ожидание',
                 };
+                return ['status' => $status, 'issue_id' => $issue->id];
             }
         }
 
         $hasInProgress = $personIssues->contains('status', 'in_progress');
-        return $hasInProgress ? 'в работе' : 'ожидание';
+        return [
+            'status'   => $hasInProgress ? 'в работе' : 'ожидание',
+            'issue_id' => null,
+        ];
     }
 
     private function getNameVariants(string $person): array

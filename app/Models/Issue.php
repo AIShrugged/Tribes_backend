@@ -248,6 +248,11 @@ class Issue extends Model
             ->withPivot('created_at');
     }
 
+    public function conflicts(): HasMany
+    {
+        return $this->hasMany(IssueConflict::class);
+    }
+
     public function blockedBy(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(self::class, 'issue_blockers', 'blocked_id', 'blocker_id');

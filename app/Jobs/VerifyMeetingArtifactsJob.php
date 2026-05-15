@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Issue\IncompleteIssuesNotifier;
+use App\Services\Issue\IssueAutoPipelineDispatcher;
 use App\Services\IssueMergeService;
 use App\Services\Meeting\MeetingSummaryService;
 use App\Services\OpenRouterClient;
@@ -52,6 +53,12 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
 
         ExtractEpicsFromTranscriptJob::dispatch($this->event, $this->team, $this->user);
 
+        // Auto-pipeline (validator + detector). The detector is responsible for firing
+        // MeetingArtifactsReady at the end of its chain — never emit it here, otherwise
+        // SendMeetingSummaryNotification renders before MeetingSummary.conflicts is populated.
+        $meetingIssueIds = Issue::forMeeting($this->event->id)->pluck('id')->all();
+        app(IssueAutoPipelineDispatcher::class)->dispatchForMeeting($this->event, $meetingIssueIds);
+
         Log::info('VerifyMeetingArtifactsJob: done', [
             'calendar_event_id'   => $this->event->id,
             'incomplete_count'    => $incomplete->count(),
@@ -85,9 +92,15 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
 
         foreach ($uncovered as $decision) {
             $items = [[
-                'name'          => mb_substr(trim($decision->text), 0, 80),
+                // Safety guard against issues.name varchar(255) — leaves a few chars headroom
+                // for the "…" ellipsis. Typical decision.text fits well under 250 and is stored
+                // intact; only genuinely long sentences get word-boundary truncated.
+                'name'          => $this->truncateToWord(trim($decision->text), 250),
                 'description'   => $this->buildDecisionDescription($decision),
                 'type'          => 'organization',
+                // author_name carries the decision speaker so IssueMergeService can attribute
+                // both `issues.user_id` and `issue_comments.user_id` (US-6.7, US-6.8).
+                'author_name'   => $decision->author_raw_name,
                 'assignee_name' => $decision->author_raw_name,
                 'due_date'      => null,
                 'priority'      => 'normal',
@@ -107,6 +120,14 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
                         'created_at'  => now(),
                     ]);
                 }
+
+                // US-6.10: stamp the canonical protocol-item link on the issue itself,
+                // but only if it's still empty so the first decision wins (multi-coverage
+                // is still discoverable through decision_issue pivot).
+                DB::table('issues')
+                    ->where('id', $issue->id)
+                    ->whereNull('source_protocol_item_id')
+                    ->update(['source_protocol_item_id' => $decision->id]);
             }
         }
 
@@ -144,6 +165,30 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
     }
 
     /**
+     * Truncate at the last space before `$maxLen` and append «…», so an issue.name
+     * lifted from decision.text never ends mid-word in the UI (Telegram, dashboard).
+     * Falls back to a hard cut if the chunk has no whitespace before the limit
+     * (otherwise short single-token decisions could disappear entirely).
+     */
+    private function truncateToWord(string $text, int $maxLen): string
+    {
+        if (mb_strlen($text) <= $maxLen) {
+            return $text;
+        }
+
+        $cut = mb_substr($text, 0, $maxLen);
+        $lastSpace = mb_strrpos($cut, ' ');
+
+        // Only use the word boundary if it preserves at least 60% of the budget —
+        // otherwise a tiny snippet would be ellipsized away.
+        if ($lastSpace !== false && $lastSpace >= (int) ($maxLen * 0.6)) {
+            $cut = mb_substr($cut, 0, $lastSpace);
+        }
+
+        return rtrim($cut, " \t\n\r,;:.—-") . '…';
+    }
+
+    /**
      * Second-chance linking for decisions still uncovered after gap-fill (e.g. when
      * IssueMergeService returned `skip` because an existing issue already covers them).
      * Asks LLM to map remaining uncovered decisions to open team issues.
@@ -158,10 +203,13 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
             return collect();
         }
 
+        // See IssueMergeService::merge — partial select breaks Issue::saving hook (would
+        // demote epic types). Load full models even though only id/name/description are read here,
+        // because callers downstream may save these models.
         $openIssues = Issue::query()
             ->where('team_id', $this->team->id)
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
-            ->get(['id', 'name', 'description']);
+            ->get();
 
         if ($openIssues->isEmpty()) {
             return $stillUncovered;
@@ -188,6 +236,12 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
                     'created_at'  => now(),
                 ]);
             }
+
+            // US-6.10: stamp the canonical protocol-item link, first decision wins.
+            DB::table('issues')
+                ->where('id', $issueId)
+                ->whereNull('source_protocol_item_id')
+                ->update(['source_protocol_item_id' => $decision->id]);
         }
 
         if ($unresolved->isNotEmpty()) {

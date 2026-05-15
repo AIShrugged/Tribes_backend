@@ -212,10 +212,10 @@ class IssueAuthorResolutionTest extends TestCase
         $this->assertSame($this->speaker->id, $comment->user_id);
     }
 
-    // ── Update: author_name=null → user_id=null (бот) ──
+    // ── Update: author_name=null → fallback на caller (US-6.8: всегда populated) ──
 
     #[Test]
-    public function updateIssue_leaves_comment_author_null_when_unresolved(): void
+    public function updateIssue_falls_back_to_owner_when_comment_author_unresolved(): void
     {
         $existing = Issue::create([
             'user_id'         => $this->owner->id,
@@ -249,7 +249,7 @@ class IssueAuthorResolutionTest extends TestCase
         );
 
         $comment = IssueComment::firstOrFail();
-        $this->assertNull($comment->user_id);
+        $this->assertSame($this->owner->id, $comment->user_id);
     }
 
     // ── Telegram: реальный отправитель резолвится через authorIdentity ──

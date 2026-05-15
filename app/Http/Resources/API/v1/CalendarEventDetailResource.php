@@ -5,9 +5,11 @@ namespace App\Http\Resources\API\v1;
 use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
 use App\Models\Decision;
+use App\Models\UpcomingAgenda;
 use App\Services\Agenda\AgendaRenderer;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class CalendarEventDetailResource extends JsonResource
@@ -37,20 +39,7 @@ class CalendarEventDetailResource extends JsonResource
             ),
             'is_past' => (bool) $event->ends_at?->isPast(),
             'participants' => ParticipantResource::collection($event->participants)->resolve($request),
-            'agendas' => $event->agendas
-                ->map(fn ($agenda) => [
-                    'id' => $agenda->id,
-                    'type' => $agenda->type,
-                    'status' => $agenda->status,
-                    'content' => $agenda->isGeneral() && ! empty($agenda->raw_json)
-                        ? $renderer->renderForWeb($agenda->raw_json, $event, $template)
-                        : $agenda->content,
-                    'user_id' => $agenda->user_id,
-                    'sent_at' => $agenda->sent_at,
-                    'send_scheduled_at' => $agenda->send_scheduled_at,
-                ])
-                ->values()
-                ->all(),
+            'agendas' => $this->buildAgendas($event, $renderer, $template),
             'tasks' => MeetingTaskResource::collection($event->tasks)->resolve($request),
             'summary' => $event->meetingSummary
                 ? MeetingSummaryResource::make($event->meetingSummary)->resolve($request)
@@ -70,6 +59,73 @@ class CalendarEventDetailResource extends JsonResource
             ] : null,
             'key_takeaways' => $this->buildKeyTakeaways($event, $request),
         ];
+    }
+
+    /**
+     * Build agenda list: MeetingAgenda rows for this event (general + personal-for-user)
+     * plus an UpcomingAgenda fallback ("next-meeting prep" generated from an earlier event
+     * in the same series) when the meeting is still upcoming and the user has no personal
+     * agenda yet. Mirrors {@see \App\Services\Today\TodayBriefingService::loadAgendaContent}.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildAgendas(CalendarEvent $event, AgendaRenderer $renderer, ?AgendaTemplate $template): array
+    {
+        $agendas = $event->agendas
+            ->map(fn ($agenda) => [
+                'id' => $agenda->id,
+                'type' => $agenda->type,
+                'status' => $agenda->status,
+                'content' => $agenda->isGeneral() && ! empty($agenda->raw_json)
+                    ? $renderer->renderForWeb($agenda->raw_json, $event, $template)
+                    : $agenda->content,
+                'user_id' => $agenda->user_id,
+                'sent_at' => $agenda->sent_at,
+                'send_scheduled_at' => $agenda->send_scheduled_at,
+            ])
+            ->values()
+            ->all();
+
+        // Only surface upcoming-agenda fallback for not-yet-completed meetings.
+        // Past meetings with a summary already have their own derived artifacts.
+        if ($event->ends_at?->isPast() || $event->meetingSummary) {
+            return $agendas;
+        }
+
+        $userId = Auth::id();
+        if (! $userId) {
+            return $agendas;
+        }
+
+        $hasPersonalForUser = collect($agendas)->contains(
+            fn (array $a) => ($a['user_id'] ?? null) === $userId
+        );
+        if ($hasPersonalForUser) {
+            return $agendas;
+        }
+
+        $upcoming = UpcomingAgenda::query()
+            ->where('user_id', $userId)
+            ->where('series_key', $event->seriesKey())
+            ->where('status', 'done')
+            ->orderByDesc('updated_at')
+            ->first();
+
+        if (! $upcoming || ! $upcoming->content) {
+            return $agendas;
+        }
+
+        $agendas[] = [
+            'id' => "upcoming-{$upcoming->id}",
+            'type' => 'upcoming',
+            'status' => $upcoming->status,
+            'content' => $upcoming->content,
+            'user_id' => $upcoming->user_id,
+            'sent_at' => null,
+            'send_scheduled_at' => null,
+        ];
+
+        return $agendas;
     }
 
     /**

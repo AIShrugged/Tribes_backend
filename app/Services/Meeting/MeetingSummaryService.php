@@ -8,6 +8,7 @@ use App\Events\MeetingSummaryGenerated;
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\MeetingSummary;
+use App\Models\MeetingSummaryTemplate;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -84,9 +85,49 @@ class MeetingSummaryService
         $meetingDate = \Carbon\Carbon::parse($event->starts_at)->format('d.m.Y');
         $nextDay = \Carbon\Carbon::parse($event->starts_at)->addDay()->format('d.m.Y');
 
-        return <<<TXT
+        $substitutions = [
+            '{transcript}'   => $transcript,
+            '{meeting_date}' => $meetingDate,
+            '{next_day}'     => $nextDay,
+            '{example}'      => $example,
+        ];
+
+        $override = $this->resolvePromptOverride($event);
+        if ($override !== null) {
+            return strtr($override, $substitutions);
+        }
+
+        return strtr(self::defaultPromptTemplate(), $substitutions);
+    }
+
+    /**
+     * Resolve a team-configured prompt override for this event, if any.
+     *
+     * Looks up the event owner's first team (same pattern used in agenda/followup pipelines)
+     * and returns its {@see MeetingSummaryTemplate::$prompt_override} when non-empty.
+     */
+    private function resolvePromptOverride(CalendarEvent $event): ?string
+    {
+        $teamId = $event->source?->user?->teams()->first()?->id;
+        if (! $teamId) {
+            return null;
+        }
+
+        $template = MeetingSummaryTemplate::where('team_id', $teamId)->first();
+        $override = trim((string) ($template?->prompt_override ?? ''));
+
+        return $override === '' ? null : $override;
+    }
+
+    /**
+     * Default prompt template with {@see MeetingSummaryTemplate::PROMPT_PLACEHOLDERS}.
+     * Used both as runtime fallback and as the seed text shown to admins in the editor.
+     */
+    public static function defaultPromptTemplate(): string
+    {
+        return <<<'TXT'
         Составь протокол встречи по транскрипту. Протокол должен быть аналогичен примеру ниже.
-        Дата встречи: {$meetingDate}. "Завтра" = {$nextDay}. Используй конкретные даты в дедлайнах.
+        Дата встречи: {meeting_date}. "Завтра" = {next_day}. Используй конкретные даты в дедлайнах.
 
         Верни JSON:
         {
@@ -100,7 +141,7 @@ class MeetingSummaryService
         }
 
         === ПРИМЕР ПРОТОКОЛА ===
-        {$example}
+        {example}
         === КОНЕЦ ПРИМЕРА ===
 
         Правила:
@@ -112,7 +153,7 @@ class MeetingSummaryService
         - НЕ придумывай факты, которых нет в транскрипте.
 
         Транскрипт встречи:
-        {$transcript}
+        {transcript}
         TXT;
     }
 
