@@ -236,7 +236,7 @@ class AgentService
 
                 // Call LLM
                 $this->reportProgress($options, 'before_llm');
-                $response = OpenRouterClient::chatWithTools(
+                $response = app(OpenRouterClient::class)->chatWithTools(
                     $messages,
                     $tools,
                     $this->modelRouter->resolve($options->taskType),

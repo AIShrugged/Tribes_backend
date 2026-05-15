@@ -6,13 +6,16 @@ use App\Events\TranscriptParsed;
 use App\Jobs\ExtractIssuesFromTranscriptJob;
 use App\Jobs\GenerateFollowupJob;
 use App\Services\CalendarEventOrganizationResolver;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
-class GenerateFollowup
+class GenerateFollowup implements ShouldQueueAfterCommit
 {
-    public function __construct(
-        private readonly CalendarEventOrganizationResolver $organizationResolver,
-    ) {}
+    use Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 30;
 
     public function handle(TranscriptParsed $event): void
     {
@@ -26,13 +29,11 @@ class GenerateFollowup
             return;
         }
 
-        // Followups — для каждой команды пользователя
         foreach ($teams as $team) {
             GenerateFollowupJob::dispatch($calendarEvent, $team, $user);
         }
 
-        // Issues — один раз, для организации/команды определённой по участникам встречи
-        $resolved = $this->organizationResolver->resolve($calendarEvent);
+        $resolved = app(CalendarEventOrganizationResolver::class)->resolve($calendarEvent);
 
         if ($resolved) {
             ExtractIssuesFromTranscriptJob::dispatch($calendarEvent, $resolved['team'], $resolved['user']);

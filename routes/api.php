@@ -35,6 +35,8 @@ use App\Http\Controllers\API\v1\TeamDecisionController;
 use App\Http\Controllers\API\v1\TeamKeyPointController;
 use App\Http\Controllers\API\v1\TeamInviteController;
 use App\Http\Controllers\API\v1\TeamNotificationSettingController;
+use App\Http\Controllers\API\v1\MeetingSummaryTemplateController;
+use App\Http\Controllers\API\v1\AgendaTemplateController;
 use App\Http\Controllers\API\v1\TeamUserController;
 use App\Http\Controllers\API\v1\TelegramBotController;
 use App\Http\Controllers\API\v1\TelegramLinkController;
@@ -169,8 +171,6 @@ Route::group(['prefix' => 'v1'], function () {
 
             Route::get('/{calendar_event_id}/tasks', [MeetingTaskController::class, 'index'])
                 ->name('calendar-events.tasks.index');
-            Route::post('/{calendar_event_id}/tasks/generate', [MeetingTaskController::class, 'generate'])
-                ->name('calendar-events.tasks.generate');
 
             Route::get('/{calendarEventId}/agendas', [AgendaController::class, 'index'])
                 ->name('calendar-events.agendas.index');
@@ -255,6 +255,15 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'store']);
         Route::patch('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'update']);
         Route::delete('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'destroy']);
+
+        Route::get('meeting-summary-template/default-prompt', [MeetingSummaryTemplateController::class, 'defaultPrompt']);
+        Route::get('teams/{team}/meeting-summary-template', [MeetingSummaryTemplateController::class, 'show']);
+        Route::put('teams/{team}/meeting-summary-template', [MeetingSummaryTemplateController::class, 'upsert']);
+        Route::get('teams/{team}/meeting-summary-template/versions', [MeetingSummaryTemplateController::class, 'versions']);
+        Route::post('teams/{team}/meeting-summary-template/versions/{version}/restore', [MeetingSummaryTemplateController::class, 'restore']);
+
+        Route::get('teams/{team}/agenda-template', [AgendaTemplateController::class, 'show']);
+        Route::put('teams/{team}/agenda-template', [AgendaTemplateController::class, 'upsert']);
 
         Route::get('teams/{team}/invites', [TeamInviteController::class, 'index']);
         Route::post('teams/{team}/invites', [TeamInviteController::class, 'store']);

@@ -46,7 +46,7 @@ class OpenRouterClientFallbackTest extends TestCase
             ], 200);
         });
 
-        $result = OpenRouterClient::chat(
+        $result = app(OpenRouterClient::class)->chat(
             messages: [new MessageDTO('user', 'hello')],
             model: 'google/gemini-3-pro-preview',
             maxTokens: 64,
@@ -90,7 +90,7 @@ class OpenRouterClientFallbackTest extends TestCase
             ], 200);
         });
 
-        $result = OpenRouterClient::chatWithTools(
+        $result = app(OpenRouterClient::class)->chatWithTools(
             messages: [['role' => 'user', 'content' => 'hello']],
             tools: [['type' => 'function', 'function' => ['name' => 'noop', 'parameters' => ['type' => 'object']]]],
             model: 'google/gemini-3-pro-preview',

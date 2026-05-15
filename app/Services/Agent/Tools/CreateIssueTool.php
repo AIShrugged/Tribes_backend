@@ -8,6 +8,7 @@ use App\Models\ChannelMessage;
 use App\Models\Issue;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Issue\IssueAutoPipelineDispatcher;
 use App\Services\TenantScopeValidator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -192,6 +193,8 @@ class CreateIssueTool extends AbstractAgentTool
             'due_date' => $parameters['due_date'] ?? null,
             'status' => $status,
         ]);
+
+        app(IssueAutoPipelineDispatcher::class)->dispatchForStandalone([$issue->id]);
 
         return [
             'success' => true,

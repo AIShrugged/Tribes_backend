@@ -10,8 +10,11 @@ use App\Models\IssueComment;
 use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Decisions\DecisionAuthorResolver;
+use App\Support\NameNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class IssueMergeService
@@ -19,6 +22,7 @@ class IssueMergeService
     public function __construct(
         private readonly OpenRouterClient $llm,
         private readonly IssueTypeResolver $issueTypeResolver,
+        private readonly DecisionAuthorResolver $authorResolver,
     ) {}
 
     /**
@@ -33,10 +37,15 @@ class IssueMergeService
             return collect();
         }
 
+        // Load FULL models (no select(): Issue::saving hook calls IssueTypeResolver on EVERY
+        // save and uses the model's `type` + `organization_id` + `issue_type_id`. A partial-
+        // select hydration would leave those null, the resolver would fall back to default,
+        // and the saving hook would silently overwrite type to 'development' on update —
+        // demoting epics among others.
         $existingIssues = Issue::query()
             ->where('team_id', $team->id)
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
-            ->get(['id', 'name', 'description']);
+            ->get();
 
         if ($existingIssues->isEmpty()) {
             return $this->createAll($items, $event, $team, $user);
@@ -113,47 +122,49 @@ class IssueMergeService
         Team $team,
         User $user
     ): Collection {
-        $result = collect();
-        $existingById = $existingIssues->keyBy('id');
-        $processedIndexes = [];
+        return DB::transaction(function () use ($decisions, $items, $existingIssues, $event, $team, $user) {
+            $result = collect();
+            $existingById = $existingIssues->keyBy('id');
+            $processedIndexes = [];
 
-        foreach ($decisions as $decision) {
-            $index = $decision['index'] ?? null;
-            $action = $decision['action'] ?? 'create';
+            foreach ($decisions as $decision) {
+                $index = $decision['index'] ?? null;
+                $action = $decision['action'] ?? 'create';
 
-            if ($index === null || !isset($items[$index])) {
-                continue;
-            }
-
-            $processedIndexes[] = $index;
-
-            if ($action === 'skip') {
-                continue;
-            }
-
-            if ($action === 'update' && !empty($decision['existing_issue_id'])) {
-                $existing = $existingById->get($decision['existing_issue_id']);
-
-                if (!$existing) {
-                    $result->push($this->createIssue($items[$index], $event, $team, $user));
+                if ($index === null || !isset($items[$index])) {
                     continue;
                 }
 
-                $result->push($this->updateIssue($existing, $decision, $event, $team, $user));
-                continue;
-            }
+                $processedIndexes[] = $index;
 
-            $result->push($this->createIssue($items[$index], $event, $team, $user));
-        }
+                if ($action === 'skip') {
+                    continue;
+                }
 
-        // Items the LLM skipped entirely — create them to avoid silent data loss
-        foreach (array_keys($items) as $index) {
-            if (!in_array($index, $processedIndexes, strict: true)) {
+                if ($action === 'update' && !empty($decision['existing_issue_id'])) {
+                    $existing = $existingById->get($decision['existing_issue_id']);
+
+                    if (!$existing) {
+                        $result->push($this->createIssue($items[$index], $event, $team, $user));
+                        continue;
+                    }
+
+                    $result->push($this->updateIssue($existing, $decision, $event, $team, $user));
+                    continue;
+                }
+
                 $result->push($this->createIssue($items[$index], $event, $team, $user));
             }
-        }
 
-        return $result;
+            // Items the LLM skipped entirely — create them to avoid silent data loss
+            foreach (array_keys($items) as $index) {
+                if (!in_array($index, $processedIndexes, strict: true)) {
+                    $result->push($this->createIssue($items[$index], $event, $team, $user));
+                }
+            }
+
+            return $result;
+        });
     }
 
     private function updateIssue(Issue $existing, array $decision, CalendarEvent $event, Team $team, User $user): Issue
@@ -180,12 +191,13 @@ class IssueMergeService
             $existing->update($updates);
         }
 
-        $updateText = $decision['update_description'] ?? '';
-        $dateStr = $event->starts_at->toDateString();
+        $updateText  = $decision['update_description'] ?? '';
+        $dateStr     = $event->starts_at->toDateString();
+        $commentAuthorId = $this->resolveCommentAuthorUserId($decision['author_name'] ?? null, $event, $user);
 
         IssueComment::create([
             'issue_id'          => $existing->id,
-            'user_id'           => null,
+            'user_id'           => $commentAuthorId,
             'parent_id'         => null,
             'calendar_event_id' => $event->id,
             'content'           => "**Обновление по встрече \"{$event->title}\" от {$dateStr}:**\n\n{$updateText}",
@@ -199,6 +211,23 @@ class IssueMergeService
         return $existing->fresh();
     }
 
+    /**
+     * Resolve a comment author. Always returns a user id — falls back to the caller user
+     * when the LLM didn't emit an author or the resolver couldn't match the name (US-6.8:
+     * comment.author_id must be populated, never null).
+     */
+    private function resolveCommentAuthorUserId(?string $authorName, CalendarEvent $event, User $fallback): int
+    {
+        if (!blank($authorName)) {
+            $resolved = $this->authorResolver->resolve($event, $authorName)['user_id'] ?? null;
+            if ($resolved) {
+                return $resolved;
+            }
+        }
+
+        return $fallback->id;
+    }
+
     private function createAll(array $items, CalendarEvent $event, Team $team, User $user): Collection
     {
         return collect($items)->map(fn (array $item) => $this->createIssue($item, $event, $team, $user));
@@ -207,9 +236,10 @@ class IssueMergeService
     private function createIssue(array $item, CalendarEvent $event, Team $team, User $user): Issue
     {
         $assigneeName = $item['assignee_name'] ?? null;
+        $authorName   = $item['author_name'] ?? null;
 
         return Issue::create([
-            'user_id'         => $user->id,
+            'user_id'         => $this->resolveAuthorUserId($authorName, $event, $user),
             'organization_id' => $team->organization_id,
             'team_id'         => $team->id,
             'sourceable_type' => CalendarEvent::class,
@@ -229,20 +259,29 @@ class IssueMergeService
         ]);
     }
 
+    private function resolveAuthorUserId(?string $authorName, CalendarEvent $event, User $fallback): int
+    {
+        if (blank($authorName)) {
+            return $fallback->id;
+        }
+
+        $resolved = $this->authorResolver->resolve($event, $authorName);
+
+        return $resolved['user_id'] ?? $fallback->id;
+    }
+
     private function resolveAssigneeId(?string $assigneeName, CalendarEvent $event, Team $team): ?int
     {
         if (blank($assigneeName)) {
             return null;
         }
 
-        $needle = mb_strtolower(trim($assigneeName));
-
         // Pass 1: event profiles (most precise — only matched participants)
         $event->loadMissing('profiles.user');
         $user = $event->profiles
             ->map(fn ($profile) => $profile->user)
             ->filter()
-            ->first(fn (User $user) => $this->nameMatches($user->name, $needle));
+            ->first(fn (User $user) => $this->nameMatches($user->name, $assigneeName));
 
         if ($user) {
             return $user->id;
@@ -251,13 +290,14 @@ class IssueMergeService
         // Pass 2: all team members by name (covers participants whose profiles have no user_id)
         return $team->users()
             ->get(['users.id', 'users.name'])
-            ->first(fn (User $user) => $this->nameMatches($user->name, $needle))
+            ->first(fn (User $user) => $this->nameMatches($user->name, $assigneeName))
             ?->id;
     }
 
     private function nameMatches(string $userName, string $needle): bool
     {
-        $haystack = mb_strtolower($userName);
+        $haystack = NameNormalizer::normalize($userName);
+        $needle = NameNormalizer::normalize($needle);
 
         return $haystack === $needle
             || str_contains($haystack, $needle)
@@ -326,6 +366,7 @@ Return JSON strictly in this format:
       "action": "update",
       "existing_issue_id": 42,
       "update_description": "New context from this meeting: ...",
+      "author_name": "First Last | null",
       "assignee_name": null,
       "due_date": null,
       "priority": null
@@ -342,6 +383,8 @@ Return JSON strictly in this format:
 **existing_issue_id** — ID from "existing_issues". Required.
 
 **update_description** — concise summary of what NEW information this meeting added. Do NOT repeat what is already in the existing description. 1-5 sentences.
+
+**author_name** — name of the speaker who CONTRIBUTED this update during the meeting (raised the new context, made the decision, asked for the change). Look at the transcript and identify whose voice introduced the new information. If unclear — null.
 
 **assignee_name** — only if this meeting explicitly assigned or reassigned someone. Otherwise null.
 

@@ -32,7 +32,7 @@ class DemoTranscriptGeneratorService
         $prompt  = $this->buildPrompt($personas, $context, $meetingType);
 
         try {
-            $json = OpenRouterClient::chat(
+            $json = app(OpenRouterClient::class)->chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.demo', config('ai.providers.openrouter.models.demo')),
                 maxTokens: 4096,

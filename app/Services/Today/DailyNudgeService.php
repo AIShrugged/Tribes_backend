@@ -64,7 +64,7 @@ class DailyNudgeService
 
             $prompt = $this->buildPrompt($context);
 
-            $response = OpenRouterClient::chat(
+            $response = app(OpenRouterClient::class)->chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: config('ai.providers.openrouter.models.today_nudge', 'google/gemini-3.1-pro-preview'),
                 maxTokens: 4096,

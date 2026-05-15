@@ -51,7 +51,7 @@ class SandboxLlmGatewayService
             $tools = array_values([...$tools, ...$extraTools]);
         }
         $model = $this->resolveModel($task);
-        $response = OpenRouterClient::chatWithTools(
+        $response = app(OpenRouterClient::class)->chatWithTools(
             $messages,
             $tools === [] ? null : $tools,
             $model,

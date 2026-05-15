@@ -164,7 +164,7 @@ PROMPT;
                 'question' => $actualQuestion,
             ]);
 
-            $analysis = OpenRouterClient::chat(
+            $analysis = app(OpenRouterClient::class)->chat(
                 messages: [['role' => 'user', 'content' => $prompt]],
                 model: self::SUB_AGENT_MODEL,
                 maxTokens: 4096,

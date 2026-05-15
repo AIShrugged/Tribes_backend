@@ -46,7 +46,7 @@ class TeamNotificationSettingController extends Controller
         abort_if($setting->team_id !== $team->id, 404);
         Gate::authorize('update', $setting);
 
-        $setting = $this->service->update($setting, $request->isEnabled());
+        $setting = $this->service->update($setting, $request->isEnabled(), $request->getMinutesBefore());
 
         return ApiResponse::success(data: TeamNotificationSettingResource::make($setting->load('notifiable')));
     }

@@ -47,7 +47,7 @@ class CalendarEvent extends Model
 
     public function profiles(): BelongsToMany
     {
-        return $this->belongsToMany(Profile::class);
+        return $this->belongsToMany(Profile::class)->withPivot('response_status');
     }
 
     public function participants(): HasMany

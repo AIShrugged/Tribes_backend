@@ -109,8 +109,9 @@ class FollowupGenerationTest extends TestCase
         ]);
         $team2->users()->attach($this->user);
 
-        // Диспатчим событие TranscriptParsed
-        Event::dispatch(new TranscriptParsed($this->calendarEvent));
+        // Listener is ShouldQueueAfterCommit — won't fire via Event::dispatch inside
+        // RefreshDatabase's wrapping transaction (never commits). Call handle() directly.
+        (new \App\Listeners\GenerateFollowup())->handle(new TranscriptParsed($this->calendarEvent));
 
         // Проверяем, что job был создан для каждой команды
         Queue::assertPushed(GenerateFollowupJob::class, 2);
@@ -136,8 +137,8 @@ class FollowupGenerationTest extends TestCase
         // Отвязываем пользователя от команды
         $this->team->users()->detach($this->user);
 
-        // Диспатчим событие
-        Event::dispatch(new TranscriptParsed($this->calendarEvent));
+        // Call handle() directly (ShouldQueueAfterCommit won't fire in test transaction).
+        (new \App\Listeners\GenerateFollowup())->handle(new TranscriptParsed($this->calendarEvent));
 
         // Job не должен быть создан
         Queue::assertNotPushed(GenerateFollowupJob::class);
@@ -336,8 +337,8 @@ class FollowupGenerationTest extends TestCase
             $mock->shouldReceive('chat')
             ->once()
             ->withArgs(function ($messages) {
-                // Проверяем, что транскрипт содержит правильный формат
-                $transcriptMessage = $messages[2]->content ?? '';
+                // Single message contains the full rendered prompt including transcript
+                $transcriptMessage = $messages[0]->content ?? '';
                 return str_contains($transcriptMessage, 'John Doe: Hello everyone')
                     && str_contains($transcriptMessage, 'Jane Smith: Hi John!');
             })

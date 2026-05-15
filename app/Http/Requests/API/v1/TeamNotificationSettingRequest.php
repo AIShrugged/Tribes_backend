@@ -19,8 +19,14 @@ class TeamNotificationSettingRequest extends ApiResourceRequest
     public function updateRules(): array
     {
         return [
-            'enabled' => ['required', 'boolean'],
+            'enabled'        => ['required', 'boolean'],
+            'minutes_before' => ['nullable', 'integer', 'min:5', 'max:1440'],
         ];
+    }
+
+    public function getMinutesBefore(): ?int
+    {
+        return $this->input('minutes_before') !== null ? (int) $this->input('minutes_before') : null;
     }
 
     public function getEventType(): string

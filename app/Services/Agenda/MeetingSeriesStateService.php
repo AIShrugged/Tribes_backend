@@ -22,7 +22,7 @@ class MeetingSeriesStateService
 
         try {
             $prompt = $this->buildFoldPrompt($currentContent, $event, $summary);
-            $response = OpenRouterClient::chat(
+            $response = app(OpenRouterClient::class)->chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.meeting_summary', config('ai.providers.openrouter.models.meeting_summary')),
                 maxTokens: 4096,

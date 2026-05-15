@@ -21,9 +21,10 @@ class TeamNotificationSettingResource extends JsonResource
                     ? TelegramChatRegistrationResource::make($this->notifiable)
                     : null,
             ]),
-            'enabled'      => $this->enabled,
-            'created_at'   => $this->created_at,
-            'updated_at'   => $this->updated_at,
+            'enabled'        => $this->enabled,
+            'minutes_before' => $this->minutes_before,
+            'created_at'     => $this->created_at,
+            'updated_at'     => $this->updated_at,
         ];
     }
 }

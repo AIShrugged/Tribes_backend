@@ -4,15 +4,12 @@ namespace App\Jobs\Demo;
 
 use App\Models\CalendarEvent;
 use App\Models\DemoGeneration;
-use App\Models\MeetingTask;
-use App\Models\Participant;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Followup\FollowupService;
 use App\Services\Insight\InsightEvolutionService;
 use App\Services\Insight\InsightExtractionService;
 use App\Services\Meeting\MeetingSummaryService;
-use App\Services\Meeting\MeetingTaskService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -37,7 +34,6 @@ class ProcessDemoEventJob implements ShouldQueue
         InsightExtractionService $insightExtraction,
         InsightEvolutionService  $insightEvolution,
         MeetingSummaryService    $summaryService,
-        MeetingTaskService       $taskService,
         FollowupService          $followupService,
     ): void {
         $generation = DemoGeneration::findOrFail($this->generationId);
@@ -56,11 +52,7 @@ class ProcessDemoEventJob implements ShouldQueue
             // --- 2. Meeting Summary ---
             $summaryService->generate($event);
 
-            // --- 3. Meeting issues (with assignee matching) ---
-            $tasks = $taskService->extract($event);
-            $this->linkIssueAssigneesToParticipants($event, $tasks->all());
-
-            // --- 4. Followups for each demo participant ---
+            // --- 3. Followups for each demo participant ---
             $team = $this->findTeamForEvent($generation);
             if ($team) {
                 $this->generateFollowups($event, $team, $generation, $followupService);
@@ -73,38 +65,6 @@ class ProcessDemoEventJob implements ShouldQueue
                 'error'    => $e->getMessage(),
             ]);
             // Don't mark generation as failed — other events may still complete
-        }
-    }
-
-    /**
-     * After MeetingTaskService creates issues with assignee_name,
-     * match the name to a participant profile and fill assignee_id.
-     */
-    private function linkIssueAssigneesToParticipants(CalendarEvent $event, array $tasks): void
-    {
-        if (empty($tasks)) {
-            return;
-        }
-
-        $participants = Participant::where('calendar_event_id', $event->id)
-            ->with('profile')
-            ->get();
-
-        foreach ($tasks as $task) {
-            if (!$task->assignee_name || $task->assignee_id) {
-                continue;
-            }
-
-            $assigneeLower = mb_strtolower($task->assignee_name);
-
-            $matched = $participants->first(function ($participant) use ($assigneeLower) {
-                return str_contains(mb_strtolower($participant->name), $assigneeLower)
-                    || str_contains($assigneeLower, mb_strtolower(explode(' ', $participant->name)[0] ?? ''));
-            });
-
-            if ($matched?->profile?->user_id) {
-                MeetingTask::where('id', $task->id)->update(['assignee_id' => $matched->profile->user_id]);
-            }
         }
     }
 

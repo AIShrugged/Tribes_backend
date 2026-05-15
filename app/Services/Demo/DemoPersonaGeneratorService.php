@@ -20,7 +20,7 @@ class DemoPersonaGeneratorService
         $prompt = $this->buildPrompt($count, $teamContext);
 
         try {
-            $json = OpenRouterClient::chat(
+            $json = app(OpenRouterClient::class)->chat(
                 messages: [new MessageDTO('user', $prompt)],
                 model: Setting::get('model.demo', config('ai.providers.openrouter.models.demo')),
                 maxTokens: 2048,

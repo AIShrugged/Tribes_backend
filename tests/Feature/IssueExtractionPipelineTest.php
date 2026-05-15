@@ -230,7 +230,7 @@ class IssueExtractionPipelineTest extends TestCase
         Event::assertNotDispatched(IssuesExtracted::class);
     }
 
-    // ── 4. DispatchAgentTasksForIssues keeps extracted issues pending manual dispatch ──
+    // ── 4. Extracted issues stay pending manual dispatch (no auto-dispatch listener) ──
 
     #[Test]
     public function issues_extracted_event_does_not_auto_dispatch_agent_tasks(): void

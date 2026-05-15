@@ -242,6 +242,17 @@ class Issue extends Model
         return $this->hasMany(self::class, 'epic_id');
     }
 
+    public function decisions(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Decision::class, 'decision_issue')
+            ->withPivot('created_at');
+    }
+
+    public function conflicts(): HasMany
+    {
+        return $this->hasMany(IssueConflict::class);
+    }
+
     public function blockedBy(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
         return $this->belongsToMany(self::class, 'issue_blockers', 'blocked_id', 'blocker_id');

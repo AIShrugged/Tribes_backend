@@ -41,9 +41,15 @@ class TeamNotificationSettingService
         ]);
     }
 
-    public function update(TeamNotificationSetting $setting, bool $enabled): TeamNotificationSetting
+    public function update(TeamNotificationSetting $setting, bool $enabled, ?int $minutesBefore): TeamNotificationSetting
     {
-        $setting->update(['enabled' => $enabled]);
+        $data = ['enabled' => $enabled];
+
+        if ($minutesBefore !== null) {
+            $data['minutes_before'] = $minutesBefore;
+        }
+
+        $setting->update($data);
 
         return $setting->refresh();
     }
