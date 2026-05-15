@@ -23,6 +23,7 @@ class TelegramChatRegistrationResource extends JsonResource
             'attach_command' => $this->attach_code ? '/attach '.$this->attach_code : null,
             'attach_code_expires_at' => $this->attach_code_expires_at,
             'attach_code_used_at' => $this->attach_code_used_at,
+            'is_bound' => $this->bound_at !== null,
             'bound_at' => $this->bound_at,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

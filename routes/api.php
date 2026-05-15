@@ -299,7 +299,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('chats/{chat}/artifacts', [ChatArtifactController::class, 'index']);
         Route::get('agent-activity', [AgentActivityLogController::class, 'index']);
         Route::get('telegram/chats', [TelegramChatRegistrationController::class, 'index']);
-        Route::post('telegram/chats/{telegramChatRegistration}/attach-code', [TelegramChatRegistrationController::class, 'issueAttachCode']);
+        Route::post('telegram/chats', [TelegramChatRegistrationController::class, 'store']);
+        Route::delete('telegram/chats/{telegramChatRegistration}', [TelegramChatRegistrationController::class, 'destroy']);
 
         // Agent profiles
         Route::get('agent-profiles', [AgentProfileController::class, 'index']);

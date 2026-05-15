@@ -5,27 +5,10 @@ namespace App\Services;
 use App\Models\ChannelConversation;
 use App\Models\TelegramChatRegistration;
 use App\Models\User;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class TelegramChatRegistrationService
 {
-    public function registerConversation(
-        ChannelConversation $conversation,
-        ?string $chatType = null,
-        ?string $chatTitle = null,
-    ): TelegramChatRegistration {
-        return TelegramChatRegistration::query()->updateOrCreate(
-            ['channel_conversation_id' => $conversation->id],
-            [
-                'telegram_chat_id' => $conversation->telegram_chat_id,
-                'message_thread_id' => $conversation->message_thread_id,
-                'chat_type' => $chatType,
-                'chat_title' => $chatTitle,
-            ],
-        );
-    }
-
     public function bindPrivateConversation(ChannelConversation $conversation, User $user): TelegramChatRegistration
     {
         $conversation->forceFill([
@@ -59,106 +42,93 @@ class TelegramChatRegistrationService
         return $registration->refresh();
     }
 
-    public function issueAttachCode(
-        TelegramChatRegistration $registration,
-        User $requestedBy,
+    public function createWorkspaceChat(
+        ?string $name,
+        int $telegramChatId,
         int $organizationId,
         ?int $teamId,
+        User $createdBy,
     ): TelegramChatRegistration {
-        if ($registration->chat_type === 'private') {
-            throw ValidationException::withMessages([
-                'telegram_chat' => ['Private chats are connected to a user and cannot be attached to an organization or team.'],
-            ]);
-        }
-
-        $registration->forceFill([
-            'attach_code' => $this->generateAttachCode(),
-            'organization_id' => $organizationId,
-            'team_id' => $teamId,
-            'attach_requested_by_user_id' => $requestedBy->id,
-            'attach_code_issued_at' => now(),
-            'attach_code_expires_at' => now()->addMinutes(30),
-            'attach_code_used_at' => null,
-            'bound_at' => null,
-            'bound_by_user_id' => null,
-        ])->save();
-
-        return $registration->refresh();
-    }
-
-    public function attachConversationByCode(
-        ChannelConversation $conversation,
-        string $code,
-        User $user,
-    ): TelegramChatRegistration {
-        $registration = TelegramChatRegistration::query()
-            ->where('channel_conversation_id', $conversation->id)
-            ->where('attach_code', Str::upper($code))
+        $existing = TelegramChatRegistration::query()
+            ->where('telegram_chat_id', $telegramChatId)
+            ->whereNull('message_thread_id')
             ->first();
 
-        if (! $registration) {
+        if ($existing?->organization_id !== null) {
             throw ValidationException::withMessages([
-                'attach_code' => ['Attach code is invalid for this chat.'],
+                'telegram_chat_id' => ['A workspace chat with this Telegram chat ID is already registered.'],
             ]);
         }
 
-        if ($registration->chat_type === 'private') {
-            throw ValidationException::withMessages([
-                'attach_code' => ['Private chats are connected automatically and do not support attach codes.'],
-            ]);
+        if ($existing !== null) {
+            $existing->forceFill([
+                'organization_id' => $organizationId,
+                'team_id' => $teamId,
+                'chat_title' => $name ?? $existing->chat_title,
+                'attach_requested_by_user_id' => $createdBy->id,
+                'bound_at' => now(),
+                'bound_by_user_id' => $createdBy->id,
+            ])->save();
+
+            return $existing->refresh();
         }
 
-        if ($registration->attach_code_used_at !== null) {
-            throw ValidationException::withMessages([
-                'attach_code' => ['Attach code has already been used.'],
-            ]);
+        return TelegramChatRegistration::query()->create([
+            'channel_conversation_id' => null,
+            'telegram_chat_id' => $telegramChatId,
+            'message_thread_id' => null,
+            'chat_title' => $name,
+            'chat_type' => 'group',
+            'organization_id' => $organizationId,
+            'team_id' => $teamId,
+            'attach_requested_by_user_id' => $createdBy->id,
+        ]);
+    }
+
+    public function discoverGroupConversation(
+        ChannelConversation $conversation,
+        string $chatType,
+        ?string $chatTitle,
+    ): TelegramChatRegistration {
+        $registration = TelegramChatRegistration::query()->updateOrCreate(
+            [
+                'telegram_chat_id' => $conversation->telegram_chat_id,
+                'message_thread_id' => $conversation->message_thread_id,
+            ],
+            [
+                'channel_conversation_id' => $conversation->id,
+                'chat_type' => $chatType,
+            ],
+        );
+
+        // Update title only if manager hasn't set one yet
+        if (empty($registration->chat_title) && $chatTitle) {
+            $registration->forceFill(['chat_title' => $chatTitle])->save();
         }
 
-        if ($registration->attach_code_expires_at === null || $registration->attach_code_expires_at->isPast()) {
-            throw ValidationException::withMessages([
-                'attach_code' => ['Attach code has expired.'],
-            ]);
+        // Both conditions met — bind the chat
+        if ($registration->organization_id !== null && $registration->bound_at === null) {
+            $registration->forceFill(['bound_at' => now()])->save();
         }
-
-        if (! $user->isOrganizationMember((int) $registration->organization_id)) {
-            throw ValidationException::withMessages([
-                'attach_code' => ['Only an organization member can attach this chat.'],
-            ]);
-        }
-
-        $conversation->forceFill([
-            'user_id' => $user->id,
-            'organization_id' => $registration->organization_id,
-            'team_id' => $registration->team_id,
-        ])->save();
-
-        $registration->forceFill([
-            'attach_code_used_at' => now(),
-            'bound_at' => now(),
-            'bound_by_user_id' => $user->id,
-        ])->save();
 
         return $registration->refresh();
     }
 
-    private function generateAttachCode(): string
+    public function unbindGroupConversation(int $telegramChatId): void
     {
-        do {
-            $candidate = $this->randomChunk(3).'-'.$this->randomChunk(3);
-        } while (TelegramChatRegistration::query()->where('attach_code', $candidate)->exists());
-
-        return $candidate;
+        TelegramChatRegistration::query()
+            ->where('telegram_chat_id', $telegramChatId)
+            ->whereNull('message_thread_id')
+            ->whereNotNull('bound_at')
+            ->update(['bound_at' => null]);
     }
 
-    private function randomChunk(int $length): string
+    public function destroy(TelegramChatRegistration $registration): void
     {
-        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-        $chunk = '';
-
-        for ($i = 0; $i < $length; $i++) {
-            $chunk .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        if ($registration->channel_conversation_id !== null) {
+            $registration->conversation->delete();
+        } else {
+            $registration->delete();
         }
-
-        return $chunk;
     }
 }

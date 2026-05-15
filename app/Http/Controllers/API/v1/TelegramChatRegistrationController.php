@@ -3,13 +3,14 @@
 namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\API\v1\TelegramChatAttachCodeRequest;
+use App\Http\Requests\API\v1\TelegramWorkspaceChatCreateRequest;
 use App\Http\Resources\API\v1\TelegramChatRegistrationResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\TelegramChatRegistration;
-use Illuminate\Database\Eloquent\Builder;
 use App\Services\TelegramChatRegistrationService;
 use App\Services\TenantScopeValidator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 
 class TelegramChatRegistrationController extends Controller
 {
@@ -33,7 +34,7 @@ class TelegramChatRegistrationController extends Controller
         return ApiResponse::list(TelegramChatRegistrationResource::collection($registrations), $registrations->count());
     }
 
-    public function issueAttachCode(TelegramChatAttachCodeRequest $request, TelegramChatRegistration $telegramChatRegistration): ApiResponse
+    public function store(TelegramWorkspaceChatCreateRequest $request): ApiResponse
     {
         $this->tenantScopeValidator->assertScopeIsValid(
             $request->user(),
@@ -46,13 +47,25 @@ class TelegramChatRegistrationController extends Controller
             $request->getOrganizationId(),
         );
 
-        $registration = $this->registrationService->issueAttachCode(
-            $telegramChatRegistration,
-            $request->user(),
+        $registration = $this->registrationService->createWorkspaceChat(
+            $request->getName(),
+            $request->getTelegramChatId(),
             $request->getOrganizationId(),
             $request->getTeamId(),
+            $request->user(),
         );
 
         return ApiResponse::success(data: TelegramChatRegistrationResource::make($registration));
+    }
+
+    public function destroy(Request $request, TelegramChatRegistration $telegramChatRegistration): ApiResponse
+    {
+        if ($telegramChatRegistration->chat_type === 'private') {
+            return ApiResponse::error('Private chats cannot be removed from the workspace chat list.', status: 422);
+        }
+
+        $this->registrationService->destroy($telegramChatRegistration);
+
+        return ApiResponse::success();
     }
 }
