@@ -22,7 +22,7 @@ class GoogleOAuthService
         $this->client->setRedirectUri(route('google.oauth.callback'));
     }
 
-    public function redirect(int $userId): string
+    public function redirect(int $userId, int $organizationId): string
     {
         $this->client->addScope([Google_Service_Oauth2::USERINFO_EMAIL, Calendar::CALENDAR_EVENTS_READONLY]);
         $this->client->setAccessType('offline');
@@ -32,7 +32,10 @@ class GoogleOAuthService
         $state = bin2hex(random_bytes(16));
         $this->client->setState($state);
 
-        OAuthState::updateOrCreate(['user_id' => $userId], ['state' => $state]);
+        OAuthState::updateOrCreate(
+            ['user_id' => $userId, 'organization_id' => $organizationId],
+            ['state' => $state],
+        );
 
         return $this->client->createAuthUrl();
     }

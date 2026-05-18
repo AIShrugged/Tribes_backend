@@ -22,7 +22,10 @@ class GenerateFollowup implements ShouldQueueAfterCommit
         $calendarEvent = $event->calendarEvent;
         $user = $calendarEvent->source->user;
 
-        $teams = $user->teams;
+        $orgId = $calendarEvent->source?->organization_id;
+        $teams = $orgId
+            ? $user->teams()->where('organization_id', $orgId)->get()
+            : $user->teams;
 
         if ($teams->isEmpty()) {
             Log::info("User {$user->id} has no teams, skipping followup generation");

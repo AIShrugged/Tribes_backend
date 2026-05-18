@@ -32,8 +32,8 @@ class PreviousMeetingResolver
 
         return CalendarEvent::query()
             ->where(function ($q) use ($organizationIds) {
-                $q->whereHas('source.user.organizations', fn ($q) => $q->whereIn('organizations.id', $organizationIds))
-                    ->orWhereHas('sources.user.organizations', fn ($q) => $q->whereIn('organizations.id', $organizationIds));
+                $q->whereHas('source', fn ($q) => $q->whereIn('organization_id', $organizationIds))
+                    ->orWhereHas('sources', fn ($q) => $q->whereIn('organization_id', $organizationIds));
             })
             ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
@@ -48,20 +48,13 @@ class PreviousMeetingResolver
     {
         $ids = collect();
 
-        // From singular source (BelongsTo)
-        $event->loadMissing('source.user.organizations');
-        if ($event->source?->user) {
-            $ids = $ids->merge($event->source->user->organizations->pluck('id'));
+        $event->loadMissing('source');
+        if ($event->source?->organization_id) {
+            $ids->push($event->source->organization_id);
         }
 
-        // From plural sources (BelongsToMany) if any
-        $pivotIds = $event->sources()
-            ->join('users', 'sources.user_id', '=', 'users.id')
-            ->join('organization_user', 'users.id', '=', 'organization_user.user_id')
-            ->pluck('organization_user.organization_id');
+        $pivotIds = $event->sources()->whereNotNull('organization_id')->pluck('organization_id');
 
-        $ids = $ids->merge($pivotIds);
-
-        return $ids->unique();
+        return $ids->merge($pivotIds)->unique();
     }
 }

@@ -35,7 +35,10 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         }
 
         $user = $calendarEvent->source->user;
-        $teams = $user->teams;
+        $orgId = $calendarEvent->source?->organization_id;
+        $teams = $orgId
+            ? $user->teams()->where('organization_id', $orgId)->get()
+            : $user->teams;
 
         if ($teams->isEmpty()) {
             return;
