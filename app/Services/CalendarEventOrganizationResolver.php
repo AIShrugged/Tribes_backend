@@ -5,18 +5,15 @@ namespace App\Services;
 use App\Models\CalendarEvent;
 use App\Models\Team;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class CalendarEventOrganizationResolver
 {
     /**
-     * Resolve the best-matching team for a calendar event based on its participants.
+     * Resolve the best-matching team for a calendar event.
      *
-     * Logic:
-     * 1. Collect user IDs from event participants (via profiles)
-     * 2. Find the organization where most participants are members
-     * 3. Within that org, find the team where most participants belong
-     * 4. Fallback to the owner's first team if no participants match
+     * Uses source->organization_id as the authoritative org binding.
+     * Within that org, picks the team with the most matching participants.
+     * Falls back to old heuristic when organization_id is not set (backward compat).
      *
      * @return array{team: Team, user: User}|null
      */
@@ -28,22 +25,7 @@ class CalendarEventOrganizationResolver
             return null;
         }
 
-        $participantUserIds = $this->getParticipantUserIds($event);
-
-        // If no participants matched to system users, fallback to owner's first team
-        if ($participantUserIds->isEmpty()) {
-            $team = $user->teams()->first();
-
-            return $team ? ['team' => $team, 'user' => $user] : null;
-        }
-
-        // Find the organization with the most participants
-        $organizationId = DB::table('organization_user')
-            ->whereIn('user_id', $participantUserIds)
-            ->select('organization_id', DB::raw('count(*) as cnt'))
-            ->groupBy('organization_id')
-            ->orderByDesc('cnt')
-            ->value('organization_id');
+        $organizationId = $event->source?->organization_id;
 
         if (! $organizationId) {
             $team = $user->teams()->first();
@@ -51,22 +33,17 @@ class CalendarEventOrganizationResolver
             return $team ? ['team' => $team, 'user' => $user] : null;
         }
 
-        // Find the team within that org with the most participants
-        $team = Team::where('organization_id', $organizationId)
-            ->whereHas('users', fn ($q) => $q->whereIn('users.id', $participantUserIds))
-            ->withCount(['users' => fn ($q) => $q->whereIn('users.id', $participantUserIds)])
-            ->orderByDesc('users_count')
-            ->first();
+        $participantUserIds = $this->getParticipantUserIds($event);
 
-        // If no team matched, try owner's team in that org
-        if (! $team) {
-            $team = $user->teams()->where('organization_id', $organizationId)->first();
-        }
+        $team = $participantUserIds->isNotEmpty()
+            ? Team::where('organization_id', $organizationId)
+                ->whereHas('users', fn ($q) => $q->whereIn('users.id', $participantUserIds))
+                ->withCount(['users' => fn ($q) => $q->whereIn('users.id', $participantUserIds)])
+                ->orderByDesc('users_count')
+                ->first()
+            : null;
 
-        // Last resort: owner's first team
-        if (! $team) {
-            $team = $user->teams()->first();
-        }
+        $team ??= $user->teams()->where('organization_id', $organizationId)->first();
 
         return $team ? ['team' => $team, 'user' => $user] : null;
     }
@@ -80,9 +57,6 @@ class CalendarEventOrganizationResolver
         return $event->source?->user;
     }
 
-    /**
-     * Get user IDs of participants who are linked to system users via profiles.
-     */
     private function getParticipantUserIds(CalendarEvent $event): \Illuminate\Support\Collection
     {
         return $event->participants()

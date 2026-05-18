@@ -8,9 +8,9 @@ use App\Enums\SourceType;
 use App\Exceptions\AppException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\GoogleCalendarRequest;
-use App\Http\Resources\API\v1\SourceResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\OAuthState;
+use App\Models\Organization;
 use App\Models\Source;
 use App\Models\SourceOauth;
 use App\Services\GoogleOAuthService;
@@ -20,6 +20,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * @group Calendar
@@ -35,8 +36,15 @@ class GoogleCalendarController extends Controller
      */
     public function attach(Request $request): ApiResponse
     {
+        $request->validate([
+            'organization_id' => 'required|integer|exists:organizations,id',
+        ]);
+
+        $organization = Organization::findOrFail($request->organization_id);
+        Gate::authorize('view', $organization);
+
         return ApiResponse::success(data: [
-            'redirect' => app(GoogleOAuthService::class)->redirect(Auth::id())
+            'redirect' => app(GoogleOAuthService::class)->redirect(Auth::id(), $request->organization_id),
         ]);
     }
 
@@ -71,32 +79,35 @@ class GoogleCalendarController extends Controller
 
                         $source->restore();
                         $source->update([
-                            'external_id' => $sourceDTO->externalId,
-                            'identity'    => $sourceDTO->identity,
-                            'auth_type'   => SourceAuthType::OAUTH2->value,
-                            'type'        => SourceType::GOOGLE_CALENDAR->value,
-                            'is_connected' => true,
+                            'external_id'     => $sourceDTO->externalId,
+                            'identity'        => $sourceDTO->identity,
+                            'auth_type'       => SourceAuthType::OAUTH2->value,
+                            'type'            => SourceType::GOOGLE_CALENDAR->value,
+                            'is_connected'    => true,
+                            'organization_id' => $oauthState->organization_id,
                         ]);
                     } else {
                         RecallCalendarService::reAttach($oauthDTO, SourceType::GOOGLE_CALENDAR, $source->external_id);
 
                         $source->update([
-                            'identity'     => $oauthDTO->email,
-                            'auth_type'    => SourceAuthType::OAUTH2->value,
-                            'type'        => SourceType::GOOGLE_CALENDAR->value,
-                            'is_connected' => true,
+                            'identity'        => $oauthDTO->email,
+                            'auth_type'       => SourceAuthType::OAUTH2->value,
+                            'type'            => SourceType::GOOGLE_CALENDAR->value,
+                            'is_connected'    => true,
+                            'organization_id' => $oauthState->organization_id,
                         ]);
                     }
                 } else {
                     $sourceDTO = RecallCalendarService::attach($oauthDTO, SourceType::GOOGLE_CALENDAR);
 
                     $source = Source::create([
-                        'user_id'      => $oauthState->user_id,
-                        'external_id'  => $sourceDTO->externalId,
-                        'identity'     => $sourceDTO->identity,
-                        'auth_type'    => SourceAuthType::OAUTH2->value,
-                        'type'         => SourceType::GOOGLE_CALENDAR->value,
-                        'is_connected' => true,
+                        'user_id'         => $oauthState->user_id,
+                        'external_id'     => $sourceDTO->externalId,
+                        'identity'        => $sourceDTO->identity,
+                        'auth_type'       => SourceAuthType::OAUTH2->value,
+                        'type'            => SourceType::GOOGLE_CALENDAR->value,
+                        'is_connected'    => true,
+                        'organization_id' => $oauthState->organization_id,
                     ]);
                 }
 

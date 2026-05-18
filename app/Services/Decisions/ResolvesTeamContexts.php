@@ -13,13 +13,11 @@ use App\Models\CalendarEvent;
 trait ResolvesTeamContexts
 {
     /**
-     * Derive team/organization pairs from all participants of the calendar event.
-     * Collects every registered User reachable via Participant → Profile → User,
-     * merges in the event creator, then unions all their team memberships so the
-     * record is visible in every relevant team's log.
+     * Derive team/organization pairs from the calendar event.
      *
-     * Falls back to [(null, orgId)] when no participant belongs to any team but
-     * an organization can be determined, or to [(null, null)] as a last resort.
+     * Uses source->organization_id as the authoritative org, then finds all teams
+     * within that org where participants are members. Falls back to participant-based
+     * org discovery when organization_id is not set (backward compat with old sources).
      *
      * @return array<int, array{0: int|null, 1: int|null}>
      */
@@ -38,6 +36,32 @@ trait ResolvesTeamContexts
             ->unique()
             ->values();
 
+        $organizationId = $event->source?->organization_id;
+
+        if ($organizationId) {
+            $teams = \App\Models\Team::where('organization_id', $organizationId)
+                ->when(
+                    $userIds->isNotEmpty(),
+                    fn ($q) => $q->whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds)),
+                )
+                ->get(['id', 'organization_id']);
+
+            if ($teams->isNotEmpty()) {
+                return $teams->map(fn ($t) => [$t->id, $t->organization_id])->all();
+            }
+
+            // No participant-matched teams in org — return all teams in the org
+            $teamsInOrg = \App\Models\Team::where('organization_id', $organizationId)
+                ->get(['id', 'organization_id']);
+
+            if ($teamsInOrg->isNotEmpty()) {
+                return $teamsInOrg->map(fn ($t) => [$t->id, $t->organization_id])->all();
+            }
+
+            return [[null, $organizationId]];
+        }
+
+        // Backward compat: no organization_id on source — use participant-based discovery
         if ($userIds->isEmpty()) {
             return [[null, null]];
         }
@@ -49,7 +73,6 @@ trait ResolvesTeamContexts
             return $teams->map(fn ($team) => [$team->id, $team->organization_id])->all();
         }
 
-        // No team found — try to resolve at organization level.
         $orgId = \App\Models\User::whereIn('id', $userIds)
             ->with('organizations')
             ->get()
@@ -57,7 +80,6 @@ trait ResolvesTeamContexts
             ->first();
 
         if ($orgId) {
-            // Assign to every team in the org so the decision is visible in team views.
             $teamsInOrg = \App\Models\Team::where('organization_id', $orgId)
                 ->get(['id', 'organization_id']);
 

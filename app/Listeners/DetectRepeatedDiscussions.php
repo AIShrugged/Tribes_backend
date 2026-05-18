@@ -28,7 +28,11 @@ class DetectRepeatedDiscussions implements ShouldQueueAfterCommit
             return;
         }
 
-        $teams = $calendarEvent->source->user->teams;
+        $user = $calendarEvent->source->user;
+        $orgId = $calendarEvent->source?->organization_id;
+        $teams = $orgId
+            ? $user->teams()->where('organization_id', $orgId)->get()
+            : $user->teams;
 
         if ($teams->isEmpty()) {
             Log::info('DetectRepeatedDiscussions: no teams found', [

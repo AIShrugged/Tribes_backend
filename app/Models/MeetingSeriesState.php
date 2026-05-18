@@ -16,21 +16,15 @@ class MeetingSeriesState extends Model
 
     public static function buildSeriesIdentifier(CalendarEvent $event): string
     {
+        $event->loadMissing('source', 'sources');
+
         $organizationIds = collect();
 
-        // From singular source (BelongsTo)
-        $event->loadMissing('source.user.organizations');
-        if ($event->source?->user) {
-            $organizationIds = $organizationIds->merge(
-                $event->source->user->organizations->pluck('id'),
-            );
+        if ($event->source?->organization_id) {
+            $organizationIds->push($event->source->organization_id);
         }
 
-        // From plural sources (BelongsToMany) if any
-        $pivotIds = $event->sources()
-            ->join('users', 'sources.user_id', '=', 'users.id')
-            ->join('organization_user', 'users.id', '=', 'organization_user.user_id')
-            ->pluck('organization_user.organization_id');
+        $pivotIds = $event->sources()->whereNotNull('organization_id')->pluck('organization_id');
 
         $organizationIds = $organizationIds->merge($pivotIds)
             ->unique()

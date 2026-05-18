@@ -137,8 +137,19 @@ class RecallWebhookTest extends TestCase
     #[Test]
     public function calendar_sync_event_marks_meeting_as_required_bot_and_schedules_it(): void
     {
-        Http::fake([
-            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+        Http::fake(function ($request) {
+            if ($request->method() === 'POST') {
+                return Http::response([
+                    'bots' => [
+                        [
+                            'bot_id' => 'bot-sync-1',
+                            'deduplication_key' => md5('recall-event-1'),
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response([
                 'results' => [
                     [
                         'id' => 'recall-event-1',
@@ -153,16 +164,8 @@ class RecallWebhookTest extends TestCase
                         ],
                     ],
                 ],
-            ], 200),
-            'https://us-west-2.recall.ai/api/v2/calendar-events/*/bot/' => Http::response([
-                'bots' => [
-                    [
-                        'bot_id' => 'bot-sync-1',
-                        'deduplication_key' => md5('recall-event-1'),
-                    ],
-                ],
-            ], 200),
-        ]);
+            ], 200);
+        });
 
         $source = Source::create([
             'user_id' => $this->user->id,
@@ -221,11 +224,23 @@ class RecallWebhookTest extends TestCase
         $updatedStartsAt = $baseTime->copy()->addHours(3);
         $updatedEndsAt = $baseTime->copy()->addHours(4);
 
-        Http::fake([
-            'https://us-west-2.recall.ai/api/v2/calendars/update-calendar-id' => Http::response([
-                'status' => 'connected',
-            ], 200),
-            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+        Http::fake(function ($request) use ($updatedStartsAt, $updatedEndsAt) {
+            if (str_contains($request->url(), '/api/v2/calendars/')) {
+                return Http::response(['status' => 'connected'], 200);
+            }
+
+            if ($request->method() === 'POST') {
+                return Http::response([
+                    'bots' => [
+                        [
+                            'bot_id' => 'bot-update-1',
+                            'deduplication_key' => md5('recall-update-event-1'),
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response([
                 'results' => [
                     [
                         'id' => 'recall-update-event-1',
@@ -240,16 +255,8 @@ class RecallWebhookTest extends TestCase
                         ],
                     ],
                 ],
-            ], 200),
-            'https://us-west-2.recall.ai/api/v2/calendar-events/*/bot/' => Http::response([
-                'bots' => [
-                    [
-                        'bot_id' => 'bot-update-1',
-                        'deduplication_key' => md5('recall-update-event-1'),
-                    ],
-                ],
-            ], 200),
-        ]);
+            ], 200);
+        });
 
         $source = Source::create([
             'user_id' => $this->user->id,
@@ -403,6 +410,12 @@ class RecallWebhookTest extends TestCase
                 ],
             ], 200);
         });
+
+        $source = Source::firstWhere('user_id', $this->user->id);
+        $this->calendarEvent->update(['creator_user_id' => $this->user->id]);
+        $this->calendarEvent->sources()->syncWithoutDetaching([
+            $source->id => ['external_id' => 'test-event-id', 'required_bot' => false],
+        ]);
 
         $this->actingAs($this->user);
 
@@ -670,7 +683,7 @@ class RecallWebhookTest extends TestCase
 
         // Шаг 4: Обрабатываем событие TranscriptParsed вручную через слушателя
         $transcriptParsedEvent = Event::dispatched(TranscriptParsed::class)[0][0];
-        $listener = new \App\Listeners\GenerateFollowup();
+        $listener = app(\App\Listeners\GenerateFollowup::class);
         $listener->handle($transcriptParsedEvent);
 
         // Проверяем, что GenerateFollowupJob был создан для команды пользователя
@@ -806,9 +819,10 @@ class RecallWebhookTest extends TestCase
 
         // Trigger a calendar sync webhook for source A (first user, required_bot=true)
         $webhookPayloadA = [
-            'event' => 'calendar.sync',
+            'event' => 'calendar.sync_events',
             'data'  => [
-                'calendar_id' => 'calendar-a',
+                'calendar_id'    => 'calendar-a',
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
             ],
         ];
 
@@ -816,9 +830,10 @@ class RecallWebhookTest extends TestCase
 
         // Simulate the same meeting syncing for source B (second user)
         $webhookPayloadB = [
-            'event' => 'calendar.sync',
+            'event' => 'calendar.sync_events',
             'data'  => [
-                'calendar_id' => 'calendar-b',
+                'calendar_id'    => 'calendar-b',
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
             ],
         ];
 
@@ -827,8 +842,8 @@ class RecallWebhookTest extends TestCase
         // Only one bot should have been scheduled with Recall
         $this->assertSame(1, $botScheduleCalls, 'Expected exactly one Recall bot scheduling call for a shared meeting');
 
-        // Only one bot record should exist
-        $this->assertDatabaseCount('bots', 1);
+        // One bot from setUp + one for the shared meeting (not duplicated per source)
+        $this->assertDatabaseCount('bots', 2);
 
         $event = CalendarEvent::query()->where('url', $meetingUrl)->firstOrFail();
         $this->assertNotNull($event->bot_id);
