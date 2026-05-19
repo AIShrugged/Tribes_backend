@@ -95,6 +95,7 @@ class AgentToolRegistrar
         bool $preserveSandboxDependencies = false,
         ?int $organizationId = null,
         ?int $teamId = null,
+        bool $enableSqlTool = true,
     ): void {
         Auth::setUser($user);
 
@@ -103,7 +104,9 @@ class AgentToolRegistrar
         $toolRegistry->register(new CreateEntityTool($user, $this->tenantScopeValidator, $this->schemaValidationService, $organizationId, $teamId));
         $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $channel ?? 'web', $organizationId, $teamId));
         $toolRegistry->register(new GetTranscriptTool);
-        $toolRegistry->register(new ExecuteSqlQueryTool($user->id));
+        if ($enableSqlTool) {
+            $toolRegistry->register(new ExecuteSqlQueryTool($user->id));
+        }
         $toolRegistry->register(new SendUserMessageTool($user, $this->userChannelTargetResolver, $this->channelRuntimeService));
         $toolRegistry->register(new ListWorkspacesTool($user, $this->workspaceAccessService, $organizationId, $teamId));
         $toolRegistry->register(new CreateWorkspaceTool($user, $this->workspaceProvisioningService, $this->workspaceAccessService, $organizationId, $teamId));

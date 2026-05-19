@@ -6,6 +6,7 @@ use App\Enums\AgentTaskType;
 use App\Enums\OutputMode;
 use App\Models\AgentActivityLog;
 use App\Models\Chat;
+use App\Models\Organization;
 use App\Models\Profile;
 use App\Models\User;
 use App\Services\Agent\Tools\ToolRegistry;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Log;
 
 class AgentService
 {
-    private const MAX_ITERATIONS = 15;
+    private const MAX_ITERATIONS = 25;
 
     private const STOP_KEY_PREFIX = 'agent_stop_';
 
@@ -142,7 +143,7 @@ class AgentService
         $mode = $options->outputMode;
         $systemPromptExtension = $options->systemPromptExtension;
 
-        $this->registerDefaultTools($user, $channel);
+        $this->registerDefaultTools($user, $channel, $options->organizationId, $options->enableSqlTool);
 
         // Load memory context
         $memoryContext = $this->memoryService->composeMemoryContext($user, $channel);
@@ -156,6 +157,7 @@ class AgentService
             $mode,
             $compactedHistory->summary,
             $systemPromptExtension,
+            $options->organizationId,
         );
 
         // Inject current date/time into user message so the model reliably knows the date
@@ -388,9 +390,9 @@ class AgentService
         $callback($stage, $context);
     }
 
-    private function registerDefaultTools(User $user, ?string $channel): void
+    private function registerDefaultTools(User $user, ?string $channel, ?int $organizationId = null, bool $enableSqlTool = true): void
     {
-        $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel);
+        $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel, organizationId: $organizationId, enableSqlTool: $enableSqlTool);
     }
 
     private function logToolActivity(User $user, AgentRunOptions $options, string $toolName, array $toolArgs, mixed $toolResult): void
@@ -795,6 +797,7 @@ class AgentService
         OutputMode $mode = OutputMode::PLAIN,
         ?string $compactedHistorySummary = null,
         ?string $systemPromptExtension = null,
+        ?int $organizationId = null,
     ): string {
         $now = now()->timezone('Europe/Moscow');
         $currentDate = $now->translatedFormat('l, d F Y');
@@ -820,6 +823,30 @@ class AgentService
 
         $extensionSection = $systemPromptExtension ? "\n\n## Task-Specific Agent Context\n\n{$systemPromptExtension}\n" : '';
 
+        $teamRosterSection = '';
+        if ($organizationId) {
+            $org = Organization::with('users')->find($organizationId);
+            if ($org && $org->users->isNotEmpty()) {
+                $memberIds = $org->users->pluck('id');
+                $profileMap = Profile::whereIn('user_id', $memberIds)
+                    ->orderBy('id')
+                    ->get()
+                    ->groupBy('user_id')
+                    ->map(fn($g) => $g->first()->id);
+
+                $rows = $org->users->map(fn($u) => sprintf(
+                    '| %s | %d | %s | %s |',
+                    $u->name,
+                    $u->id,
+                    $profileMap[$u->id] ?? '—',
+                    $u->email ?? '—',
+                ))->join("\n");
+
+                $orgName = $org->name;
+                $teamRosterSection = "## Organization Team Roster ({$orgName})\n\nThe following people are members of this organization. **ALWAYS use these exact names** — NEVER invent or guess names.\n\n| Name | user_id | profile_id | Email |\n|------|---------|------------|-------|\n{$rows}\n\n**CRITICAL:** When creating artifacts or mentioning team members, use ONLY names from this table. If a name is not in this list, do NOT include it.\n";
+            }
+        }
+
         return <<<PROMPT
 You are a helpful AI assistant integrated with a Telegram bot. You have access to various tools to help answer user questions.
 
@@ -828,6 +855,7 @@ You are a helpful AI assistant integrated with a Telegram bot. You have access t
 Today is {$currentDate}, {$currentTime} (MSK, Moscow Time, UTC+3).
 
 {$currentUserContext}
+{$teamRosterSection}
 {$memoryContext}
 {$historySummarySection}
 {$extensionSection}
@@ -1016,6 +1044,19 @@ Later:
 - Format: `• [Task name](url) — ⏱ Xд · due date`
 - Overdue tasks: add `❗ просрочена` label
 - Keep the total message concise — max 15 tasks shown, truncate with "...and N more"
+
+## Names — ABSOLUTE RULES
+
+**NEVER invent or guess the names of people.** This is the most common source of errors.
+
+- If an organization roster is shown above in "Organization Team Roster", those are the ONLY valid names for that organization's team members
+- **Before calling `create_artifact`** with data that includes people's names: verify each name is from the roster or was explicitly returned by `query_db(entity: "team_members")` or `query_db(entity: "users")` in this conversation
+- If you are unsure about someone's name → call `query_db(entity: "team_members")` first, then use only names from the result
+- The `user_insights` tool now returns `user_name` — always use that field as the authoritative name for a profile
+
+Example:
+❌ BAD: Creating an artifact with "Artem (Backend Developer)" when Artem was never returned by any tool
+✅ GOOD: Getting team_members → seeing "Boris, slava, Fedor, Ivan, Konstantin" → using only those names
 
 ## Reflection and Self-Checking - CRITICAL
 

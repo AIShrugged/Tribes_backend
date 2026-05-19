@@ -16,5 +16,7 @@ class AgentRunOptions
         public readonly ?\Closure $progressCallback = null,
         public readonly ?int $chatId = null,
         public readonly ?string $agentRunUuid = null,
+        public readonly ?int $organizationId = null,
+        public readonly bool $enableSqlTool = true,
     ) {}
 }
