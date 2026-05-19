@@ -98,7 +98,16 @@ class InsightEvolutionService
     }
 
     /**
-     * Full profile rebuild from all items — used by maintenance jobs.
+     * Full profile rebuild from all items — used by maintenance jobs and manual triggers.
+     *
+     * Iterates over EVERY existing InsightProfile for this profile_id (not just those
+     * categories that still have items). This way, if all items in a category were
+     * archived or migrated, the profile for that category is cleared rather than left
+     * stale forever.
+     *
+     * Writes one InsightProfileHistory row per profile BEFORE clearing content, so the
+     * pre-rebuild state is preserved in the audit trail (evolveCategory's own history
+     * check is bypassed by our clear, hence we record it here).
      */
     public function rebuildFromAllItems(int $profileId): void
     {
@@ -107,16 +116,37 @@ class InsightEvolutionService
             ->get()
             ->groupBy(fn($item) => $item->category->value);
 
-        foreach ($allItems as $category => $items) {
-            $profile = InsightProfile::where('profile_id', $profileId)
-                ->where('category', $category)
-                ->first();
+        $profiles = InsightProfile::where('profile_id', $profileId)->get();
 
-            if (!$profile) {
-                continue;
+        foreach ($profiles as $profile) {
+            $category = is_object($profile->category) ? $profile->category->value : $profile->category;
+            $items = $allItems->get($category, collect());
+
+            // Preserve audit-trail of the pre-rebuild state — evolveCategory cannot do this
+            // because our clear below empties the content before it sees the profile.
+            if (! empty($profile->content)) {
+                InsightProfileHistory::create([
+                    'insight_profile_id' => $profile->id,
+                    'category'           => $profile->category,
+                    'content'            => $profile->content,
+                    'version'            => $profile->version,
+                    'created_at'         => now(),
+                ]);
             }
 
             $profile->update(['content' => []]);
+
+            if ($items->isEmpty()) {
+                // Category has no live items left — leave it cleared. Bump version so the
+                // change is visible; reset source_count since no items contribute now.
+                $profile->update([
+                    'version'         => $profile->version + 1,
+                    'source_count'    => 0,
+                    'last_updated_at' => now(),
+                ]);
+                continue;
+            }
+
             $this->evolveCategory($profileId, $category, $items->pluck('fact')->toArray());
         }
     }

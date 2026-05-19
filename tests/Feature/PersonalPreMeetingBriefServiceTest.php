@@ -130,9 +130,17 @@ class PersonalPreMeetingBriefServiceTest extends TestCase
         // Only internal should have been counted (1)
         $this->assertSame(1, $sent);
 
-        // Cache idempotency: internal got the brief, external did NOT
-        $this->assertTrue(Cache::has("personal_pre_meeting_sent:{$event->id}:{$internal->id}"));
-        $this->assertFalse(Cache::has("personal_pre_meeting_sent:{$event->id}:{$external->id}"));
+        // DB-backed dedup: internal got a dedup row, external did NOT
+        $this->assertDatabaseHas('meeting_brief_dedup', [
+            'calendar_event_id' => $event->id,
+            'brief_kind' => \App\Models\MeetingBriefDedup::KIND_PERSONAL,
+            'recipient_id' => $internal->id,
+        ]);
+        $this->assertDatabaseMissing('meeting_brief_dedup', [
+            'calendar_event_id' => $event->id,
+            'brief_kind' => \App\Models\MeetingBriefDedup::KIND_PERSONAL,
+            'recipient_id' => $external->id,
+        ]);
     }
 
     #[Test]
