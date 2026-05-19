@@ -33,7 +33,10 @@ class CreateArtifactTool implements ToolInterface
 
     public function getParameters(): array
     {
-        $typeValues = array_column(ArtifactType::cases(), 'value');
+        $typeValues = array_values(array_filter(
+            array_column(ArtifactType::cases(), 'value'),
+            fn (string $v) => $v !== ArtifactType::MethodologyCriteria->value,
+        ));
 
         return [
             'type'       => 'object',

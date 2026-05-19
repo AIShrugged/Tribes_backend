@@ -88,7 +88,7 @@ SYS,
             ],
         ];
 
-        return OpenRouterClient::chat($messages, $model, 2048);
+        return app(OpenRouterClient::class)->chat($messages, $model, 2048);
     }
 
     private function compactDocument(string $filename, string $rawText): string
@@ -114,6 +114,6 @@ SYS,
             ],
         ];
 
-        return OpenRouterClient::chat($messages, $model, 2048);
+        return app(OpenRouterClient::class)->chat($messages, $model, 2048);
     }
 }
