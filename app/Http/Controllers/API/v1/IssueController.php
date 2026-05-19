@@ -116,6 +116,7 @@ class IssueController extends Controller
                 'user_id'         => $data['author_id'] ?? $userId,
                 'organization_id' => $data['organization_id'],
                 'team_id'         => $data['team_id'] ?? null,
+                'epic_id'         => $data['epic_id'] ?? null,
                 'status'          => $data['status'] ?? 'open',
                 'name'            => $data['name'],
                 'description'     => $data['description'] ?? null,
@@ -139,21 +140,6 @@ class IssueController extends Controller
         $issue->refresh()->load(['assignee', 'issueType', 'user', 'attachments']);
 
         return ApiResponse::success(data: IssueResource::make($issue), status: 201);
-        $issue = Issue::create([
-            'user_id' => $data['author_id'] ?? $request->user()->id,
-            'organization_id' => $data['organization_id'],
-            'team_id' => $data['team_id'] ?? null,
-            'epic_id' => $data['epic_id'] ?? null,
-            'status' => $data['status'] ?? 'open',
-            'name' => $data['name'],
-            'description' => $data['description'] ?? null,
-            'type' => $data['type'],
-            'assignee_id' => $data['assignee_id'] ?? null,
-            'due_date' => $data['due_date'] ?? null,
-            'priority' => $data['priority'] ?? 0,
-        ]);
-
-        return ApiResponse::success(data: IssueResource::make($issue->refresh()->load(['assignee', 'issueType', 'user'])), status: 201);
     }
 
     public function show(IssueRequest $request, int $issue): ApiResponse
