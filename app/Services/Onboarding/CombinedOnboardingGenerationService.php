@@ -37,7 +37,7 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
             $raw = $this->runWithBrowsing($org, $description, $fileTexts, $participants, $existingUsers, $links, $model, $template);
         } else {
             $messages = $this->buildMessages($org, $description, $fileTexts, $participants, $existingUsers, $template);
-            $raw      = OpenRouterClient::chat($messages, $model, 8192, true);
+            $raw      = app(OpenRouterClient::class)->chat($messages, $model, 8192, true);
         }
 
         $result = $this->parseResponse($org, $raw);
@@ -65,7 +65,7 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         $tool     = $this->fetchUrlToolDefinition();
 
         for ($i = 0; $i < self::MAX_BROWSE_ITERATIONS; $i++) {
-            $response = OpenRouterClient::chatWithTools($messages, [$tool], $model, 8192);
+            $response = app(OpenRouterClient::class)->chatWithTools($messages, [$tool], $model, 8192);
             $message  = $response['choices'][0]['message'];
 
             $messages[] = $message;
