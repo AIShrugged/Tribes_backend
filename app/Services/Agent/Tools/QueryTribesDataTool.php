@@ -346,23 +346,50 @@ class QueryTribesDataTool extends AbstractAgentTool
 
         $now = Carbon::now();
 
+        // Resolve assignee_profile_id in one batch query
+        $assigneeIds = $tasks->pluck('assignee_id')->filter()->unique()->values();
+        $assigneeProfileIds = $assigneeIds->isNotEmpty()
+            ? Profile::whereIn('user_id', $assigneeIds)->get()->groupBy('user_id')->map(fn($g) => $g->first()->id)
+            : collect();
+
+        // Batch-load source meetings for tasks created from CalendarEvents
+        $meetingSourceIds = $tasks
+            ->filter(fn ($t) => $t->sourceable_type === CalendarEvent::class)
+            ->pluck('sourceable_id')->filter()->unique()->values();
+        $sourceMeetings = $meetingSourceIds->isNotEmpty()
+            ? CalendarEvent::whereIn('id', $meetingSourceIds)->get()->keyBy('id')
+            : collect();
+
         return [
             'success' => true,
             'tasks_count' => $tasks->count(),
-            'tasks' => $tasks->map(fn ($t) => [
+            'tasks' => $tasks->map(function ($t) use ($now, $assigneeProfileIds, $sourceMeetings) {
+                return [
                 'id' => $t->id,
                 'name' => $t->name,
                 'description' => $t->description ? mb_substr($t->description, 0, 300) : null,
                 'status' => $t->status,
                 'assignee_name' => $t->assignee_name,
                 'assignee_id' => $t->assignee_id,
+                'assignee_profile_id' => $t->assignee_id ? ($assigneeProfileIds[$t->assignee_id] ?? null) : null,
                 'due_date' => $t->due_date?->toDateString(),
                 'team_id' => $t->team_id,
                 'organization_id' => $t->organization_id,
                 'days_since_update' => (int) abs($now->diffInDays($t->updated_at)),
                 'sourceable_id' => $t->sourceable_id,
+                'source_meeting' => ($t->sourceable_type === CalendarEvent::class && $t->sourceable_id)
+                    ? (function () use ($t, $sourceMeetings) {
+                        $ev = $sourceMeetings[$t->sourceable_id] ?? null;
+                        return $ev ? [
+                            'calendar_event_id' => $ev->id,
+                            'title'             => $ev->title,
+                            'starts_at'         => $ev->starts_at ? Carbon::parse($ev->starts_at)->toIso8601String() : null,
+                        ] : null;
+                    })()
+                    : null,
                 'created_at' => $t->created_at->toDateString(),
-            ])->toArray(),
+                ];
+            })->toArray(),
         ];
     }
 
@@ -455,6 +482,23 @@ class QueryTribesDataTool extends AbstractAgentTool
             'profile_id' => $p->profile_id ?? null,
         ], fn ($v) => $v !== null))->toArray() ?? [];
 
+        $commitments = $summary->commitments ?? [];
+
+        $relatedTasks = Issue::withoutTrashed()->forMeeting($eventId)->get();
+        $meetingAssigneeIds = $relatedTasks->pluck('assignee_id')->filter()->unique()->values();
+        $meetingAssigneeProfileIds = $meetingAssigneeIds->isNotEmpty()
+            ? Profile::whereIn('user_id', $meetingAssigneeIds)->get()
+                ->groupBy('user_id')->map(fn ($g) => $g->first()->id)
+            : collect();
+        $relatedTasksArray = $relatedTasks->map(fn ($t) => [
+            'id'                  => $t->id,
+            'name'                => $t->name,
+            'status'              => $t->status,
+            'assignee_name'       => $t->assignee_name,
+            'assignee_profile_id' => $t->assignee_id ? ($meetingAssigneeProfileIds[$t->assignee_id] ?? null) : null,
+            'due_date'            => $t->due_date?->toDateString(),
+        ])->toArray();
+
         return [
             'success' => true,
             'calendar_event_id' => $eventId,
@@ -465,6 +509,8 @@ class QueryTribesDataTool extends AbstractAgentTool
             'summary' => $summary->summary,
             'key_points' => $summary->key_points ?? [],
             'decisions' => $summary->decisions ?? [],
+            'commitments' => $commitments,
+            'related_tasks' => $relatedTasksArray,
         ];
     }
 
@@ -491,10 +537,18 @@ class QueryTribesDataTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'Team not found', 'suggestions' => $suggestions];
         }
 
+        $memberIds = $team->users->pluck('id');
+        $profileMap = Profile::whereIn('user_id', $memberIds)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('user_id')
+            ->map(fn ($g) => $g->first()->id);
+
         $members = $team->users->map(fn ($u) => [
-            'id' => $u->id,
+            'user_id' => $u->id,
             'name' => $u->name,
             'email' => $u->email,
+            'profile_id' => $profileMap[$u->id] ?? null,
         ])->toArray();
 
         return [

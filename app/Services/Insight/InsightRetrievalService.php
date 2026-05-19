@@ -7,6 +7,7 @@ use App\Models\AgentActivityLog;
 use App\Models\InsightProfile;
 use App\Models\InsightRelationship;
 use App\Models\InsightShortTerm;
+use App\Models\Participant;
 use App\Models\Profile;
 use App\Models\Setting;
 use App\Services\OpenRouterClient;
@@ -90,8 +91,38 @@ class InsightRetrievalService
             ->orWhere('profile_id_b', $profileId)
             ->get();
 
+        // Resolve name for this profile: linked user first, fall back to participant record
+        $profile = Profile::find($profileId);
+        $userName = $profile?->user?->name
+            ?? Participant::where('profile_id', $profileId)->orderByDesc('id')->value('name');
+
+        // Resolve names for all related profiles in one batch query
+        $relatedIds = $relationships
+            ->map(fn($r) => $r->profile_id_a === $profileId ? $r->profile_id_b : $r->profile_id_a)
+            ->unique()
+            ->values();
+
+        $relatedNames = collect();
+        if ($relatedIds->isNotEmpty()) {
+            $userNames = Profile::with('user')
+                ->whereIn('id', $relatedIds)
+                ->get()
+                ->mapWithKeys(fn($p) => [$p->id => $p->user?->name]);
+
+            $participantNames = Participant::whereIn('profile_id', $relatedIds)
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('profile_id')
+                ->map(fn($g) => $g->first()->name);
+
+            $relatedNames = $relatedIds->mapWithKeys(fn($id) => [
+                $id => $userNames[$id] ?? $participantNames[$id] ?? null,
+            ]);
+        }
+
         return [
             'profile_id'    => $profileId,
+            'user_name'     => $userName,
             'is_ready'      => $profiles->filter(fn($p) => $p->isReady())->isNotEmpty(),
             'profiles'      => $profiles->map(fn($p) => [
                 'category'     => $p->category->value,
@@ -105,12 +136,16 @@ class InsightRetrievalService
                 'content'      => $s->content,
                 'expires_at'   => $s->expires_at->toDateString(),
             ])->first())->values(),
-            'relationships' => $relationships->map(fn($r) => [
-                'with'              => $r->profile_id_a === $profileId ? $r->profile_id_b : $r->profile_id_a,
-                'type'              => $r->relationship_type->value,
-                'dynamics'          => $r->dynamics,
-                'interaction_count' => $r->interaction_count,
-            ])->values(),
+            'relationships' => $relationships->map(function ($r) use ($profileId, $relatedNames) {
+                $otherId = $r->profile_id_a === $profileId ? $r->profile_id_b : $r->profile_id_a;
+                return [
+                    'with'              => $otherId,
+                    'with_name'         => $relatedNames[$otherId] ?? null,
+                    'type'              => $r->relationship_type->value,
+                    'dynamics'          => $r->dynamics,
+                    'interaction_count' => $r->interaction_count,
+                ];
+            })->values(),
         ];
     }
 

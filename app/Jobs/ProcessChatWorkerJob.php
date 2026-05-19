@@ -92,6 +92,8 @@ class ProcessChatWorkerJob implements ShouldQueue
                     conversationKey: 'chat:'.$chat->id,
                     chatId: $chat->id,
                     agentRunUuid: $runUuid,
+                    organizationId: $chat->organization_id,
+                    enableSqlTool: false,
                 ),
                 is_array($userMessage->metadata) ? $userMessage->metadata : [],
             );
