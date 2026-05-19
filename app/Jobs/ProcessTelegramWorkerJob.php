@@ -62,6 +62,11 @@ class ProcessTelegramWorkerJob implements ShouldQueue
             $conversation = $channelBus->forTelegram($this->chatId, $this->messageThreadId);
             $history = $this->loadRecentHistory($conversation->id);
 
+            // Resolve user's primary organization for team roster context
+            $organizationId = $user->organizations()
+                ->orderByDesc('organization_user.created_at')
+                ->value('organizations.id');
+
             $response = $agentService->run(
                 $user,
                 $history,
@@ -74,6 +79,9 @@ class ProcessTelegramWorkerJob implements ShouldQueue
                     progressCallback: function () use ($typingIndicator, $typingSessionId): void {
                         $typingIndicator->touch($typingSessionId);
                     },
+                    organizationId: $organizationId,
+                    maxTokens: config('ai.agent_max_tokens', 16000),
+                    enableThinking: true,
                 )
             );
 

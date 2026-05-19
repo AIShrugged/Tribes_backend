@@ -48,6 +48,8 @@ use App\Services\Agent\Tools\GetOrganizationContextTool;
 use App\Services\Agent\Tools\QueryTribesDataTool;
 use App\Services\Agent\Tools\ReadWorkspaceFileTool;
 use App\Services\Agent\Tools\SaveMethodologyTool;
+use App\Services\Agent\Tools\SaveTeamDecisionTool;
+use App\Services\Agent\Tools\SearchTeamDecisionsTool;
 use App\Services\Agent\Tools\SearchWorkspaceFilesTool;
 use App\Services\Agent\Tools\SendUserMessageTool;
 use App\Services\Agent\Tools\SetUserFocusTool;
@@ -105,6 +107,8 @@ class AgentToolRegistrar
 
         $toolRegistry->register(new QueryTribesDataTool($user, $this->agentMemoryLookupService));
         $toolRegistry->register(new GetOrganizationContextTool($user, $organizationId));
+        $toolRegistry->register(new SaveTeamDecisionTool());
+        $toolRegistry->register(new SearchTeamDecisionsTool());
         $toolRegistry->register(new CreateEntityTool($user, $this->tenantScopeValidator, $this->schemaValidationService, $organizationId, $teamId));
         $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $channel ?? 'web', $organizationId, $teamId));
         $toolRegistry->register(new GetTranscriptTool);

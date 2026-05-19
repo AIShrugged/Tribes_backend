@@ -94,6 +94,8 @@ class ProcessChatWorkerJob implements ShouldQueue
                     agentRunUuid: $runUuid,
                     organizationId: $chat->organization_id,
                     enableSqlTool: false,
+                    maxTokens: config('ai.agent_max_tokens', 16000),
+                    enableThinking: true,
                 ),
                 is_array($userMessage->metadata) ? $userMessage->metadata : [],
             );
