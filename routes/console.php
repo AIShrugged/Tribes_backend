@@ -55,6 +55,12 @@ Schedule::command('meetings:send-pre-briefs')
     ->name('meetings:send-pre-briefs')
     ->withoutOverlapping();
 
+// US-12.5: Personal pre-meeting brief in each participant's private TG (10-20 min before)
+Schedule::command('meetings:send-personal-pre-briefs')
+    ->everyTenMinutes()
+    ->name('meetings:send-personal-pre-briefs')
+    ->withoutOverlapping();
+
 Schedule::command('agent-tasks:dispatch --limit='.config('agent.agent_tasks.dispatch_limit', 50))
     ->everyMinute()
     ->name('agent-tasks:dispatch')
@@ -111,4 +117,35 @@ Schedule::command('critical-path:send-daily-reminders')
 Schedule::command('attachments:prune-orphans')
     ->hourly()
     ->name('attachments:prune-orphans')
+    ->withoutOverlapping();
+
+// Pre-generate daily task progress digests for morning brief consumption (06:30)
+Schedule::command('tasks:generate-daily-digests')
+    ->dailyAt('06:30')
+    ->name('tasks:generate-daily-digests')
+    ->withoutOverlapping();
+
+// US-12.4: Pre-generate agendas for ALL today's meetings (bypass minutes_before)
+// so meetings:advice has data to work with at 08:30.
+Schedule::command('agenda:generate --all-today')
+    ->dailyAt('07:30')
+    ->name('agenda:generate:all-today')
+    ->withoutOverlapping();
+
+// US-12.4: Generate per-meeting AI preparation advice for morning brief consumption (08:30)
+Schedule::command('tasks:generate-meetings-advice')
+    ->dailyAt('08:30')
+    ->name('tasks:generate-meetings-advice')
+    ->withoutOverlapping();
+
+// US-12.3: Weekly task digest for managers (Saturday morning)
+Schedule::command('tasks:send-weekly-digests')
+    ->weekly()->saturdays()->at('09:00')
+    ->name('tasks:send-weekly-digests')
+    ->withoutOverlapping();
+
+// Daily cleanup of expired digests
+Schedule::command('digests:prune')
+    ->daily()
+    ->name('digests:prune')
     ->withoutOverlapping();

@@ -3,9 +3,12 @@
 namespace App\Services\Dashboard;
 
 use App\Models\CalendarEvent;
+use App\Models\Channel;
 use App\Models\Issue;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Insight\InsightRetrievalService;
+use App\Services\Metrics\PerformanceMetricsService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -13,9 +16,14 @@ use Illuminate\Support\Str;
 
 class TeamDashboardService
 {
+    public function __construct(
+        private readonly InsightRetrievalService $insightRetrieval,
+        private readonly PerformanceMetricsService $metricsService,
+    ) {}
+
     public function build(Team $team, User $viewer): array
     {
-        $team->loadMissing('users');
+        $team->loadMissing('users.profiles');
 
         $meetings = $this->teamMeetings($team);
         $issues = $this->teamIssues($team);
@@ -36,7 +44,7 @@ class TeamDashboardService
             'tabs' => [
                 'status' => $this->statusTab($issues, $meetings, $sinceDate),
                 'meeting_readiness' => $this->meetingReadinessTab($team, $upcomingMeeting ?? $latestMeeting, $meetings),
-                'people' => $this->peopleTab($team, $issues, $meetings),
+                'people' => $this->peopleTab($team, $issues, $meetings, $viewer),
                 'health' => $this->healthTab($issues, $meetings, $pastMeetingsWithSummary),
                 'risks' => $this->risksTab($issues, $meetings),
             ],
@@ -175,17 +183,54 @@ class TeamDashboardService
         ];
     }
 
-    private function peopleTab(Team $team, Collection $issues, Collection $meetings): array
+    private function peopleTab(Team $team, Collection $issues, Collection $meetings, User $viewer): array
     {
         $latestMeetingByUser = fn (User $user) => $meetings->filter(function (CalendarEvent $event) use ($user) {
             return $event->sources->contains(fn ($source) => (int) $source->user_id === $user->id)
                 || $event->participants->contains(fn ($participant) => (int) $participant->profile?->user_id === $user->id);
         })->sortByDesc('starts_at')->first();
 
+        // Batch: insight profiles for all team members (1-3 queries via getFullProfileBatch).
+        $gcChannelId = Channel::idFor('google_calendar');
+        $profileIdByUser = [];
+        if ($gcChannelId) {
+            foreach ($team->users as $user) {
+                $profile = $user->profiles->first(fn ($p) => (int) $p->channel_id === (int) $gcChannelId);
+                if ($profile) {
+                    $profileIdByUser[$user->id] = $profile->id;
+                }
+            }
+        }
+        $insightMap = $this->insightRetrieval->getFullProfileBatch(array_values($profileIdByUser));
+
+        // Batch: metrics for all team members (≤5 queries total).
+        $metricsMap = $this->metricsService->forUsers($team->users, PerformanceMetricsService::last7Days());
+
+        $isManager = $viewer->isOrganizationManager($team->organization_id);
+
         return [
-            'members' => $team->users->map(function (User $user) use ($issues, $latestMeetingByUser) {
+            'members' => $team->users->map(function (User $user) use ($issues, $latestMeetingByUser, $profileIdByUser, $insightMap, $metricsMap, $isManager, $viewer) {
                 $memberIssues = $issues->filter(fn (Issue $issue) => (int) $issue->assignee_id === $user->id);
                 $latestMeeting = $latestMeetingByUser($user);
+
+                $canSeeInsight = $isManager || $user->id === $viewer->id;
+                $insightOut = ['status' => 'unavailable', 'data' => null];
+                if ($canSeeInsight) {
+                    $pid = $profileIdByUser[$user->id] ?? null;
+                    $raw = $pid !== null ? ($insightMap[$pid] ?? null) : null;
+                    if ($raw) {
+                        $insightOut = [
+                            'status' => $raw['is_ready'] ? 'ready' : 'collecting',
+                            'data' => $raw['is_ready'] ? [
+                                'strengths' => $this->extractInsightCategory($raw, 'strengths'),
+                                'development_areas' => $this->extractInsightCategory($raw, 'development_areas'),
+                                'work_patterns' => $this->extractInsightCategory($raw, 'work_patterns'),
+                            ] : null,
+                        ];
+                    } else {
+                        $insightOut = ['status' => 'collecting', 'data' => null];
+                    }
+                }
 
                 return [
                     'id' => $user->id,
@@ -199,9 +244,21 @@ class TeamDashboardService
                         'title' => $latestMeeting->title,
                         'starts_at' => $latestMeeting->starts_at,
                     ] : null,
+                    'insight' => $insightOut,
+                    'metrics' => $metricsMap[$user->id] ?? null,
                 ];
             })->values()->all(),
         ];
+    }
+
+    private function extractInsightCategory(array $insight, string $category): mixed
+    {
+        foreach ($insight['profiles'] ?? [] as $p) {
+            if (($p['category'] ?? null) === $category) {
+                return $p['content'] ?? null;
+            }
+        }
+        return null;
     }
 
     private function healthTab(Collection $issues, Collection $meetings, Collection $pastMeetingsWithSummary): array

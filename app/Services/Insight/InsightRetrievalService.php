@@ -115,6 +115,71 @@ class InsightRetrievalService
     }
 
     /**
+     * Batch lookup: returns map [profile_id => getFullProfile shape].
+     *
+     * Three aggregate queries (whereIn) regardless of how many profiles are requested —
+     * intended for TeamDashboardService::peopleTab to avoid N+1.
+     *
+     * @param  int[]  $profileIds
+     * @return array<int, array>
+     */
+    public function getFullProfileBatch(array $profileIds): array
+    {
+        $profileIds = array_values(array_unique(array_filter($profileIds)));
+        if (empty($profileIds)) {
+            return [];
+        }
+
+        $profiles = InsightProfile::whereIn('profile_id', $profileIds)
+            ->get()
+            ->groupBy('profile_id');
+
+        $shortTerms = InsightShortTerm::whereIn('profile_id', $profileIds)
+            ->active()
+            ->orderByDesc('created_at')
+            ->get()
+            ->groupBy('profile_id');
+
+        $relationships = InsightRelationship::where(function ($q) use ($profileIds) {
+            $q->whereIn('profile_id_a', $profileIds)->orWhereIn('profile_id_b', $profileIds);
+        })->get();
+
+        $result = [];
+        foreach ($profileIds as $pid) {
+            $myProfiles = ($profiles->get($pid) ?? collect())->keyBy(fn($p) => $p->category->value);
+            $myShortTerm = ($shortTerms->get($pid) ?? collect())->groupBy(fn($s) => $s->context_type->value);
+            $myRelationships = $relationships->filter(
+                fn($r) => $r->profile_id_a === $pid || $r->profile_id_b === $pid
+            );
+
+            $result[$pid] = [
+                'profile_id'    => $pid,
+                'is_ready'      => $myProfiles->filter(fn($p) => $p->isReady())->isNotEmpty(),
+                'profiles'      => $myProfiles->map(fn($p) => [
+                    'category'     => $p->category->value,
+                    'content'      => $p->content,
+                    'version'      => $p->version,
+                    'source_count' => $p->source_count,
+                    'last_updated' => $p->last_updated_at?->toDateString(),
+                ])->values(),
+                'short_term'    => $myShortTerm->map(fn($items) => $items->map(fn($s) => [
+                    'context_type' => $s->context_type->value,
+                    'content'      => $s->content,
+                    'expires_at'   => $s->expires_at->toDateString(),
+                ])->first())->values(),
+                'relationships' => $myRelationships->map(fn($r) => [
+                    'with'              => $r->profile_id_a === $pid ? $r->profile_id_b : $r->profile_id_a,
+                    'type'              => $r->relationship_type->value,
+                    'dynamics'          => $r->dynamics,
+                    'interaction_count' => $r->interaction_count,
+                ])->values(),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * Get short-term context for a profile_id.
      */
     public function getShortTermContext(int $profileId): array

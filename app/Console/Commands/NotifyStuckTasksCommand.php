@@ -11,13 +11,14 @@ use Telegram\Bot\Api;
 
 class NotifyStuckTasksCommand extends Command
 {
-    protected $signature = 'notify:stuck-tasks';
+    protected $signature = 'notify:stuck-tasks {--test-user= : Send all messages only to this Telegram user ID}';
 
     protected $description = 'Notify assignees about tasks with no activity for N days';
 
     public function handle(): int
     {
         $threshold = (int) env('STUCK_DETECTOR_THRESHOLD_DAYS', 3);
+        $testUser = $this->option('test-user');
 
         $users = User::with('telegramUser')
             ->whereHas('telegramUser')
@@ -30,7 +31,7 @@ class NotifyStuckTasksCommand extends Command
                 continue;
             }
 
-            $this->sendNotification($user, $stuckIssues, $threshold);
+            $this->sendNotification($user, $stuckIssues, $threshold, $testUser);
         }
 
         return self::SUCCESS;
@@ -45,9 +46,9 @@ class NotifyStuckTasksCommand extends Command
             ->get();
     }
 
-    private function sendNotification(User $user, Collection $issues, int $threshold): void
+    private function sendNotification(User $user, Collection $issues, int $threshold, ?string $testUser = null): void
     {
-        $telegramUserId = $user->telegramUser->telegram_user_id;
+        $telegramUserId = $testUser ?? $user->telegramUser->telegram_user_id;
         $text = $this->formatMessage($issues, $threshold);
 
         try {
