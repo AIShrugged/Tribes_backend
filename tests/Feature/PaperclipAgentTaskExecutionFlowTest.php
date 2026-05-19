@@ -691,6 +691,33 @@ class PaperclipAgentTaskExecutionFlowTest extends TestCase
     }
 
     #[Test]
+    public function check_job_skips_already_paused_run_to_avoid_duplicate_notification(): void
+    {
+        // Regression: previously the guard only checked COMPLETED/FAILED, so if the
+        // callback paused the run first, a subsequent polling tick would re-process
+        // "blocked" and re-dispatch AgentTaskRunFinalized → duplicate Telegram message.
+        // Now PAUSED must short-circuit the polling job entirely (no API call).
+        Http::fake();
+
+        [$task, $run] = $this->createPaperclipTaskAndRun();
+        $run->update([
+            'paperclip_issue_id' => self::ISSUE_ID,
+            'status' => AgentTaskRunStatus::PAUSED->value,
+            'error_message' => 'paused by callback',
+            'finished_at' => now(),
+        ]);
+
+        $this->app->call([new CheckPaperclipIssueStatusJob($run->id, 0, 0), 'handle']);
+
+        // No HTTP request to Paperclip should have happened
+        Http::assertNothingSent();
+
+        $run = $run->fresh();
+        $this->assertSame(AgentTaskRunStatus::PAUSED->value, $run->status->value);
+        $this->assertSame('paused by callback', $run->error_message);
+    }
+
+    #[Test]
     public function check_job_pauses_run_when_blocked_even_if_comments_api_fails(): void
     {
         Http::fake([

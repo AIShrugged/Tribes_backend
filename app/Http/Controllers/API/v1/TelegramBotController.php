@@ -8,6 +8,7 @@ use App\Services\Agent\AgentService;
 use App\Services\Channel\ChannelBus;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\TelegramTypingIndicator;
+use App\Services\Issue\ValidationReplyHandler;
 use App\Services\TelegramChatRegistrationService;
 use App\Services\TelegramLinkService;
 use Illuminate\Http\Request;
@@ -31,6 +32,7 @@ class TelegramBotController extends Controller
         private readonly TelegramTypingIndicator $typingIndicator,
         private readonly TelegramChatRegistrationService $telegramChatRegistrationService,
         private readonly TelegramLinkService $telegramLinkService,
+        private readonly ValidationReplyHandler $validationReplyHandler,
     ) {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
@@ -163,9 +165,18 @@ class TelegramBotController extends Controller
                     $text,
                 );
 
+                // Reply to a pending IssueAgentFlow validation question (private chats only).
+                // Deterministic path: match by (chat_id, reply_to_message_id, user_id).
+                $isPrivateChat = $chatType === 'private';
+                $replyToMessageId = $message->getReplyToMessage()?->getMessageId();
+                if ($isPrivateChat && $user && $replyToMessageId) {
+                    if ($this->handleValidationReply($chatId, (int) $replyToMessageId, $user->id, $text, $messageThreadId)) {
+                        return response()->json(['ok' => true]);
+                    }
+                }
+
                 // Only respond when bot is mentioned (except in private chats)
                 $botUsername = config('telegram.bot_username');
-                $isPrivateChat = $chatType === 'private';
                 if (! $isPrivateChat && (! $botUsername || ! $this->isBotMentioned($text, $botUsername))) {
                     Log::debug('Telegram group message ignored because bot was not mentioned', [
                         'chat_id' => $chatId,
@@ -375,5 +386,33 @@ class TelegramBotController extends Controller
         }
 
         $this->telegram->sendMessage($params);
+    }
+
+    /**
+     * Try to consume an IssueAgentFlow validation reply. Returns true when the
+     * incoming Telegram message replies to a tracked pending question and was
+     * handled (either fed into the flow or rejected with a notice).
+     */
+    private function handleValidationReply(
+        int $chatId,
+        int $replyToMessageId,
+        int $userId,
+        string $text,
+        ?int $messageThreadId,
+    ): bool {
+        $outcome = $this->validationReplyHandler->handleTelegramReply(
+            $chatId,
+            $replyToMessageId,
+            $userId,
+            $text,
+        );
+
+        if ($outcome === null) {
+            return false;
+        }
+
+        $this->sendTelegramMessage($chatId, $outcome->message, $messageThreadId);
+
+        return true;
     }
 }

@@ -7,6 +7,7 @@ use App\Models\AgentTaskRun;
 use App\Models\Chat;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Agent\Tools\AnswerIssueValidationTool;
 use App\Services\Agent\Tools\BuildDailyPlanTool;
 use App\Services\Agent\Tools\ClearUserFocusTool;
 use App\Services\Agent\Tools\CopyWorkspaceFileTool;
@@ -24,6 +25,7 @@ use App\Services\Agent\Tools\GetCriticalPathTool;
 use App\Services\Agent\Tools\GetDailyTaskDigestTool;
 use App\Services\Agent\Tools\GetFocusedIssuesTool;
 use App\Services\Agent\Tools\GetMeetingAgendaTool;
+use App\Services\Agent\Tools\GetPendingIssueValidationsTool;
 use App\Services\Agent\Tools\GetUserNotificationsTool;
 use App\Services\Agent\Tools\GetTeamMetricsTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
@@ -61,6 +63,7 @@ use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\UserChannelTargetResolver;
 use App\Services\CriticalPath\CriticalPathService;
 use App\Services\GitHub\GitHubApiClient;
+use App\Services\IssueAgentFlowService;
 use App\Services\JsonSchemaValidationService;
 use App\Services\Metrics\PerformanceMetricsService;
 use App\Services\TenantScopeValidator;
@@ -85,6 +88,7 @@ class AgentToolRegistrar
         private readonly WorkspaceService $workspaceService,
         private readonly UserChannelTargetResolver $userChannelTargetResolver,
         private readonly ChannelRuntimeService $channelRuntimeService,
+        private readonly IssueAgentFlowService $issueAgentFlowService,
     ) {}
 
     public function registerDefaults(
@@ -150,6 +154,8 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetDailyTaskDigestTool($user));
         $toolRegistry->register(new GetWeeklyTaskDigestTool($user));
         $toolRegistry->register(new GetUserNotificationsTool($user));
+        $toolRegistry->register(new GetPendingIssueValidationsTool($user));
+        $toolRegistry->register(new AnswerIssueValidationTool($user, $this->issueAgentFlowService));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(
