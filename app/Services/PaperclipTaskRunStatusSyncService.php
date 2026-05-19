@@ -3,13 +3,13 @@
 namespace App\Services;
 
 use App\Enums\AgentTaskRunStatus;
+use App\Events\AgentTaskRunFinalized;
 use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\Issue;
 use App\Models\IssueAgentFlow;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Telegram\Bot\Api;
 
 class PaperclipTaskRunStatusSyncService
 {
@@ -107,6 +107,8 @@ class PaperclipTaskRunStatusSyncService
 
         $this->syncIssue($run, 'done', $output, $artifacts);
 
+        AgentTaskRunFinalized::dispatch($run->fresh(), AgentTaskRunStatus::COMPLETED);
+
         return true;
     }
 
@@ -134,7 +136,7 @@ class PaperclipTaskRunStatusSyncService
 
         $this->syncIssue($run, 'blocked', $blockedReason, $artifacts);
 
-        $this->sendBlockedTelegramNotification($task, $run, $blockedReason);
+        AgentTaskRunFinalized::dispatch($run->fresh(), AgentTaskRunStatus::PAUSED);
 
         try {
             $this->flowProgressService->handleTaskFailed($task, $run);
@@ -175,6 +177,8 @@ class PaperclipTaskRunStatusSyncService
 
         $this->syncIssue($run, 'failed', $errorMessage, $artifacts);
 
+        AgentTaskRunFinalized::dispatch($run->fresh(), AgentTaskRunStatus::FAILED);
+
         try {
             $this->flowProgressService->handleTaskFailed($task, $run);
         } catch (\Throwable $e) {
@@ -186,58 +190,6 @@ class PaperclipTaskRunStatusSyncService
         }
 
         return true;
-    }
-
-    private function sendBlockedTelegramNotification(AgentTask $task, AgentTaskRun $run, string $blockedReason): void
-    {
-        if (! $task->notification_telegram_chat_id) {
-            return;
-        }
-
-        try {
-            $lines = [
-                "\xE2\x8F\xB8 *Agent Task #{$task->id}: заблокирован*",
-                '',
-                "*Task:* {$task->name}",
-                "*Run:* #{$run->id}",
-                "*Paperclip issue:* {$run->paperclip_issue_id}",
-                '',
-                '*Причина:* ' . Str::limit($blockedReason, 600),
-                '',
-                '_Задача приостановлена. Устраните блокировку и запустите задачу повторно._',
-            ];
-
-            $text = implode("\n", $lines);
-            $params = [
-                'chat_id' => $task->notification_telegram_chat_id,
-                'text' => $text,
-                'parse_mode' => 'Markdown',
-            ];
-
-            if ($task->notification_telegram_thread_id) {
-                $params['message_thread_id'] = $task->notification_telegram_thread_id;
-            }
-
-            $telegram = new Api(config('telegram.bot_token'));
-
-            try {
-                $telegram->sendMessage($params);
-            } catch (\Throwable $e) {
-                if (str_contains(mb_strtolower($e->getMessage()), "can't parse entities")
-                    || str_contains(mb_strtolower($e->getMessage()), 'cant parse entities')) {
-                    unset($params['parse_mode']);
-                    $telegram->sendMessage($params);
-                } else {
-                    throw $e;
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Paperclip callback: failed to send blocked notification', [
-                'agent_task_id' => $task->id,
-                'chat_id' => $task->notification_telegram_chat_id,
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 
     private function syncIssue(AgentTaskRun $run, string $status, ?string $comment, array $artifacts): void

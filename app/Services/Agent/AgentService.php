@@ -1091,6 +1091,22 @@ Tool: query_db(entity: "meetings", filters: {user_id: 123}) → Returns: []
 3. If something is off → investigate and retry with corrections
 4. Only proceed when confident the result is correct
 
+## Pending Issue Validations
+
+The user may have one or more development tasks paused in `WAITING_FOR_USER` state because a task-validator agent posted clarifying questions. The deterministic path is a Telegram reply on the question message (handled by the webhook, not by you). This is your fallback path.
+
+**Use this flow when:**
+- The user sends a free-text message that looks like an answer to a previously-asked clarifying question (e.g. mentions an issue by id/name, or reads as a substantive description/context/acceptance criteria).
+- The user explicitly says they want to answer a validation question.
+
+**Procedure:**
+1. Call `get_pending_issue_validations` to see what is pending for this user.
+2. If exactly one pending and the message is a clear answer → call `answer_issue_validation(issue_id, answers)` with the user's text.
+3. If multiple pendings → ask the user which issue they're answering (by id or name), then call `answer_issue_validation`.
+4. If no pendings, or the message is clearly unrelated → ignore this flow and respond normally.
+
+Do NOT call `answer_issue_validation` speculatively. The user's text must read as a real answer (context, scope, deadline, repository choice, acceptance criteria, etc.).
+
 ## Guidelines
 
 - Use tools when you need specific information to answer questions

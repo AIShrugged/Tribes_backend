@@ -13,6 +13,7 @@ use App\Models\AgentTask;
 use App\Models\AgentTaskRun;
 use App\Models\Issue;
 use App\Models\IssueAgentFlow;
+use App\Models\IssueAgentFlowPendingReply;
 use App\Models\IssueAgentFlowStep;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\UserChannelTargetResolver;
@@ -208,16 +209,34 @@ class IssueAgentFlowProgressService
                 array_keys($questions),
             ));
 
-            $message = "[Tribes] Задача «{$issue->name}» требует уточнений перед запуском агента:\n\n{$questionList}\n\nПожалуйста, дополни описание задачи и повтори запуск.";
+            $message = "[Tribes] Задача «{$issue->name}» требует уточнений перед запуском агента:\n\n{$questionList}\n\n👉 Ответь reply'ом на это сообщение, чтобы продолжить, или зайди в дашборд.";
 
             $conversation = $this->userChannelTargetResolver->resolve($owner, ConversationChannelType::TELEGRAM);
             if ($conversation) {
-                $this->channelRuntimeService->deliverToConversation($conversation, $message);
+                $delivered = $this->channelRuntimeService->deliverToConversation($conversation, $message);
+
+                $telegramMessageId = $delivered?->metadata['telegram_message_id'] ?? null;
+                if ($telegramMessageId !== null && $conversation->telegram_chat_id !== null) {
+                    IssueAgentFlowPendingReply::create([
+                        'issue_agent_flow_id' => $flow->id,
+                        'issue_id' => $issue->id,
+                        'user_id' => $owner->id,
+                        'telegram_chat_id' => (int) $conversation->telegram_chat_id,
+                        'telegram_message_id' => (int) $telegramMessageId,
+                        'questions' => $questions,
+                        'expires_at' => now()->addDays(14),
+                    ]);
+                } else {
+                    Log::warning('IssueAgentFlow: telegram message_id missing after send, pending reply not created.', [
+                        'flow_id' => $flow->id,
+                        'issue_id' => $issue->id,
+                    ]);
+                }
 
                 return;
             }
 
-            // Fallback to web chat
+            // Fallback to web chat (no pending_reply: web reply UX is out of scope for now).
             $conversation = $this->userChannelTargetResolver->resolve($owner, ConversationChannelType::WEB_CHAT);
             if ($conversation) {
                 $this->channelRuntimeService->deliverToConversation($conversation, $message);

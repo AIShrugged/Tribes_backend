@@ -32,14 +32,22 @@ class TelegramDelivery implements ChannelDeliveryInterface
         }
 
         try {
-            $telegram->sendMessage($params);
+            $sent = $telegram->sendMessage($params);
         } catch (\Throwable $exception) {
             if (! $this->shouldRetryWithoutFormatting($exception)) {
                 throw $exception;
             }
 
             unset($params['parse_mode']);
-            $telegram->sendMessage($params);
+            $sent = $telegram->sendMessage($params);
+        }
+
+        $attributes = $request->attributes;
+        $telegramMessageId = $sent?->getMessageId();
+        if ($telegramMessageId !== null) {
+            $metadata = (array) ($attributes['metadata'] ?? []);
+            $metadata['telegram_message_id'] = (int) $telegramMessageId;
+            $attributes['metadata'] = $metadata;
         }
 
         return $this->channelBus->appendTelegramMessage(
@@ -48,7 +56,7 @@ class TelegramDelivery implements ChannelDeliveryInterface
             $request->conversation->message_thread_id,
             'assistant',
             $request->content,
-            $request->attributes,
+            $attributes,
         );
     }
 
