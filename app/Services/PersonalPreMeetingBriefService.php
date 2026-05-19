@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Models\CalendarEvent;
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Cache;
+use App\Models\MeetingBriefDedup;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -21,7 +21,6 @@ use Telegram\Bot\Api;
  */
 class PersonalPreMeetingBriefService
 {
-    private const CACHE_TTL_SECONDS = 1200; // 20 min, slightly longer than the dispatch window
     private const TELEGRAM_MAX_LENGTH = 4096;
 
     public function sendBriefs(?string $testTelegramUserId = null): int
@@ -66,16 +65,24 @@ class PersonalPreMeetingBriefService
                     continue;
                 }
 
-                $cacheKey = "personal_pre_meeting_sent:{$event->id}:{$user->id}";
-                if (Cache::has($cacheKey)) {
-                    continue;
+                // Atomic dedup via Postgres INSERT … ON CONFLICT DO NOTHING.
+                // Survives Redis/container restarts (cache wipes used to cause duplicates).
+                $inserted = MeetingBriefDedup::query()->insertOrIgnore([
+                    'calendar_event_id' => $event->id,
+                    'brief_kind' => MeetingBriefDedup::KIND_PERSONAL,
+                    'recipient_id' => $user->id,
+                    'sent_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                if ($inserted === 0) {
+                    continue; // already sent
                 }
 
                 $text = $this->formatPersonalMessage($event, $user);
                 $chatId = $testTelegramUserId ?? $user->telegramUser->telegram_user_id;
 
                 $this->send($chatId, $text);
-                Cache::put($cacheKey, true, self::CACHE_TTL_SECONDS);
                 $sent++;
             }
         }

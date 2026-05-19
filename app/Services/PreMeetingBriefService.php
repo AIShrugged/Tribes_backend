@@ -6,6 +6,7 @@ use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
+use App\Models\MeetingBriefDedup;
 use App\Models\MeetingSummary;
 use App\Models\Team;
 use App\Models\TeamNotificationSetting;
@@ -13,7 +14,6 @@ use App\Models\TelegramChatRegistration;
 use App\Services\Meeting\MeetingContextService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -55,10 +55,20 @@ class PreMeetingBriefService
                     ->get();
 
                 foreach ($settings as $setting) {
-                    $cacheKey = "pre_meeting_sent:{$event->id}:{$setting->id}";
-
-                    if (Cache::has($cacheKey)) {
-                        continue;
+                    // Atomic dedup via Postgres INSERT … ON CONFLICT DO NOTHING.
+                    // Survives Redis/container restarts (unlike the old Cache::has/put pattern
+                    // that produced duplicates on deploy churn). Returns 0 when a row already
+                    // existed for this (event, kind, recipient).
+                    $inserted = MeetingBriefDedup::query()->insertOrIgnore([
+                        'calendar_event_id' => $event->id,
+                        'brief_kind' => MeetingBriefDedup::KIND_GROUP,
+                        'recipient_id' => $setting->id,
+                        'sent_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    if ($inserted === 0) {
+                        continue; // brief already sent for this (event, setting)
                     }
 
                     $registration = $setting->notifiable;
@@ -67,7 +77,6 @@ class PreMeetingBriefService
                     }
 
                     $this->send($registration, $event, $team, $setting->channel_type);
-                    Cache::put($cacheKey, true, 1200);
                     $sent++;
                 }
             }
