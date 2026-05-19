@@ -18,5 +18,7 @@ class AgentRunOptions
         public readonly ?string $agentRunUuid = null,
         public readonly ?int $organizationId = null,
         public readonly bool $enableSqlTool = true,
+        public readonly int $maxTokens = 4096,
+        public readonly bool $enableThinking = false,
     ) {}
 }

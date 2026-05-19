@@ -94,8 +94,6 @@ class OpenRouterClient
             ->withHeaders(['Authorization' => 'Bearer ' . config('ai.providers.openrouter.api_token')])
             ->post(self::URL, $data);
 
-        Log::info('LLM response', $response->json());
-
         if (!$response->successful()) {
             throw new AppException('Failed to ask AI', 'AI_REQUEST_FAILED');
         }
@@ -129,13 +127,14 @@ class OpenRouterClient
         ?array $tools = null,
         string|array $model = 'anthropic/claude-3.5-sonnet',
         int $maxTokens = 4096,
-        ?string $systemPrompt = null
+        ?string $systemPrompt = null,
+        ?array $extraPayload = null,
     ): array {
         $lastException = null;
 
         foreach ($this->resolveModelCandidates($model) as $candidate) {
             try {
-                return $this->chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt);
+                return $this->chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt, $extraPayload);
             } catch (\Throwable $e) {
                 $lastException = $e;
 
@@ -154,13 +153,15 @@ class OpenRouterClient
         ?array $tools,
         string $model,
         int $maxTokens,
-        ?string $systemPrompt
+        ?string $systemPrompt,
+        ?array $extraPayload = null,
     ): array {
-        $data = [
+        // extraPayload first so core params always win (consistent with chatOnce())
+        $data = array_merge($extraPayload ?? [], [
             'model'      => $model,
             'messages'   => $messages,
             'max_tokens' => $maxTokens,
-        ];
+        ]);
 
         if ($systemPrompt) {
             $data['system'] = $systemPrompt;
@@ -195,10 +196,19 @@ class OpenRouterClient
 
         $body = $response->json();
 
+        $finishReason = $body['choices'][0]['finish_reason'] ?? null;
+        $nativeFinishReason = $body['choices'][0]['native_finish_reason'] ?? null;
+
         Log::info('OpenRouter chatWithTools response', [
-            'finish_reason' => $body['choices'][0]['finish_reason'] ?? null,
+            'finish_reason' => $finishReason,
             'has_tool_calls' => isset($body['choices'][0]['message']['tool_calls']),
         ]);
+
+        if (in_array($finishReason, ['length', 'MAX_TOKENS'], true)
+            || in_array($nativeFinishReason, ['length', 'MAX_TOKENS'], true)
+        ) {
+            throw new AppException('AI response was truncated', 'AI_RESPONSE_TRUNCATED');
+        }
 
         return $body;
     }

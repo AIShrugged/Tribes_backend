@@ -228,6 +228,11 @@ class AgentService
                     $this->maskOldToolResults($messages);
                 }
 
+                // Thinking block masking: strip reasoning_details from old assistant messages
+                if ($options->enableThinking) {
+                    $messages = $this->maskOldThinkingBlocks($messages);
+                }
+
                 // Token budget check: mask aggressively or abort if critical
                 if (! $this->enforceTokenBudget($messages, $systemPrompt)) {
                     Log::warning('Agent loop terminated by token budget', ['iteration' => $iteration]);
@@ -236,14 +241,23 @@ class AgentService
                     break;
                 }
 
+                // Build extra payload for extended thinking
+                $extraPayload = null;
+                if ($options->enableThinking) {
+                    $extraPayload = [
+                        'reasoning' => ['max_tokens' => config('ai.thinking_budget', 4000)],
+                    ];
+                }
+
                 // Call LLM
                 $this->reportProgress($options, 'before_llm');
                 $response = app(OpenRouterClient::class)->chatWithTools(
                     $messages,
                     $tools,
                     $this->modelRouter->resolve($options->taskType),
-                    4096,
-                    $systemPrompt
+                    $options->maxTokens,
+                    $systemPrompt,
+                    $extraPayload,
                 );
 
                 $assistantMessage = $response['choices'][0]['message'] ?? null;
@@ -333,7 +347,20 @@ class AgentService
                 }
 
                 // No tool calls, check for final answer
-                $content = $assistantMessage['content'] ?? '';
+                // When thinking is enabled, content may be an array of content blocks
+                $rawContent = $assistantMessage['content'] ?? '';
+                $content = is_array($rawContent)
+                    ? (collect($rawContent)->firstWhere('type', 'text')['text'] ?? '')
+                    : $rawContent;
+
+                // Log thinking preview if present
+                if (! empty($assistantMessage['reasoning'])) {
+                    Log::info('Agent thinking', [
+                        'agentRunUuid' => $options->agentRunUuid,
+                        'preview'      => mb_substr($assistantMessage['reasoning'], 0, 500),
+                        'length_chars' => strlen($assistantMessage['reasoning']),
+                    ]);
+                }
 
                 if ($content) {
                     $finalAnswer = $content;
@@ -456,7 +483,7 @@ class AgentService
     }
 
     /**
-     * Estimate token count for messages array (rough: 1 token ≈ 4 chars)
+     * Estimate token count for messages array (rough: 1 token ≈ 3.5 chars)
      */
     private function estimateTokens(array $messages, ?string $systemPrompt = null): int
     {
@@ -469,9 +496,18 @@ class AgentService
             if (! empty($message['tool_calls'])) {
                 $chars += strlen(json_encode($message['tool_calls']));
             }
+
+            // Count thinking tokens — reasoning_details not included in content
+            if (! empty($message['reasoning_details'])) {
+                $chars += strlen(json_encode($message['reasoning_details']));
+            }
+
+            if (! empty($message['reasoning'])) {
+                $chars += strlen($message['reasoning']);
+            }
         }
 
-        return (int) ceil($chars / 4);
+        return (int) ceil($chars / 3.5);
     }
 
     /**
@@ -549,6 +585,31 @@ class AgentService
                 ]);
             }
         }
+    }
+
+    /**
+     * Strip reasoning_details and reasoning from all but the last $keepRecent assistant messages.
+     * Prevents exponential token growth when extended thinking is enabled across multiple iterations.
+     */
+    private function maskOldThinkingBlocks(array $messages, int $keepRecent = 2): array
+    {
+        // Collect indices of assistant messages that contain thinking blocks
+        $thinkingIndices = [];
+        foreach ($messages as $i => $msg) {
+            if (($msg['role'] ?? '') === 'assistant'
+                && (! empty($msg['reasoning_details']) || ! empty($msg['reasoning']))
+            ) {
+                $thinkingIndices[] = $i;
+            }
+        }
+
+        // Mask all but the last $keepRecent thinking blocks
+        $toMask = array_slice($thinkingIndices, 0, max(0, count($thinkingIndices) - $keepRecent));
+        foreach ($toMask as $i) {
+            unset($messages[$i]['reasoning_details'], $messages[$i]['reasoning']);
+        }
+
+        return array_values($messages);
     }
 
     /**
@@ -825,25 +886,24 @@ class AgentService
 
         $teamRosterSection = '';
         if ($organizationId) {
-            $org = Organization::with('users')->find($organizationId);
+            $org = Organization::with(['users' => fn ($q) => $q->select('users.id', 'users.name')])->find($organizationId);
             if ($org && $org->users->isNotEmpty()) {
                 $memberIds = $org->users->pluck('id');
                 $profileMap = Profile::whereIn('user_id', $memberIds)
                     ->orderBy('id')
                     ->get()
                     ->groupBy('user_id')
-                    ->map(fn($g) => $g->first()->id);
+                    ->map(fn ($g) => $g->first()->id);
 
-                $rows = $org->users->map(fn($u) => sprintf(
-                    '| %s | %d | %s | %s |',
+                $rows = $org->users->map(fn ($u) => sprintf(
+                    '| %s | %d | %s |',
                     $u->name,
                     $u->id,
                     $profileMap[$u->id] ?? '—',
-                    $u->email ?? '—',
                 ))->join("\n");
 
                 $orgName = $org->name;
-                $teamRosterSection = "## Organization Team Roster ({$orgName})\n\nThe following people are members of this organization. **ALWAYS use these exact names** — NEVER invent or guess names.\n\n| Name | user_id | profile_id | Email |\n|------|---------|------------|-------|\n{$rows}\n\n**CRITICAL:** When creating artifacts or mentioning team members, use ONLY names from this table. If a name is not in this list, do NOT include it.\n";
+                $teamRosterSection = "## Organization Team Roster ({$orgName})\n\nThe following people are members of this organization. **ALWAYS use these exact names** — NEVER invent or guess names.\n\n| Name | user_id | profile_id |\n|------|---------|------------|\n{$rows}\n\nAlways use exact names and IDs from this table. Do NOT include anyone not listed here.\n";
             }
         }
 

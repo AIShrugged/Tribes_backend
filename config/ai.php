@@ -29,6 +29,11 @@ return [
 
     'bot_name' => 'Bot',
 
+    // Extended thinking budget (tokens). Applies to all interactive agent runs.
+    // Keep max_tokens >= thinking_budget + 2000 (hard invariant).
+    'thinking_budget' => (int) env('AGENT_THINKING_BUDGET', 4000),
+    'agent_max_tokens' => (int) env('AGENT_MAX_TOKENS', 16000),
+
     'monitoring' => [
         'balance_threshold'        => 5,
         'telegram_chat_id'         => -1003705371486,
