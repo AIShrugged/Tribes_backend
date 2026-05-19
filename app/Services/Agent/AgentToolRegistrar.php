@@ -21,9 +21,15 @@ use App\Services\Agent\Tools\DeleteWorkspaceTool;
 use App\Services\Agent\Tools\ExecuteSqlQueryTool;
 use App\Services\Agent\Tools\FetchDocumentTool;
 use App\Services\Agent\Tools\GetCriticalPathTool;
+use App\Services\Agent\Tools\GetDailyTaskDigestTool;
 use App\Services\Agent\Tools\GetFocusedIssuesTool;
+use App\Services\Agent\Tools\GetMeetingAgendaTool;
+use App\Services\Agent\Tools\GetUserNotificationsTool;
+use App\Services\Agent\Tools\GetTeamMetricsTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetUserFocusTool;
+use App\Services\Agent\Tools\GetUserMetricsTool;
+use App\Services\Agent\Tools\GetWeeklyTaskDigestTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
 use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
 use App\Services\Agent\Tools\GitHubCreatePullRequestTool;
@@ -56,6 +62,7 @@ use App\Services\Channel\UserChannelTargetResolver;
 use App\Services\CriticalPath\CriticalPathService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\JsonSchemaValidationService;
+use App\Services\Metrics\PerformanceMetricsService;
 use App\Services\TenantScopeValidator;
 use App\Services\UserFocusService;
 use App\Services\Workspace\WorkspaceAccessService;
@@ -132,6 +139,14 @@ class AgentToolRegistrar
 
         $toolRegistry->register(new BuildDailyPlanTool($user, $organizationId, $teamId));
         $toolRegistry->register(new GetCriticalPathTool($user, app(CriticalPathService::class), $organizationId, $teamId));
+
+        $metricsService = app(PerformanceMetricsService::class);
+        $toolRegistry->register(new GetUserMetricsTool($user, $metricsService));
+        $toolRegistry->register(new GetTeamMetricsTool($user, $metricsService));
+        $toolRegistry->register(new GetMeetingAgendaTool);
+        $toolRegistry->register(new GetDailyTaskDigestTool($user));
+        $toolRegistry->register(new GetWeeklyTaskDigestTool($user));
+        $toolRegistry->register(new GetUserNotificationsTool($user));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(

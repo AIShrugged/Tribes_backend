@@ -98,6 +98,19 @@ class CalendarEvent extends Model
         return $this->hasMany(MeetingAgenda::class);
     }
 
+    /**
+     * Latest completed general (team-wide) agenda, with all filter constraints baked in.
+     * Use for eager loading: `->with('generalAgenda')` is constant query count regardless of event count.
+     */
+    public function generalAgenda(): HasOne
+    {
+        return $this->hasOne(MeetingAgenda::class)
+            ->whereNull('user_id')
+            ->where('type', 'general')
+            ->where('status', \App\Enums\AgendaStatus::DONE->value)
+            ->latestOfMany();
+    }
+
     public function scopeOwned(Builder $query, int $userId): Builder
     {
         return $query->whereHas('sources', fn (Builder $q) => $q->where('user_id', $userId));

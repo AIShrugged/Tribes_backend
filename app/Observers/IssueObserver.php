@@ -10,9 +10,11 @@ use App\Models\AgentTask;
 use App\Models\CriticalPathPendingIssue;
 use App\Models\DailyNudge;
 use App\Models\Issue;
+use App\Models\IssueStatusHistory;
 use App\Models\Team;
 use App\Services\AgentTaskSchedulerService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class IssueObserver
@@ -44,6 +46,10 @@ class IssueObserver
     public function updated(Issue $issue): void
     {
         if ($issue->isDirty('status')) {
+            // Append-only audit row for cycle-time analytics — defensive so a failed
+            // write here cannot break the parent Issue::update() transaction.
+            $this->recordStatusHistory($issue);
+
             // Invalidate nudge when task status changes — data is now stale
             if ($issue->assignee_id) {
                 DailyNudge::query()
@@ -65,6 +71,28 @@ class IssueObserver
             }
         } elseif ($issue->isDirty(['priority', 'due_date', 'description', 'name', 'epic_id'])) {
             $this->queueCpmPending($issue);
+        }
+    }
+
+    /**
+     * Insert an audit row for the status transition. Catches all exceptions so a
+     * failure (e.g. table missing, constraint mismatch) cannot break the caller.
+     */
+    private function recordStatusHistory(Issue $issue): void
+    {
+        try {
+            IssueStatusHistory::create([
+                'issue_id' => $issue->id,
+                'from_status' => $issue->getOriginal('status'),
+                'to_status' => $issue->status,
+                'changed_at' => now(),
+                'changed_by_user_id' => Auth::id(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('IssueObserver: status history write failed', [
+                'issue_id' => $issue->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

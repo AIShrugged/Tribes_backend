@@ -14,9 +14,15 @@ class Team extends Model
 {
     protected $guarded = [];
 
+    /**
+     * Per US-12.6 spec:
+     *   - manager sees all teams in their organization
+     *   - employee (and any non-manager member) sees only teams they directly belong to
+     *   - outsiders see nothing (filter by direct membership returns empty)
+     */
     public function scopeVisibleFor(Builder $query, User $user, Organization $organization): Builder
     {
-        if ($user->isOrganizationMember($organization)) {
+        if ($user->isOrganizationManager($organization)) {
             return $query;
         }
 

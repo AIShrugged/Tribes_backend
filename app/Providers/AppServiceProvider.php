@@ -4,8 +4,10 @@ namespace App\Providers;
 
 use App\Models\IssueAttachment;
 use App\Policies\IssueAttachmentPolicy;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -58,5 +60,8 @@ class AppServiceProvider extends ServiceProvider
                 ),
             ]);
         });
+
+        // Throttle digest LLM dispatches to respect OpenRouter ~200 RPM cap with headroom.
+        RateLimiter::for('openrouter-digests', fn () => Limit::perMinute(60));
     }
 }
