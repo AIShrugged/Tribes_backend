@@ -155,6 +155,16 @@ class CreateIssueTool extends AbstractAgentTool
             ? ($parameters['team_id'] !== null ? (int) $parameters['team_id'] : null)
             : $this->defaultTeamId;
 
+        $epicId = isset($parameters['epic_id']) ? (int) $parameters['epic_id'] : null;
+
+        if ($epicId !== null && $type === Issue::TYPE_EPIC) {
+            return ['success' => false, 'error' => 'An epic cannot be nested inside another epic'];
+        }
+
+        if ($epicId !== null && ! Issue::where('id', $epicId)->where('type', Issue::TYPE_EPIC)->exists()) {
+            return ['success' => false, 'error' => 'epic_id must reference an existing epic issue'];
+        }
+
         try {
             $this->tenantScopeValidator()->assertScopeIsValid(
                 $user,
@@ -182,7 +192,7 @@ class CreateIssueTool extends AbstractAgentTool
             'user_id' => $user->id,
             'organization_id' => $organizationId,
             'team_id' => $teamId,
-            'epic_id' => isset($parameters['epic_id']) ? (int) $parameters['epic_id'] : null,
+            'epic_id' => $epicId,
             'sourceable_type' => $sourceableType,
             'sourceable_id' => $sourceableId,
             'assignee_id' => $assigneeId ?? null,

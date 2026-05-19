@@ -42,7 +42,12 @@ class IssueRequest extends FormRequest
                 'status' => ['nullable', Rule::in(self::VALID_STATUSES)],
                 'organization_id' => ['required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
-                'epic_id' => ['nullable', 'integer', 'exists:issues,id'],
+                'epic_id' => [
+                    'nullable',
+                    'integer',
+                    Rule::prohibitedIf(fn () => Issue::normalizeType($this->input('type') ?? '') === Issue::TYPE_EPIC),
+                    Rule::exists('issues', 'id')->where('type', Issue::TYPE_EPIC),
+                ],
                 'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
                 'author_id' => ['nullable', 'integer', 'exists:users,id'],
                 'due_date' => ['nullable', 'date'],
@@ -56,7 +61,24 @@ class IssueRequest extends FormRequest
                 'status' => ['sometimes', 'required', Rule::in(self::VALID_STATUSES)],
                 'organization_id' => ['sometimes', 'required', 'integer', 'exists:organizations,id'],
                 'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
-                'epic_id' => ['sometimes', 'nullable', 'integer', 'exists:issues,id'],
+                'epic_id' => [
+                    'sometimes',
+                    'nullable',
+                    'integer',
+                    Rule::prohibitedIf(function () {
+                        if ($this->has('type') && Issue::normalizeType($this->input('type') ?? '') === Issue::TYPE_EPIC) {
+                            return true;
+                        }
+                        if (! $this->has('type')) {
+                            $issueId = (int) $this->route('issue');
+
+                            return $issueId > 0 && Issue::where('id', $issueId)->where('type', Issue::TYPE_EPIC)->exists();
+                        }
+
+                        return false;
+                    }),
+                    Rule::exists('issues', 'id')->where('type', Issue::TYPE_EPIC),
+                ],
                 'assignee_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
                 'author_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
                 'due_date' => ['sometimes', 'nullable', 'date'],

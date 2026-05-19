@@ -151,7 +151,8 @@ class EpicMergeService
         }
 
         // Per-row save (not mass update) so IssueObserver fires and CPM invalidates.
-        foreach (Issue::whereIn('id', $validIds)->get() as $child) {
+        // Epics cannot be children of other epics — skip any epic-typed issues.
+        foreach (Issue::whereIn('id', $validIds)->where('type', '!=', Issue::TYPE_EPIC)->get() as $child) {
             $child->update(['epic_id' => $epic->id]);
         }
     }
