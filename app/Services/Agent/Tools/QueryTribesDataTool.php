@@ -254,8 +254,8 @@ class QueryTribesDataTool extends AbstractAgentTool
             return [
                 'success' => true,
                 'multiple_matches' => true,
-                'message' => "Found {$users->count()} users matching '{$name}'. Use email or user_id for exact lookup.",
-                'users' => $users->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email])->toArray(),
+                'message' => "Found {$users->count()} users matching '{$name}'. Use user_id for exact lookup.",
+                'users' => $users->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])->toArray(),
             ];
         }
 
@@ -275,8 +275,8 @@ class QueryTribesDataTool extends AbstractAgentTool
             return [
                 'success' => true,
                 'user' => [
-                    'id' => null, 'name' => $name, 'email' => $p->channel_identifier,
-                    'profiles' => [['profile_id' => $p->id, 'channel' => $p->channel?->name, 'channel_identifier' => $p->channel_identifier]],
+                    'id' => null, 'name' => $name,
+                    'profiles' => [['profile_id' => $p->id, 'channel' => $p->channel?->name]],
                     'organizations' => [], 'teams' => [],
                     'note' => 'Profile found via meeting participants. No linked user account.',
                 ],
@@ -286,8 +286,8 @@ class QueryTribesDataTool extends AbstractAgentTool
         return [
             'success' => true,
             'multiple_matches' => true,
-            'message' => "Found {$profiles->count()} profiles matching '{$name}'. Use profile_id or email.",
-            'users' => $profiles->map(fn ($p) => ['id' => null, 'profile_id' => $p->id, 'email' => $p->channel_identifier])->toArray(),
+            'message' => "Found {$profiles->count()} profiles matching '{$name}'. Use profile_id for exact lookup.",
+            'users' => $profiles->map(fn ($p) => ['id' => null, 'profile_id' => $p->id, 'channel' => $p->channel?->name])->toArray(),
         ];
     }
 
@@ -952,20 +952,26 @@ class QueryTribesDataTool extends AbstractAgentTool
             }
         }
 
+        // Tenant isolation: only expose orgs/teams the requesting user also belongs to
+        $requestingOrgIds = $this->user->organizations()->pluck('organizations.id')->toArray();
+        $visibleOrgs = $user->organizations->filter(fn ($org) => in_array($org->id, $requestingOrgIds));
+        $hasSharedOrg = $visibleOrgs->isNotEmpty();
+
         return [
             'id' => $user->id,
             'name' => $user->name,
-            'email' => $user->email,
+            // email visible only when users share at least one organization
+            'email' => $hasSharedOrg ? $user->email : null,
             'profiles' => $profiles->map(fn ($p) => [
                 'profile_id' => $p->id,
                 'channel' => $p->channel?->name,
                 'channel_identifier' => $p->channel_identifier,
             ])->toArray(),
-            'organizations' => $user->organizations->map(fn ($org) => [
+            'organizations' => $visibleOrgs->map(fn ($org) => [
                 'id' => $org->id,
                 'name' => $org->name,
                 'role' => $org->pivot->role ?? null,
-            ])->toArray(),
+            ])->values()->toArray(),
             'teams' => $user->teams->map(fn ($t) => ['id' => $t->id, 'name' => $t->name])->toArray(),
         ];
     }
