@@ -22,6 +22,7 @@ class ChannelConversation extends Model
         'message_thread_id',
         'title',
         'latest_message_at',
+        'history_reset_at',
     ];
 
     protected $casts = [
@@ -29,6 +30,7 @@ class ChannelConversation extends Model
         'telegram_chat_id' => 'integer',
         'message_thread_id' => 'integer',
         'latest_message_at' => 'datetime',
+        'history_reset_at' => 'datetime',
     ];
 
     public static function keyForChat(int $chatId): string

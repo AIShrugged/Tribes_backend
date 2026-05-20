@@ -114,6 +114,8 @@ class ProcessTelegramWorkerJob implements ShouldQueue
 
     private function loadRecentHistory(int $conversationId): Collection
     {
+        $conversation = \App\Models\ChannelConversation::find($conversationId);
+
         $batchMinId = ChannelMessage::query()
             ->where('agent_batch_uuid', $this->batchUuid)
             ->min('id');
@@ -124,6 +126,10 @@ class ProcessTelegramWorkerJob implements ShouldQueue
             ->where('created_at', '>=', now()->subHours(self::HISTORY_WINDOW_HOURS))
             ->orderByDesc('id')
             ->limit(self::HISTORY_LIMIT);
+
+        if ($conversation?->history_reset_at !== null) {
+            $query->where('created_at', '>', $conversation->history_reset_at);
+        }
 
         if ($batchMinId !== null) {
             $query->where('id', '<', $batchMinId);

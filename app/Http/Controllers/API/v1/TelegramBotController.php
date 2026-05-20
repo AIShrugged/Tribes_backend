@@ -226,6 +226,16 @@ class TelegramBotController extends Controller
                     'text' => $text,
                 ]);
 
+                // Handle /forget command
+                if ($text === '/forget') {
+                    $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
+                    $conversation->update(['history_reset_at' => now()]);
+                    $forgetMessage = '🧹 История сброшена. Начинаем с чистого листа!';
+                    $this->sendTelegramMessage($chatId, $forgetMessage, $messageThreadId);
+
+                    return response()->json(['ok' => true]);
+                }
+
                 // Handle /stop command
                 if ($text === '/stop') {
                     if ($user) {
