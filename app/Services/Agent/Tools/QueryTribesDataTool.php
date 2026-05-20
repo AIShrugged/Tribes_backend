@@ -246,6 +246,22 @@ class QueryTribesDataTool extends AbstractAgentTool
                 ->get();
         }
 
+        // Cyrillic query didn't find Latin-stored names — try transliterated variant
+        if ($users->isEmpty() && $this->isCyrillic($name)) {
+            $latin = $this->cyrillicToLatin($name);
+            $users = (clone $query)
+                ->whereRaw(self::NAME_SQL.' ~* ?', ['\\m'.preg_quote($latin, '/').'\\M'])
+                ->limit($limit)
+                ->get();
+
+            if ($users->isEmpty()) {
+                $users = (clone $query)
+                    ->whereRaw(self::NAME_SQL.' LIKE ?', ['%'.$latin.'%'])
+                    ->limit($limit)
+                    ->get();
+            }
+        }
+
         if ($users->isNotEmpty()) {
             if ($users->count() === 1) {
                 return ['success' => true, 'user' => $this->formatUser($users->first())];

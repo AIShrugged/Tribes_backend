@@ -907,7 +907,7 @@ XML;
             return $contextBlock;
         }
 
-        $org = Organization::with(['users' => fn ($q) => $q->select('users.id', 'users.name')])->find($organizationId);
+        $org = Organization::with(['users' => fn ($q) => $q->select('users.id', 'users.name', 'users.email')])->find($organizationId);
         if (! $org || $org->users->isEmpty()) {
             return $contextBlock;
         }
@@ -920,14 +920,15 @@ XML;
             ->map(fn ($g) => $g->first()->id);
 
         $rows = $org->users->map(fn ($u) => sprintf(
-            '| %s | %d | %s |',
+            '| %s | %d | %s | %s |',
             $u->name,
             $u->id,
             $profileMap[$u->id] ?? '—',
+            $u->email ?? '—',
         ))->join("\n");
 
         $orgName = $org->name;
-        $rosterBlock = "<team_roster org=\"{$orgName}\">\nUse ONLY these exact names. NEVER invent or guess names.\n\n| Name | user_id | profile_id |\n|------|---------|------------|\n{$rows}\n</team_roster>";
+        $rosterBlock = "<team_roster org=\"{$orgName}\">\nUse ONLY these IDs. Match names case-insensitively (\"Борис\" = Boris, \"Слава\" = slava). Do NOT call query_db for users already listed here.\n\n| Name | user_id | profile_id | email |\n|------|---------|------------|-------|\n{$rows}\n</team_roster>";
 
         return $contextBlock."\n\n".$rosterBlock;
     }
@@ -938,8 +939,9 @@ XML;
 <think_first>
 Before calling any tool, write a brief plan:
 1. What does the user actually want? (one sentence)
-2. What data do I need? Do I already have it from this conversation?
+2. What data do I need? Do I already have it from this conversation or <team_roster>?
 3. Which tools in what order? Can I combine calls?
+4. Every number, date, count, metric in my answer MUST come from a tool result in THIS conversation. If I don't have the data — say so and offer to look it up.
 
 Never call a tool "just in case". Stop after you have enough data to answer.
 </think_first>
@@ -992,6 +994,9 @@ SQL;
 - get_transcript — LAST RESORT. Explain to user why needed and ask permission first. Use only for verbatim quotes or when summary is clearly insufficient.
 
 ## People
+- If the user is in <team_roster> — use their user_id directly. Do NOT call query_db(entity="users") for them.
+- Match names case-insensitively across scripts: "Борис" = Boris, "Слава" = slava.
+- If a name is NOT in roster and you resolve it via query_db → save to memory: update_entity(entity="memory", key="alias_{name}", value="user_id=X (Name, email)")
 - query_tribes_data(entity="user_insights") — long-term profile. For "who is X?", "describe X's work style".
 - query_tribes_data(entity="extracted_facts") — transcript-specific facts. Requires profile_id.
 - query_tribes_data(entity="insight_history") — how a person changed over time. Requires profile_id.
