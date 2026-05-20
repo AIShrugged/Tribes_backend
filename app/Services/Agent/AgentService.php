@@ -907,7 +907,10 @@ XML;
             return $contextBlock;
         }
 
-        $org = Organization::with(['users' => fn ($q) => $q->select('users.id', 'users.name', 'users.email')])->find($organizationId);
+        $org = Organization::with([
+            'users' => fn ($q) => $q->select('users.id', 'users.name', 'users.email'),
+            'links',
+        ])->find($organizationId);
         if (! $org || $org->users->isEmpty()) {
             return $contextBlock;
         }
@@ -930,7 +933,14 @@ XML;
         $orgName = $org->name;
         $rosterBlock = "<team_roster org=\"{$orgName}\">\nUse ONLY these IDs. Match names case-insensitively (\"Борис\" = Boris, \"Слава\" = slava). Do NOT call query_db for users already listed here.\n\n| Name | user_id | profile_id | email |\n|------|---------|------------|-------|\n{$rows}\n</team_roster>";
 
-        return $contextBlock."\n\n".$rosterBlock;
+        $links = $org->links()->pluck('url');
+        $linksBlock = $links->isNotEmpty()
+            ? "<org_links>\nOrganization linked resources (call get_organization_context to read their content):\n"
+                . $links->map(fn ($url) => "- {$url}")->join("\n")
+                . "\n</org_links>"
+            : null;
+
+        return implode("\n\n", array_filter([$contextBlock, $rosterBlock, $linksBlock]));
     }
 
     private function promptThinkFirstSection(): string
