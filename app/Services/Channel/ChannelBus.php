@@ -57,6 +57,7 @@ class ChannelBus
         return $this->forChat($chat)
             ->messages()
             ->orderBy('created_at')
+            ->orderBy('id')
             ->offset($offset)
             ->limit($limit)
             ->get();
