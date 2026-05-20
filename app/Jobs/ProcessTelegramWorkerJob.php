@@ -80,6 +80,7 @@ class ProcessTelegramWorkerJob implements ShouldQueue
                         $typingIndicator->touch($typingSessionId);
                     },
                     organizationId: $organizationId,
+                    enableSqlTool: false,
                     maxTokens: config('ai.agent_max_tokens', 16000),
                     enableThinking: true,
                 )
