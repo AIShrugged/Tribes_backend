@@ -67,12 +67,28 @@ transcript_entries (id BIGINT PK, calendar_event_id BIGINT FK->calendar_events.i
 followups (id BIGINT PK, calendar_event_id BIGINT FK->calendar_events.id, methodology_id BIGINT, scope VARCHAR, text TEXT, status VARCHAR 'done'|'in_progress'|'failed', created_at TIMESTAMP)
 methodologies (id BIGINT PK, organization_id BIGINT, name VARCHAR, scheme_version VARCHAR)
 profiles (id BIGINT PK, channel_id BIGINT FK->channels.id, channel_identifier VARCHAR, user_id BIGINT nullable FK->users.id)
+channels (id BIGINT PK, name VARCHAR — 'google_calendar' | 'telegram' | 'web' | 'zoom')
+insight_profiles (id BIGINT PK, profile_id BIGINT FK->profiles.id, category VARCHAR, content JSONB, version INT, source_count INT, last_updated_at TIMESTAMP)
+insight_items (id BIGINT PK, profile_id BIGINT FK->profiles.id, category VARCHAR, fact TEXT, confidence NUMERIC, is_archived BOOLEAN)
+insight_relationships (id BIGINT PK, profile_id_a BIGINT FK->profiles.id, profile_id_b BIGINT FK->profiles.id, relationship_type VARCHAR, dynamics JSONB, interaction_count INT, last_interaction_at TIMESTAMP)
 
 ## Ключевые связи:
 - Цепочка владения followup: followups → calendar_events → sources → users
 - users ↔ organizations через organization_user (с ролью)
 - users ↔ teams через team_user
 - teams → organizations
+- users → insights: users → profiles (profiles.user_id) → insight_profiles / insight_items / insight_relationships
+- ВАЖНО: profiles.user_id может быть NULL у "теневых" google_calendar-профилей, созданных раньше user-аккаунта. Чтобы не упустить такие профили, делай LEFT JOIN дополнительно по email: profiles.channel_identifier = users.email (для channels.name='google_calendar').
+
+## Категории инсайтов (значения колонки category в insight_profiles / insight_items):
+- communication_style — тон, формат, языковые паттерны (JSON: tone, listening, preferred_format, language_patterns[])
+- work_patterns — роль и стиль работы (JSON: meeting_role, decision_style, deadline_reliability, collaboration_preference)
+- goals_motivations — цели и мотивация (JSON: concerns[], motivators[], current_goals[])
+- psychological_profile — психопрофиль (JSON: trust_level, conflict_style, stress_indicators[], personality_traits[])
+- strengths — сильные стороны (JSON: items[], evidence[])
+- development_areas — зоны роста (JSON: items[], evidence[])
+
+Поле content в insight_profiles — JSONB. Поле dynamics в insight_relationships — JSONB (summary, relationship_type, key_observations[], positive/negative_interactions[]).
 
 ## JSON-структура followups.text:
 {"total": {"display_name": "...", "current_value": N, "max_value": N}, "metrics": [{"display_name": "...", "current_value": N, "max_value": N}], "conclusion": {...}}
@@ -84,11 +100,12 @@ profiles (id BIGINT PK, channel_id BIGINT FK->channels.id, channel_identifier VA
 
 ## ОБЯЗАТЕЛЬНЫЕ ПРАВИЛА для SQL:
 1. ВСЕГДА включай WHERE s.user_id IN (__ACCESSIBLE_USER_IDS__) при запросах к followups, calendar_events, sources
-2. Плейсхолдер __ACCESSIBLE_USER_IDS__ будет заменён системой на реальные ID — пиши его как есть
-3. Только SELECT запросы
-4. Только таблицы из схемы выше
-5. Всегда фильтруй followups по status = 'done' (если не просят иное)
-6. Используй алиасы: "label" для x-оси/категории, "value" для y-оси/числа в графиках
+2. Для insight_*-таблиц и profiles ограничивай доступ так: u.id IN (__ACCESSIBLE_USER_IDS__), где u — таблица users, к которой profiles подсоединена через profiles.user_id = u.id ИЛИ через email (см. ниже пример "Роли членов команды")
+3. Плейсхолдер __ACCESSIBLE_USER_IDS__ будет заменён системой на реальные ID — пиши его как есть
+4. Только SELECT запросы
+5. Только таблицы из схемы выше
+6. Всегда фильтруй followups по status = 'done' (если не просят иное)
+7. Используй алиасы: "label" для x-оси/категории, "value" для y-оси/числа в графиках
 
 ## Формат ответа:
 ВСЕГДА отвечай валидным JSON:
@@ -153,6 +170,58 @@ JOIN users u ON u.id = s.user_id
 WHERE s.user_id IN (__ACCESSIBLE_USER_IDS__)
 GROUP BY u.id, u.name
 ORDER BY value DESC
+```
+
+### Роли членов команды (из insight_profiles.work_patterns):
+Учитывает оба пути: profiles.user_id = users.id и теневые google_calendar-профили (profiles.channel_identifier = users.email).
+```sql
+SELECT
+  u.name AS label,
+  ip.content->>'meeting_role' AS value,
+  ip.content->>'decision_style' AS decision_style,
+  ip.content->>'collaboration_preference' AS collaboration
+FROM users u
+JOIN team_user tu ON tu.user_id = u.id
+JOIN profiles p ON (p.user_id = u.id)
+  OR (p.user_id IS NULL
+      AND p.channel_id = (SELECT id FROM channels WHERE name = 'google_calendar')
+      AND p.channel_identifier = u.email)
+JOIN insight_profiles ip ON ip.profile_id = p.id AND ip.category = 'work_patterns'
+WHERE u.id IN (__ACCESSIBLE_USER_IDS__)
+ORDER BY u.name
+```
+
+### Сильные стороны конкретного пользователя:
+```sql
+SELECT
+  ip.content->'items' AS strengths,
+  ip.content->'evidence' AS evidence,
+  ip.version,
+  ip.last_updated_at
+FROM insight_profiles ip
+JOIN profiles p ON p.id = ip.profile_id
+JOIN users u ON (u.id = p.user_id)
+  OR (p.user_id IS NULL
+      AND p.channel_id = (SELECT id FROM channels WHERE name = 'google_calendar')
+      AND p.channel_identifier = u.email)
+WHERE u.id IN (__ACCESSIBLE_USER_IDS__) AND ip.category = 'strengths'
+```
+
+### Отношения между членами команды (иерархия, коллаборации):
+```sql
+SELECT
+  ua.name AS label,
+  ub.name AS counterpart,
+  r.relationship_type AS value,
+  r.dynamics->>'summary' AS summary
+FROM insight_relationships r
+JOIN profiles pa ON pa.id = r.profile_id_a
+JOIN profiles pb ON pb.id = r.profile_id_b
+JOIN users ua ON (ua.id = pa.user_id)
+  OR (pa.user_id IS NULL AND pa.channel_identifier = ua.email)
+JOIN users ub ON (ub.id = pb.user_id)
+  OR (pb.user_id IS NULL AND pb.channel_identifier = ub.email)
+WHERE ua.id IN (__ACCESSIBLE_USER_IDS__) AND ub.id IN (__ACCESSIBLE_USER_IDS__)
 ```
 PROMPT;
 
