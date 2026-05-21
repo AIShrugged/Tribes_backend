@@ -267,9 +267,6 @@ class SendMorningBriefCommand extends Command
             $lines[] = '';
         }
         $lines[] = '☀️ <b>Доброе утро!</b>';
-        if ($org !== null) {
-            $lines[] = '<i>Организация: ' . e($org->name) . '</i>';
-        }
 
         if ($digest !== null) {
             $this->appendDigestSection($lines, $digest);
