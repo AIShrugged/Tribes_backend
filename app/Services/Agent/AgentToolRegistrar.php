@@ -24,12 +24,17 @@ use App\Services\Agent\Tools\FetchDocumentTool;
 use App\Services\Agent\Tools\GetCriticalPathTool;
 use App\Services\Agent\Tools\GetDailyTaskDigestTool;
 use App\Services\Agent\Tools\GetFocusedIssuesTool;
+use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
 use App\Services\Agent\Tools\GetMeetingAgendaTool;
 use App\Services\Agent\Tools\GetPendingIssueValidationsTool;
+use App\Services\Agent\Tools\GetRelationshipInsightTool;
+use App\Services\Agent\Tools\GetTeamMembersTool;
 use App\Services\Agent\Tools\GetUserNotificationsTool;
 use App\Services\Agent\Tools\GetTeamMetricsTool;
 use App\Services\Agent\Tools\GetTranscriptTool;
 use App\Services\Agent\Tools\GetUserFocusTool;
+use App\Services\Agent\Tools\GetUserInfoTool;
+use App\Services\Agent\Tools\GetUserInsightsTool;
 use App\Services\Agent\Tools\GetUserMetricsTool;
 use App\Services\Agent\Tools\GetWeeklyTaskDigestTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
@@ -154,6 +159,15 @@ class AgentToolRegistrar
         $metricsService = app(PerformanceMetricsService::class);
         $toolRegistry->register(new GetUserMetricsTool($user, $metricsService));
         $toolRegistry->register(new GetTeamMetricsTool($user, $metricsService));
+
+        // People / insights tools — promised by the AgentService system prompt
+        // (see AgentService::buildSystemPrompt — "get_user_insights for ANY question about a person").
+        // Without these registrations the LLM falls back to query_db and hallucinates roles.
+        $toolRegistry->register(new GetUserInfoTool);
+        $toolRegistry->register(new GetUserInsightsTool);
+        $toolRegistry->register(new GetTeamMembersTool);
+        $toolRegistry->register(new GetRelationshipInsightTool);
+        $toolRegistry->register(new GetInsightProfileHistoryTool);
         $toolRegistry->register(new GetMeetingAgendaTool);
         $toolRegistry->register(new GetDailyTaskDigestTool($user));
         $toolRegistry->register(new GetWeeklyTaskDigestTool($user));
