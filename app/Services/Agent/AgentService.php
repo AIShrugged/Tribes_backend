@@ -196,6 +196,8 @@ class AgentService
 
         $iteration = 0;
         $finalAnswer = null;
+        $iterationToolCounts = [];  // [iteration_number => count_of_tool_messages_added]
+        $inRunMemoryCompacted = false;
 
         Log::info('Agent loop started', [
             'user_id' => $user->id,
@@ -226,9 +228,14 @@ class AgentService
             ]);
 
             try {
-                // Observation masking: replace old tool outputs with placeholders
+                // Observation masking: keep all tool results from last N iterations,
+                // preventing hallucinations when LLM makes parallel calls in one iteration.
                 if ($iteration > 1) {
-                    $this->maskOldToolResults($messages);
+                    $this->maskOldToolResultsByIteration(
+                        $messages,
+                        $iterationToolCounts,
+                        (int) config('agent.in_run_masking.keep_recent_iterations', 2)
+                    );
                 }
 
                 // Thinking block masking: strip reasoning_details from old assistant messages
@@ -243,6 +250,17 @@ class AgentService
                     // Try to get whatever the LLM can produce with remaining context
                     break;
                 }
+
+                // In-run LLM compaction: compress accumulated facts when run is long
+                $this->tryInRunCompaction(
+                    $messages,
+                    $systemPrompt,
+                    $iterationToolCounts,
+                    $inRunMemoryCompacted,
+                    $iteration,
+                    $user,
+                    $options,
+                );
 
                 // Build extra payload for extended thinking
                 $extraPayload = null;
@@ -323,6 +341,7 @@ class AgentService
                             'tool_call_id' => $toolCallId,
                             'content' => $this->truncateToolResult($toolResult, $toolName),
                         ];
+                        $iterationToolCounts[$iteration] = ($iterationToolCounts[$iteration] ?? 0) + 1;
 
                         $this->logToolActivity($user, $options, $toolName, $toolArgs, $toolResult);
                         $this->reportProgress($options, 'after_tool');
@@ -562,8 +581,169 @@ class AgentService
     }
 
     /**
+     * Batch-aware masking: keep all tool results from the last N iterations.
+     *
+     * Uses $iterationToolCounts ([iteration => count]) to determine how many total
+     * tool messages to preserve. Count-based tracking is immune to array re-indexing
+     * that occurs in maskOldThinkingBlocks().
+     */
+    private function maskOldToolResultsByIteration(array &$messages, array $iterationToolCounts, int $keepRecentIterations = 2): void
+    {
+        if (empty($iterationToolCounts)) {
+            return;
+        }
+
+        $toolIndices = [];
+        foreach ($messages as $i => $msg) {
+            if (($msg['role'] ?? '') === 'tool') {
+                $toolIndices[] = $i;
+            }
+        }
+
+        if (empty($toolIndices)) {
+            return;
+        }
+
+        $maxIteration = max(array_keys($iterationToolCounts));
+        $keepFromIteration = max(1, $maxIteration - $keepRecentIterations + 1);
+
+        $keepCount = 0;
+        foreach ($iterationToolCounts as $iter => $count) {
+            if ($iter >= $keepFromIteration) {
+                $keepCount += $count;
+            }
+        }
+
+        $toMask = array_slice($toolIndices, 0, max(0, count($toolIndices) - $keepCount));
+
+        foreach ($toMask as $i) {
+            $originalSize = strlen($messages[$i]['content'] ?? '');
+            if ($originalSize > 200) {
+                $messages[$i]['content'] = json_encode([
+                    '_masked'        => true,
+                    '_note'          => 'Previous tool output omitted for brevity. Result was processed in earlier iteration.',
+                    '_original_size' => $originalSize,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * In-run LLM compaction: compress accumulated tool results into a compact
+     * working memory block injected into the system prompt.
+     *
+     * Triggers once when $iteration >= threshold and there are tool results to summarize.
+     * On failure, sets the flag anyway to prevent repeated attempts.
+     */
+    private function tryInRunCompaction(
+        array &$messages,
+        string &$systemPrompt,
+        array &$iterationToolCounts,
+        bool &$inRunMemoryCompacted,
+        int $iteration,
+        User $user,
+        AgentRunOptions $options,
+    ): void {
+        if ($inRunMemoryCompacted) {
+            return;
+        }
+
+        if (! config('agent.in_run_compaction.enabled', false)) {
+            return;
+        }
+
+        if ($iteration < (int) config('agent.in_run_compaction.threshold', 7)) {
+            return;
+        }
+
+        if (empty($iterationToolCounts)) {
+            return;
+        }
+
+        try {
+            $summary = $this->buildInRunCompactionSummary($messages);
+
+            if ($summary) {
+                $systemPrompt .= "\n\n<in_run_memory>\n{$summary}\n</in_run_memory>";
+                // Mask ALL old tool results now that facts are in working memory
+                $this->maskOldToolResults($messages, 0);
+                // Reset iteration tracking so batch-aware masking starts fresh
+                $iterationToolCounts = [];
+            }
+
+            $inRunMemoryCompacted = true;
+
+            $this->logToolActivity($user, $options, 'in_run_compaction_triggered', [
+                'iteration'      => $iteration,
+                'summary_length' => strlen($summary ?? ''),
+            ], ['success' => true]);
+
+            Log::info('In-run context compaction completed', [
+                'iteration'      => $iteration,
+                'summary_length' => strlen($summary ?? ''),
+            ]);
+        } catch (\Exception $e) {
+            Log::warning('In-run compaction failed, continuing without compaction', [
+                'iteration' => $iteration,
+                'error'     => $e->getMessage(),
+            ]);
+            $inRunMemoryCompacted = true;
+        }
+    }
+
+    /**
+     * Build a compact summary of accumulated tool results for in-run context compaction.
+     * Preserves entity IDs (user_id, profile_id, etc.) so the LLM can continue
+     * making tool calls without re-fetching already-retrieved data.
+     */
+    private function buildInRunCompactionSummary(array $messages): ?string
+    {
+        $toolContents = [];
+        foreach ($messages as $msg) {
+            if (($msg['role'] ?? '') === 'tool') {
+                $content = $msg['content'] ?? '';
+                // Skip already-masked results — they were processed in earlier iterations
+                $decoded = json_decode($content, true);
+                if (is_array($decoded) && ($decoded['_masked'] ?? false)) {
+                    continue;
+                }
+                $toolContents[] = $content;
+            }
+        }
+
+        if (empty($toolContents)) {
+            return null;
+        }
+
+        $compactionPrompt = "Review these tool call results from an ongoing conversation and extract a structured working memory.\n\n"
+            . "CRITICAL: Preserve ALL entity IDs exactly as they appear (user_id, profile_id, team_id, calendar_event_id, issue_id) "
+            . "— these are required for subsequent API calls.\n\n"
+            . "Format your response as JSON:\n"
+            . "{\n"
+            . "  \"people\": [{\"name\": \"...\", \"user_id\": X, \"profile_id\": X, \"role\": \"...\"}],\n"
+            . "  \"entities\": [{\"type\": \"team|meeting|issue\", \"id\": X, \"name\": \"...\", \"key_facts\": \"...\"}],\n"
+            . "  \"decisions\": [\"...\"],\n"
+            . "  \"current_task\": \"what was asked and what has been retrieved so far\"\n"
+            . "}\n\n"
+            . "Omit fields with no data. Tool results:\n\n"
+            . implode("\n---\n", $toolContents);
+
+        $model = config('agent.in_run_compaction.model', config('agent.models.extraction', 'openai/gpt-4.1-mini'));
+        $maxTokens = (int) config('agent.in_run_compaction.max_summary_tokens', 800);
+
+        $result = app(OpenRouterClient::class)->chat(
+            [['role' => 'user', 'content' => $compactionPrompt]],
+            $model,
+            $maxTokens,
+        );
+
+        return $result ?: null;
+    }
+
+    /**
      * Mask old tool results in messages to free up context space.
      * Keeps only the last $keepRecent tool results verbatim, replaces older ones with placeholders.
+     * Used by enforceTokenBudget() for emergency count-based masking.
      */
     private function maskOldToolResults(array &$messages, int $keepRecent = 2): void
     {
