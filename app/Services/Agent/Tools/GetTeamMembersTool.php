@@ -13,7 +13,7 @@ class GetTeamMembersTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Get all members of a specific team. Returns user information for all team members including their names, emails, and roles.';
+        return 'Get all members of a specific team. Returns basic user info: names, emails, and user IDs. For each member\'s role, responsibilities, or what they actually do — call get_user_insights with their profile_id.';
     }
 
     public function getParameters(): array

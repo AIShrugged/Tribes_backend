@@ -16,7 +16,7 @@ class GetUserInsightsTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Get full insight profile about a user. Returns long-term psychological profile, communication style, work patterns, strengths, development areas, goals/motivations, active short-term context, and relationships with other people. Always call get_user_info first to obtain profile_id, then pass it here.';
+        return 'Get full insight profile about a user. Includes their role and function in the team/organization, areas of responsibility, psychological profile, communication style, work patterns, strengths, development areas, goals/motivations, short-term context, and relationships with other people. Use this when asked about what a person does, their role, position, or responsibilities in the team. Always call get_user_info first to obtain profile_id, then pass it here.';
     }
 
     public function getParameters(): array
