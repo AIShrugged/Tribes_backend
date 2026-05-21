@@ -2,90 +2,49 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Issue;
-use App\Models\User;
+use App\Services\Issue\StuckIssueNudgeService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
-use Telegram\Bot\Api;
 
+/**
+ * Multi-step nudge for stuck Issues + manager escalation.
+ *
+ * Schedule: dailyAt('10:00')->withoutOverlapping(60) — see routes/console.php.
+ *
+ * --test-user redirects ALL Telegram sends to the given chat_id, while the real
+ * recipient_user_id is still recorded in issue_nudges for audit.
+ * NOTE: this is chat_id override — DIFFERENT semantics from
+ * SendWeeklyTaskDigestsCommand --test-user which is user.id filter.
+ * Chosen for backward-compat + Telegram safety memory rule.
+ *
+ * --force is REQUIRED to use --test-user in production. Without it the command
+ * exits with failure. Using --force in scripts/CI is fine — confirm() would hang
+ * in non-interactive contexts, so this is a flag-based guard.
+ *
+ * NOTE: CLI name `notify:stuck-tasks` retained for backward-compat (public API).
+ * Future: deprecate to `notify:stuck-issues` with alias.
+ */
 class NotifyStuckTasksCommand extends Command
 {
-    protected $signature = 'notify:stuck-tasks {--test-user= : Send all messages only to this Telegram user ID}';
+    protected $signature = 'notify:stuck-tasks
+        {--test-user= : Override chat_id for all sends (debug); requires --force in production}
+        {--force : Required to use --test-user in production}';
 
-    protected $description = 'Notify assignees about tasks with no activity for N days';
+    protected $description = 'Multi-step nudge + manager escalation for stuck Issues';
 
-    public function handle(): int
+    public function handle(StuckIssueNudgeService $service): int
     {
-        $threshold = (int) env('STUCK_DETECTOR_THRESHOLD_DAYS', 3);
         $testUser = $this->option('test-user');
+        $force = $this->option('force');
 
-        $users = User::with('telegramUser')
-            ->whereHas('telegramUser')
-            ->get();
+        if ($testUser && app()->environment('production') && ! $force) {
+            $this->error('--test-user in production requires --force. All TG sends would be redirected.');
 
-        foreach ($users as $user) {
-            $stuckIssues = $this->getStuckIssues($user, $threshold);
-
-            if ($stuckIssues->isEmpty()) {
-                continue;
-            }
-
-            $this->sendNotification($user, $stuckIssues, $threshold, $testUser);
+            return self::FAILURE;
         }
+
+        $stats = $service->run(testTelegramUserId: $testUser);
+        $this->info(json_encode($stats, JSON_UNESCAPED_UNICODE));
 
         return self::SUCCESS;
-    }
-
-    private function getStuckIssues(User $user, int $threshold): Collection
-    {
-        return Issue::where('assignee_id', $user->id)
-            ->whereNotIn('status', ['done', 'closed', 'cancelled'])
-            ->where('updated_at', '<', now()->subDays($threshold))
-            ->where('updated_at', '>=', now()->subDays($threshold + 1))
-            ->get();
-    }
-
-    private function sendNotification(User $user, Collection $issues, int $threshold, ?string $testUser = null): void
-    {
-        $telegramUserId = $testUser ?? $user->telegramUser->telegram_user_id;
-        $text = $this->formatMessage($issues, $threshold);
-
-        try {
-            $telegram = new Api(config('telegram.bot_token'));
-            $telegram->sendMessage([
-                'chat_id'                  => $telegramUserId,
-                'text'                     => $text,
-                'parse_mode'               => 'HTML',
-                'disable_web_page_preview' => true,
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('NotifyStuckTasks: failed to send', [
-                'user_id'          => $user->id,
-                'telegram_user_id' => $telegramUserId,
-                'error'            => $e->getMessage(),
-            ]);
-        }
-    }
-
-    private function formatMessage(Collection $issues, int $threshold): string
-    {
-        $lines = [];
-        $lines[] = "🟡 <b>Зависшие задачи — нет активности {$threshold}+ дней</b>";
-        $lines[] = '';
-
-        $frontendUrl = rtrim(config('app.frontend_url'), '/');
-
-        foreach ($issues as $issue) {
-            $title = e($issue->name);
-            $days  = (int) now()->diffInDays($issue->updated_at);
-            $url   = $frontendUrl . '/dashboard/issues/' . $issue->id;
-            $lines[] = "• <a href=\"{$url}\">{$title}</a> <i>({$days}д без изменений)</i>";
-        }
-
-        $lines[] = '';
-        $lines[] = 'Обнови статус или закрой задачу, если она уже не актуальна.';
-
-        return implode("\n", $lines);
     }
 }

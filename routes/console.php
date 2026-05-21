@@ -89,11 +89,11 @@ Schedule::command('meetings:send-morning-brief')
     ->name('meetings:send-morning-brief')
     ->withoutOverlapping();
 
-// Stuck Detector: tasks with no activity for N days
+// Multi-step nudge + manager escalation for stuck Issues (cadence 2/4/6 days)
 Schedule::command('notify:stuck-tasks')
     ->dailyAt('10:00')
     ->name('notify:stuck-tasks')
-    ->withoutOverlapping();
+    ->withoutOverlapping(60); // 60 minutes TTL — protect against stuck lock on crashed process
 
 // Idle users: closed last task in previous hour and now have 0 open
 Schedule::command('tasks:notify-idle-users')

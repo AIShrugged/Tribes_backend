@@ -4,6 +4,7 @@ namespace App\Services\Decisions;
 
 use App\Models\Decision;
 use App\Models\DecisionFollowup;
+use App\Support\Telegram\TelegramErrorSanitizer;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -52,9 +53,11 @@ class DecisionFollowupNotifier
                 'payload'           => $payload + ['text' => $text],
             ]);
         } catch (\Throwable $e) {
+            $sanitized = TelegramErrorSanitizer::sanitize($e->getMessage());
+
             Log::warning('DecisionFollowupNotifier: send failed', [
                 'decision_id' => $decision->id,
-                'error'       => $e->getMessage(),
+                'error'       => $sanitized,
             ]);
 
             return DecisionFollowup::create([
@@ -63,7 +66,7 @@ class DecisionFollowupNotifier
                 'sent_at'           => null,
                 'status'            => DecisionFollowup::STATUS_FAILED,
                 'payload'           => $payload,
-                'error'             => $e->getMessage(),
+                'error'             => $sanitized,
             ]);
         }
     }

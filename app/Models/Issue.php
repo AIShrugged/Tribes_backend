@@ -107,6 +107,11 @@ class Issue extends Model
             });
     }
 
+    public function scopeActiveForNudging(Builder $query): Builder
+    {
+        return $query->whereIn('status', ['open', 'in_progress', 'paused', 'review', 'reopen']);
+    }
+
     public function scopeForMeeting(Builder $query, int $calendarEventId): Builder
     {
         return $query
@@ -204,6 +209,21 @@ class Issue extends Model
     public function comments(): HasMany
     {
         return $this->hasMany(IssueComment::class)->whereNull('parent_id')->with(['user', 'replies.user'])->orderBy('created_at');
+    }
+
+    /**
+     * All comments including replies, without eager loads or filtering.
+     * Used by activity-tracking queries (e.g. StuckIssueNudgeService::computeLastMovement
+     * via withMax('allComments as latest_comment_at', 'created_at')).
+     */
+    public function allComments(): HasMany
+    {
+        return $this->hasMany(IssueComment::class);
+    }
+
+    public function nudges(): HasMany
+    {
+        return $this->hasMany(IssueNudge::class);
     }
 
     public static function normalizeType(?string $type): ?string
