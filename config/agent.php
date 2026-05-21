@@ -90,6 +90,41 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | In-Run Tool Result Masking
+    |--------------------------------------------------------------------------
+    |
+    | Controls how tool results are masked between iterations of the agentic
+    | loop. Batch-aware masking keeps all results from the last N iterations
+    | instead of the last N individual messages, preventing hallucinations
+    | when the LLM makes parallel tool calls within one iteration.
+    |
+    */
+
+    'in_run_masking' => [
+        'keep_recent_iterations' => 2,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | In-Run LLM Compaction
+    |--------------------------------------------------------------------------
+    |
+    | After a long run (threshold iterations), makes an extra LLM call to
+    | compress accumulated tool results into a compact working memory block
+    | injected into the system prompt. Disabled by default — enable when
+    | agents regularly exceed 7+ iterations.
+    |
+    */
+
+    'in_run_compaction' => [
+        'enabled'            => false,
+        'threshold'          => 7,
+        'model'              => 'openai/gpt-4.1-mini',
+        'max_summary_tokens' => 800,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Telegram Coalescing
     |--------------------------------------------------------------------------
     |

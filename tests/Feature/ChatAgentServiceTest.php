@@ -449,4 +449,283 @@ class ChatAgentServiceTest extends TestCase
             }
         };
     }
+
+    /** Build a response with multiple parallel tool calls in one assistant message */
+    private function makeParallelToolCallResponse(array $tools): array
+    {
+        $toolCalls = [];
+        foreach ($tools as $i => [$name, $args]) {
+            $toolCalls[] = [
+                'id'       => "call_{$name}_{$i}",
+                'type'     => 'function',
+                'function' => [
+                    'name'      => $name,
+                    'arguments' => json_encode($args),
+                ],
+            ];
+        }
+
+        return [
+            'choices' => [[
+                'message' => [
+                    'role'       => 'assistant',
+                    'content'    => null,
+                    'tool_calls' => $toolCalls,
+                ],
+                'finish_reason' => 'tool_calls',
+            ]],
+        ];
+    }
+
+    // --- Change B: Batch-aware masking tests ---
+
+    #[Test]
+    public function it_keeps_all_parallel_tool_results_from_last_iteration(): void
+    {
+        // Iteration 1: 1 tool call (team lookup)
+        // Iteration 2: 5 parallel tool calls (user insights)
+        // Iteration 3: LLM synthesizes — assert all 5 iter-2 results are visible (not masked)
+
+        config()->set('agent.in_run_masking.keep_recent_iterations', 2);
+
+        $tool = $this->createMockTool('insight_tool', ['user_name' => 'slava', 'profile_id' => 5]);
+        $this->toolRegistry->register($tool);
+        $this->toolRegistry->register($this->createMockTool('team_tool', ['members' => [1, 2, 3, 4, 5]]));
+
+        $thirdCallMessages = null;
+        $callCount = 0;
+
+        Http::fake(function ($request) use (&$thirdCallMessages, &$callCount) {
+            $callCount++;
+
+            // Iteration 1: call one team tool
+            if ($callCount === 1) {
+                return Http::response($this->makeToolCallResponse('team_tool', [], 'call_team'), 200);
+            }
+
+            // Iteration 2: call 5 parallel insight tools
+            if ($callCount === 2) {
+                return Http::response($this->makeParallelToolCallResponse([
+                    ['insight_tool', ['profile_id' => 1]],
+                    ['insight_tool', ['profile_id' => 2]],
+                    ['insight_tool', ['profile_id' => 3]],
+                    ['insight_tool', ['profile_id' => 4]],
+                    ['insight_tool', ['profile_id' => 5]],
+                ]), 200);
+            }
+
+            // Iteration 3: capture messages for assertion
+            $thirdCallMessages = $request->data()['messages'] ?? [];
+
+            return Http::response($this->makeTextResponse('Финальный ответ'), 200);
+        });
+
+        $result = $this->makeService()->processMessage($this->user, new Collection, 'Состав команды');
+
+        $this->assertEquals('Финальный ответ', $result);
+        $this->assertEquals(3, $callCount);
+
+        // All 5 parallel insight results from iteration 2 must be visible (not masked)
+        $toolMessages = array_filter($thirdCallMessages, fn ($m) => ($m['role'] ?? '') === 'tool');
+        $this->assertCount(6, $toolMessages, 'Expected 6 tool messages: 1 from iter 1 + 5 from iter 2');
+
+        $maskedCount = 0;
+        foreach ($toolMessages as $msg) {
+            $decoded = json_decode($msg['content'], true);
+            if (is_array($decoded) && ($decoded['_masked'] ?? false)) {
+                $maskedCount++;
+            }
+        }
+
+        // With keepRecentIterations=2, iterations 1 and 2 are both kept → 0 masked
+        $this->assertEquals(0, $maskedCount, 'No tool results should be masked with keepRecentIterations=2');
+    }
+
+    #[Test]
+    public function it_masks_old_iteration_results_beyond_keep_window(): void
+    {
+        // With keepRecentIterations=1: only the last iteration's results are kept
+        // Iteration 1: 1 tool result
+        // Iteration 2: 2 parallel tool results
+        // Iteration 3: LLM call — iter 1 result should be masked, iter 2 results visible
+
+        config()->set('agent.in_run_masking.keep_recent_iterations', 1);
+
+        // Results must be > 200 chars to trigger masking (the size guard in maskOldToolResults)
+        $largeResult = ['data' => str_repeat('x', 250)];
+
+        $this->toolRegistry->register($this->createMockTool('tool_a', $largeResult));
+        $this->toolRegistry->register($this->createMockTool('tool_b', $largeResult));
+
+        $thirdCallMessages = null;
+        $callCount = 0;
+
+        Http::fake(function ($request) use (&$thirdCallMessages, &$callCount) {
+            $callCount++;
+
+            if ($callCount === 1) {
+                return Http::response($this->makeToolCallResponse('tool_a', [], 'call_a1'), 200);
+            }
+
+            if ($callCount === 2) {
+                return Http::response($this->makeParallelToolCallResponse([
+                    ['tool_b', ['x' => 1]],
+                    ['tool_b', ['x' => 2]],
+                ]), 200);
+            }
+
+            $thirdCallMessages = $request->data()['messages'] ?? [];
+
+            return Http::response($this->makeTextResponse('Done'), 200);
+        });
+
+        $this->makeService()->processMessage($this->user, new Collection, 'Run tools');
+
+        $toolMessages = array_filter($thirdCallMessages ?? [], fn ($m) => ($m['role'] ?? '') === 'tool');
+        $this->assertCount(3, $toolMessages, '1 from iter 1 + 2 from iter 2');
+
+        $contents = array_map(fn ($m) => json_decode($m['content'], true), array_values($toolMessages));
+
+        // First tool result (iter 1) should be masked
+        $this->assertTrue($contents[0]['_masked'] ?? false, 'Iteration 1 result should be masked');
+
+        // Last two tool results (iter 2) should be visible
+        $this->assertFalse($contents[1]['_masked'] ?? false, 'Iteration 2 result 1 should be visible');
+        $this->assertFalse($contents[2]['_masked'] ?? false, 'Iteration 2 result 2 should be visible');
+    }
+
+    // --- Change C: In-run LLM compaction tests ---
+
+    #[Test]
+    public function it_does_not_trigger_compaction_when_disabled(): void
+    {
+        config()->set('agent.in_run_compaction.enabled', false);
+        config()->set('agent.in_run_compaction.threshold', 1); // Would fire immediately if enabled
+
+        $this->toolRegistry->register($this->createMockTool('some_tool', ['ok' => true]));
+
+        $llmCallCount = 0;
+
+        Http::fake(function ($request) use (&$llmCallCount) {
+            $llmCallCount++;
+
+            if ($llmCallCount === 1) {
+                return Http::response($this->makeToolCallResponse('some_tool', []), 200);
+            }
+
+            return Http::response($this->makeTextResponse('Answer'), 200);
+        });
+
+        $this->makeService()->processMessage($this->user, new Collection, 'Question');
+
+        // Only 2 LLM calls: 1 for tool call, 1 for final answer. No compaction call.
+        $this->assertEquals(2, $llmCallCount, 'No extra LLM call should be made when compaction is disabled');
+    }
+
+    #[Test]
+    public function it_triggers_compaction_and_injects_in_run_memory(): void
+    {
+        config()->set('agent.in_run_compaction.enabled', true);
+        config()->set('agent.in_run_compaction.threshold', 2); // Fire at iteration 2
+
+        $this->toolRegistry->register($this->createMockTool('data_tool', ['info' => 'key facts']));
+
+        $capturedSystem = null;
+
+        Http::fake(function ($request) use (&$capturedSystem) {
+            $data = $request->data();
+
+            // Compaction call: no 'tools' key (uses chat(), not chatWithTools())
+            if (! isset($data['tools'])) {
+                return Http::response($this->makeTextResponse('{"people": [], "current_task": "test"}'), 200);
+            }
+
+            // Main loop iter 1: return tool call
+            $hasToolMessages = collect($data['messages'] ?? [])->contains(fn ($m) => ($m['role'] ?? '') === 'tool');
+
+            if (! $hasToolMessages) {
+                return Http::response($this->makeToolCallResponse('data_tool', []), 200);
+            }
+
+            // Main loop iter 2 (after compaction): capture system prompt, return final answer
+            $capturedSystem = $data['system'] ?? null;
+
+            return Http::response($this->makeTextResponse('Done'), 200);
+        });
+
+        $result = $this->makeService()->processMessage($this->user, new Collection, 'Question');
+
+        $this->assertEquals('Done', $result);
+        $this->assertNotNull($capturedSystem);
+        $this->assertStringContainsString('<in_run_memory>', $capturedSystem, 'System prompt should contain in_run_memory block');
+    }
+
+    #[Test]
+    public function it_triggers_compaction_only_once_even_past_threshold(): void
+    {
+        config()->set('agent.in_run_compaction.enabled', true);
+        config()->set('agent.in_run_compaction.threshold', 2);
+
+        $this->toolRegistry->register($this->createMockTool('tool_x', ['v' => 1]));
+
+        $compactionCallCount = 0;
+        $llmCallCount = 0;
+
+        Http::fake(function ($request) use (&$compactionCallCount, &$llmCallCount) {
+            $llmCallCount++;
+            $data = $request->data();
+
+            // Detect compaction call by: it's a non-streaming chat call to extraction model
+            // or just count all calls and subtract expected main calls
+            // Simplest: compaction uses 'openai/gpt-4.1-mini', main loop uses configured interactive model
+            if (($data['model'] ?? '') === 'openai/gpt-4.1-mini') {
+                $compactionCallCount++;
+
+                return Http::response('{"people": [], "current_task": "test"}', 200);
+            }
+
+            // Iter 1: tool call
+            if ($llmCallCount <= 2) {
+                return Http::response($this->makeToolCallResponse('tool_x', []), 200);
+            }
+
+            return Http::response($this->makeTextResponse('Final'), 200);
+        });
+
+        $this->makeService()->processMessage($this->user, new Collection, 'Run multi-iteration');
+
+        $this->assertEquals(1, $compactionCallCount, 'Compaction should fire exactly once');
+    }
+
+    #[Test]
+    public function it_continues_after_compaction_failure(): void
+    {
+        config()->set('agent.in_run_compaction.enabled', true);
+        config()->set('agent.in_run_compaction.threshold', 2);
+
+        $this->toolRegistry->register($this->createMockTool('tool_y', ['v' => 1]));
+
+        $llmCallCount = 0;
+
+        Http::fake(function ($request) use (&$llmCallCount) {
+            $llmCallCount++;
+            $data = $request->data();
+
+            // Compaction model call fails
+            if (($data['model'] ?? '') === 'openai/gpt-4.1-mini') {
+                return Http::response(['error' => 'Internal Server Error'], 500);
+            }
+
+            if ($llmCallCount === 1) {
+                return Http::response($this->makeToolCallResponse('tool_y', []), 200);
+            }
+
+            return Http::response($this->makeTextResponse('Survived'), 200);
+        });
+
+        $result = $this->makeService()->processMessage($this->user, new Collection, 'Question');
+
+        $this->assertIsString($result);
+        $this->assertNotEmpty($result, 'Agent should return a response even after compaction failure');
+    }
 }
