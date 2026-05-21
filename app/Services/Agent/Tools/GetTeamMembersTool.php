@@ -70,14 +70,23 @@ class GetTeamMembersTool extends AbstractAgentTool
             ];
         }
 
+        $memberIds = $team->users->pluck('id');
+        $profileMap = \App\Models\Profile::whereIn('user_id', $memberIds)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('user_id')
+            ->map(fn ($g) => $g->first()->id);
+
         $members = $team->users->map(fn ($user) => [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'profile_id' => $profileMap[$user->id] ?? null,
         ])->toArray();
 
         return [
             'success' => true,
+            '_hint' => 'profile_id is available for each member. To get roles, responsibilities, or what each person does — call get_user_insights(profile_id) for each member.',
             'team' => [
                 'id' => $team->id,
                 'name' => $team->name,

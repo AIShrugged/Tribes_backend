@@ -553,6 +553,7 @@ class QueryTribesDataTool extends AbstractAgentTool
 
         return [
             'success' => true,
+            '_hint' => 'profile_id is available for each member. To get roles, responsibilities, or what each person does — call get_user_insights(profile_id) for each member.',
             'team' => [
                 'id' => $team->id,
                 'name' => $team->name,
