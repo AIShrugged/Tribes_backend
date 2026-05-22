@@ -319,6 +319,9 @@ Route::group(['prefix' => 'v1'], function () {
         Route::delete('agent-profiles/{agentProfile}', [AgentProfileController::class, 'destroy']);
         Route::post('agent-profiles/{agentProfile}/validate-payload', [AgentProfileController::class, 'validatePayload']);
         Route::get('agent-profiles/{agentProfile}/memories', [AgentMemoryController::class, 'profileIndex']);
+        Route::get('agent-profiles/{agentProfile}/tools', [AgentToolController::class, 'profileIndex']);
+        Route::get('agent-profiles/{agentProfile}/prompt-versions', [AgentProfileController::class, 'promptVersions']);
+        Route::post('agent-profiles/{agentProfile}/prompt-versions/{version}/restore', [AgentProfileController::class, 'restorePromptVersion']);
 
         // Agent tasks
         Route::get('agent-tasks', [AgentTaskController::class, 'index']);

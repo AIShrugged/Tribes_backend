@@ -4,9 +4,11 @@ namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AgentProfileRequest;
+use App\Http\Resources\API\v1\AgentProfilePromptVersionResource;
 use App\Http\Resources\API\v1\AgentProfileResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\AgentProfile;
+use App\Models\AgentProfilePromptVersion;
 use App\Models\User;
 use App\Exceptions\AppException;
 use App\Services\JsonSchemaValidationService;
@@ -16,6 +18,7 @@ use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\PathParameter;
 use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
+use Illuminate\Support\Facades\DB;
 
 #[Group('Agent Profiles', 'Agent profile catalog, execution defaults, and frontend-driven JSON schemas.')]
 class AgentProfileController extends Controller
@@ -93,7 +96,7 @@ class AgentProfileController extends Controller
         return ApiResponse::success(data: AgentProfileResource::make($agentProfile));
     }
 
-    #[Endpoint(title: 'Update agent profile', description: 'Updates execution defaults, JSON schemas, or metadata for an existing profile.')]
+    #[Endpoint(title: 'Update agent profile', description: 'Updates execution defaults, JSON schemas, or metadata for an existing profile. Each change to system_prompt snapshots the previous value into prompt version history. The allowed_tools field is read-only and cannot be changed via this endpoint.')]
     #[PathParameter('agentProfile', 'Agent profile ID.', required: true, type: 'integer', example: 1)]
     #[BodyParameter('key', 'Stable profile key.', required: false, type: 'string', example: 'github-reviewer')]
     #[BodyParameter('name', 'Human-readable profile name.', required: false, type: 'string', example: 'GitHub Reviewer')]
@@ -103,7 +106,6 @@ class AgentProfileController extends Controller
     #[BodyParameter('task_payload_schema', 'JSON Schema used to validate task payloads.', required: false, type: 'object', example: ['type' => 'object', 'required' => ['provider', 'owner', 'repo']])]
     #[BodyParameter('execution_mode', 'Execution mode for tasks using this profile.', required: false, type: 'string', example: 'isolated')]
     #[BodyParameter('sandbox_profile', 'Sandbox image/profile identifier.', required: false, type: 'string', example: 'python_basic')]
-    #[BodyParameter('allowed_tools', 'Host tools that isolated runs may invoke.', required: false, type: 'array', example: ['get_user_insights', 'search_memory'])]
     #[BodyParameter('allowed_outbound_hosts', 'Outbound hostname allowlist for sandbox networking.', required: false, type: 'array', example: ['api.github.com', 'github.com', '*.githubusercontent.com'])]
     #[BodyParameter('default_model', 'Default LLM model for this profile.', required: false, type: 'string', example: 'claude-sonnet-4-20250514')]
     #[BodyParameter('enabled', 'Whether the profile is active.', required: false, type: 'bool', example: true)]
@@ -130,9 +132,22 @@ class AgentProfileController extends Controller
             $schemaValidation->assertValidSchema($data['task_payload_schema'], 'task_payload_schema');
         }
 
-        $agentProfile->update($data);
+        $profile = DB::transaction(function () use ($agentProfile, $data) {
+            if (array_key_exists('system_prompt', $data) && $data['system_prompt'] !== $agentProfile->system_prompt) {
+                $agentProfile->promptVersions()->create([
+                    'version'       => $agentProfile->version,
+                    'system_prompt' => $agentProfile->system_prompt,
+                    'created_at'    => now(),
+                ]);
+                $data['version'] = $agentProfile->version + 1;
+            }
 
-        return ApiResponse::success(data: AgentProfileResource::make($agentProfile->refresh()));
+            $agentProfile->update($data);
+
+            return $agentProfile->fresh();
+        });
+
+        return ApiResponse::success(data: AgentProfileResource::make($profile));
     }
 
     #[Endpoint(title: 'Delete agent profile', description: 'Deletes an agent profile.')]
@@ -171,6 +186,65 @@ class AgentProfileController extends Controller
         return ApiResponse::success(data: [
             'valid' => true,
         ]);
+    }
+
+    #[Endpoint(title: 'List prompt version history', description: 'Returns all historical system_prompt snapshots for this profile, newest first. Each entry is the state that was replaced by a later save.')]
+    #[PathParameter('agentProfile', 'Agent profile ID.', required: true, type: 'integer', example: 1)]
+    #[Response(
+        200,
+        'Version history envelope.',
+        type: 'array{success: bool, data: array<int, \App\Http\Resources\API\v1\AgentProfilePromptVersionResource>, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    public function promptVersions(AgentProfile $agentProfile): ApiResponse
+    {
+        $this->assertUserCanManageProfiles(request()->user());
+
+        $versions = $agentProfile->promptVersions()
+            ->orderByDesc('version')
+            ->get();
+
+        return ApiResponse::success(
+            data: AgentProfilePromptVersionResource::collection($versions)->resolve(),
+        );
+    }
+
+    #[Endpoint(title: 'Restore prompt version', description: 'Restores a previous system_prompt version. Snapshots the current state before overwriting, then increments the profile version counter.')]
+    #[PathParameter('agentProfile', 'Agent profile ID.', required: true, type: 'integer', example: 1)]
+    #[PathParameter('version', 'Version number to restore.', required: true, type: 'integer', example: 2)]
+    #[Response(
+        200,
+        'Updated profile envelope after restore.',
+        type: 'array{success: bool, data: \App\Http\Resources\API\v1\AgentProfileResource, message: string, status: int, meta: array<string, mixed>}'
+    )]
+    public function restorePromptVersion(AgentProfile $agentProfile, int $version): ApiResponse
+    {
+        $this->assertUserCanManageProfiles(request()->user());
+
+        $historic = AgentProfilePromptVersion::query()
+            ->where('agent_profile_id', $agentProfile->id)
+            ->where('version', $version)
+            ->first();
+
+        if (! $historic) {
+            return ApiResponse::notFound();
+        }
+
+        $profile = DB::transaction(function () use ($agentProfile, $historic) {
+            $agentProfile->promptVersions()->create([
+                'version'       => $agentProfile->version,
+                'system_prompt' => $agentProfile->system_prompt,
+                'created_at'    => now(),
+            ]);
+
+            $agentProfile->update([
+                'system_prompt' => $historic->system_prompt,
+                'version'       => $agentProfile->version + 1,
+            ]);
+
+            return $agentProfile->fresh();
+        });
+
+        return ApiResponse::success(data: AgentProfileResource::make($profile));
     }
 
     private function assertUserCanManageProfiles(User $user): void

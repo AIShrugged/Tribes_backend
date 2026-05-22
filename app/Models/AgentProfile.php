@@ -20,6 +20,7 @@ class AgentProfile extends Model
             'task_payload_schema' => 'array',
             'metadata' => 'array',
             'execution_mode' => AgentTaskExecutionMode::class,
+            'version' => 'integer',
         ];
     }
 
@@ -31,5 +32,10 @@ class AgentProfile extends Model
     public function memories(): HasMany
     {
         return $this->hasMany(AgentMemory::class);
+    }
+
+    public function promptVersions(): HasMany
+    {
+        return $this->hasMany(AgentProfilePromptVersion::class);
     }
 }

@@ -24,6 +24,7 @@ class AgentProfileResource extends JsonResource
             'default_model' => $this->default_model,
             'enabled' => $this->enabled,
             'metadata' => $this->metadata,
+            'version' => $this->version,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

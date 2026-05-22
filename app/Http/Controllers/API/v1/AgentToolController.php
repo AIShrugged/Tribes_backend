@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\v1;
 use App\Exceptions\AppException;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
+use App\Models\AgentProfile;
 use App\Services\Agent\AgentToolRegistrar;
 use App\Services\Agent\Tools\ToolRegistry;
 use Illuminate\Http\Request;
@@ -37,6 +38,44 @@ class AgentToolController extends Controller
                 'name' => $tool->getName(),
                 'description' => $tool->getDescription(),
                 'parameters' => $tool->getParameters(),
+            ])
+            ->sortBy('name')
+            ->values()
+            ->all();
+
+        return ApiResponse::success(data: $tools);
+    }
+
+    public function profileIndex(Request $request, AgentProfile $agentProfile): ApiResponse
+    {
+        $isMemberOfAnyOrganization = $request->user()
+            ->organizations()
+            ->exists();
+
+        if (! $isMemberOfAnyOrganization) {
+            throw new AppException(
+                'Only organization members can manage agent tools.',
+                'AGENT_TOOL_MANAGER_REQUIRED',
+                403,
+            );
+        }
+
+        $registry = new ToolRegistry;
+        $this->toolRegistrar->registerDefaults($registry, $request->user(), 'web');
+
+        $allowedNames = $agentProfile->allowed_tools ?? [];
+
+        $tools = collect($registry->getAll())
+            ->when(
+                ! empty($allowedNames),
+                fn ($col) => $col->filter(
+                    fn ($tool) => in_array($tool->getName(), $allowedNames, true)
+                )
+            )
+            ->map(fn ($tool): array => [
+                'name'        => $tool->getName(),
+                'description' => $tool->getDescription(),
+                'parameters'  => $tool->getParameters(),
             ])
             ->sortBy('name')
             ->values()
