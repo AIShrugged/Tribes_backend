@@ -125,7 +125,7 @@ class OpenRouterClient
     public function chatWithTools(
         array $messages,
         ?array $tools = null,
-        string|array $model = 'anthropic/claude-3.5-sonnet',
+        string|array $model = 'anthropic/claude-sonnet-4-5',
         int $maxTokens = 4096,
         ?string $systemPrompt = null,
         ?array $extraPayload = null,

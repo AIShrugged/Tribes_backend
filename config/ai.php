@@ -8,7 +8,7 @@ return [
                 'followup'        => 'google/gemini-3.1-pro-preview',
                 'scheme'          => 'google/gemini-3.1-pro-preview',
                 'wanda'           => 'google/gemini-3.1-pro-preview',
-                'telegram_agent'  => 'anthropic/claude-3.5-sonnet',
+                'telegram_agent'  => 'anthropic/claude-sonnet-4-5',
                 'meeting_summary' => 'google/gemini-3.1-pro-preview',
                 'meeting_review'  => 'google/gemini-3.1-pro-preview',
                 'meeting_tasks'   => 'google/gemini-3.1-pro-preview',
@@ -21,7 +21,9 @@ return [
                 'onboarding'      => env('AI_MODEL_ONBOARDING', 'google/gemini-3.1-pro-preview'),
             ],
             'fallback_models' => [
-                'anthropic/claude-3.5-sonnet',
+                // anthropic/claude-3.5-sonnet was deprecated on OpenRouter (404 No endpoints found),
+                // which silently broke the fallback chain whenever gemini-3.1-pro-preview truncated.
+                'anthropic/claude-sonnet-4-5',
                 'openai/gpt-4o-mini',
             ],
         ]
