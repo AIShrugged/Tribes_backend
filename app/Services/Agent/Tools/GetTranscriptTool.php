@@ -12,7 +12,7 @@ class GetTranscriptTool extends AbstractAgentTool
     /** Max transcript chars before delegating to sub-agent summarization */
     private const SUB_AGENT_THRESHOLD = 10000;
 
-    private const SUB_AGENT_MODEL = 'anthropic/claude-3.5-sonnet';
+    private const SUB_AGENT_MODEL = 'anthropic/claude-sonnet-4-5';
 
     public function getName(): string
     {

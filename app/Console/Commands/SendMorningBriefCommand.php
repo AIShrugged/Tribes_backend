@@ -74,7 +74,11 @@ class SendMorningBriefCommand extends Command
                 $isFirst = ! $sentAny;
                 $briefMeetings = $isFirst ? $meetings : collect();
                 $briefGroups = $isFirst ? $groups : ['focused' => collect(), 'today' => collect(), 'current' => collect()];
-                $hasContent = $digest !== null || ($isFirst && (! $meetings->isEmpty() || $hasIssues));
+                // Only count digest as content if it actually has sections that appendDigestSection renders.
+                // A digest with only `meetings_advice` (rendered inline with meetings, not in digest section)
+                // produces an empty header-only brief for non-first orgs.
+                $digestRenders = $digest !== null && $this->digestHasRenderableContent($digest);
+                $hasContent = $digestRenders || ($isFirst && (! $meetings->isEmpty() || $hasIssues));
 
                 if (! $hasContent) {
                     continue;
@@ -354,6 +358,25 @@ class SendMorningBriefCommand extends Command
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Mirror of appendDigestSection's emptiness check — keep them in sync.
+     * Used by handle() to decide whether a per-org brief is worth sending at all
+     * (a digest with only `meetings_advice` renders nothing in the digest section
+     * for non-first orgs and would produce a header-only brief).
+     */
+    private function digestHasRenderableContent(array $digest): bool
+    {
+        $progress = (array) ($digest['progress'] ?? []);
+        $problems = (array) ($digest['problems'] ?? []);
+        $priorities = (array) ($digest['priorities'] ?? []);
+        $managerExtras = $digest['manager_extras'] ?? null;
+
+        return ! empty($progress)
+            || ! empty($problems)
+            || ! empty($priorities)
+            || ! empty($managerExtras);
     }
 
     private function appendDigestSection(array &$lines, array $digest): void
