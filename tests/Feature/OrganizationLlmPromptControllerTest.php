@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\LlmPrompt;
 use App\Models\Organization;
 use App\Models\User;
+use App\Services\LlmPromptDefaultRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -81,15 +82,16 @@ class OrganizationLlmPromptControllerTest extends TestCase
     {
         [$manager, $organization] = $this->makeMember('manager');
         LlmPrompt::query()->where('organization_id', $organization->id)->delete();
+        $defaultCount = count(app(LlmPromptDefaultRegistry::class)->all());
 
         $this->actingAs($manager)
             ->postJson("/api/v1/organizations/{$organization->id}/llm-prompts/seed")
             ->assertOk()
-            ->assertJsonPath('data.created', 31)
+            ->assertJsonPath('data.created', $defaultCount)
             ->assertJsonPath('data.updated', 0)
             ->assertJsonPath('data.skipped', 0);
 
-        $this->assertSame(31, LlmPrompt::query()->where('organization_id', $organization->id)->count());
+        $this->assertSame($defaultCount, LlmPrompt::query()->where('organization_id', $organization->id)->count());
     }
 
     #[Test]

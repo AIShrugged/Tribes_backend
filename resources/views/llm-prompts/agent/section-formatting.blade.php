@@ -1,0 +1,3 @@
+<formatting>
+{rules}
+</formatting>

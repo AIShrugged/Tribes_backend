@@ -116,8 +116,8 @@ class MeetingSeriesStateService
         return app(LlmPromptService::class)->renderView(
             slug: 'agenda.meeting_series_state.user',
             organizationId: $event->source?->organization_id,
-            fallbackView: 'llm-prompts.shared.prompt-body',
-            variables: ['prompt_body' => implode("\n", $parts)],
+            fallbackView: 'llm-prompts.agenda.meeting-series-state-user',
+            variables: ['sections' => implode("\n", $parts)],
             name: 'Meeting series state prompt',
         );
     }

@@ -433,8 +433,8 @@ class AgendaService
         return app(LlmPromptService::class)->renderView(
             slug: 'agenda.general.user',
             organizationId: $event->source?->organization_id,
-            fallbackView: 'llm-prompts.shared.prompt-body',
-            variables: ['prompt_body' => implode("\n", $parts)],
+            fallbackView: 'llm-prompts.agenda.general-user',
+            variables: ['sections' => implode("\n", $parts)],
             name: 'General agenda prompt',
         );
     }
@@ -553,8 +553,8 @@ class AgendaService
         return app(LlmPromptService::class)->renderView(
             slug: 'agenda.personal.user',
             organizationId: $event->source?->organization_id,
-            fallbackView: 'llm-prompts.shared.prompt-body',
-            variables: ['prompt_body' => implode("\n", $parts)],
+            fallbackView: 'llm-prompts.agenda.personal-user',
+            variables: ['sections' => implode("\n", $parts)],
             name: 'Personal agenda prompt',
         );
     }

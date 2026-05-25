@@ -5,12 +5,15 @@ namespace App\Services\Channel\Delivery;
 use App\Enums\ConversationChannelType;
 use App\Models\ChannelMessage;
 use App\Services\Channel\ChannelBus;
+use App\Services\Telegram\TelegramMessageSplitter;
 use Telegram\Bot\Api;
+use Telegram\Bot\Objects\Message as TelegramMessage;
 
 class TelegramDelivery implements ChannelDeliveryInterface
 {
     public function __construct(
         private readonly ChannelBus $channelBus,
+        private readonly ?TelegramMessageSplitter $splitter = null,
     ) {}
 
     public function channelType(): ConversationChannelType
@@ -21,32 +24,40 @@ class TelegramDelivery implements ChannelDeliveryInterface
     public function deliver(ChannelDeliveryRequest $request): ?ChannelMessage
     {
         $telegram = new Api(config('telegram.bot_token'));
-        $params = [
+        $baseParams = [
             'chat_id' => $request->conversation->telegram_chat_id,
-            'text' => $request->content,
             'parse_mode' => 'Markdown',
         ];
 
         if ($request->conversation->message_thread_id) {
-            $params['message_thread_id'] = $request->conversation->message_thread_id;
+            $baseParams['message_thread_id'] = $request->conversation->message_thread_id;
         }
 
-        try {
-            $sent = $telegram->sendMessage($params);
-        } catch (\Throwable $exception) {
-            if (! $this->shouldRetryWithoutFormatting($exception)) {
-                throw $exception;
-            }
+        $chunks = ($this->splitter ?? app(TelegramMessageSplitter::class))->split($request->content);
+        $total = count($chunks);
+        $sentMessages = [];
 
-            unset($params['parse_mode']);
-            $sent = $telegram->sendMessage($params);
+        foreach ($chunks as $index => $chunk) {
+            $text = $total > 1
+                ? '(part '.($index + 1).'/'.$total.')'."\n\n".$chunk
+                : $chunk;
+
+            $sentMessages[] = $this->sendChunk($telegram, $baseParams, $text);
         }
 
         $attributes = $request->attributes;
-        $telegramMessageId = $sent?->getMessageId();
-        if ($telegramMessageId !== null) {
+        $telegramMessageIds = array_values(array_filter(
+            array_map(
+                static fn (?TelegramMessage $message): ?int => $message?->getMessageId(),
+                $sentMessages,
+            ),
+            static fn (?int $messageId): bool => $messageId !== null,
+        ));
+
+        if ($telegramMessageIds !== []) {
             $metadata = (array) ($attributes['metadata'] ?? []);
-            $metadata['telegram_message_id'] = (int) $telegramMessageId;
+            $metadata['telegram_message_id'] = $telegramMessageIds[0];
+            $metadata['telegram_message_ids'] = $telegramMessageIds;
             $attributes['metadata'] = $metadata;
         }
 
@@ -58,6 +69,26 @@ class TelegramDelivery implements ChannelDeliveryInterface
             $request->content,
             $attributes,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $baseParams
+     */
+    private function sendChunk(Api $telegram, array $baseParams, string $text): ?TelegramMessage
+    {
+        $params = $baseParams + ['text' => $text];
+
+        try {
+            return $telegram->sendMessage($params);
+        } catch (\Throwable $exception) {
+            if (! $this->shouldRetryWithoutFormatting($exception)) {
+                throw $exception;
+            }
+
+            unset($params['parse_mode']);
+
+            return $telegram->sendMessage($params);
+        }
     }
 
     private function shouldRetryWithoutFormatting(\Throwable $exception): bool

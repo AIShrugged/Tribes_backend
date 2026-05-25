@@ -31,11 +31,11 @@ class MethodologySchemeGenerator
                 fallbackView: match ($version) {
                     '1' => 'llm-prompts.methodology.schema-user-v1',
                     '2' => 'llm-prompts.methodology.schema-user-v2',
-                    default => 'llm-prompts.shared.prompt-body',
+                    default => 'llm-prompts.methodology.schema-user-custom',
                 },
                 variables: [
                     'methodology' => $methodology,
-                    'prompt_body' => $prompt->make($methodology),
+                    'version_prompt' => $prompt->make($methodology),
                 ],
                 name: 'Methodology schema user prompt '.$version,
             ))

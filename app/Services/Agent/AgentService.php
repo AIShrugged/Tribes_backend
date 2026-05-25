@@ -1098,37 +1098,36 @@ class AgentService
         ?int $organizationId = null,
     ): string {
         $sections = array_filter([
-            $this->promptRoleSection(),
+            $this->promptRoleSection($organizationId),
             $this->promptContextSection($user, $profileId, $organizationId),
             $memoryContext ? "<memory>\n{$memoryContext}\n</memory>" : null,
             $compactedHistorySummary ? "<earlier_conversation>\n{$compactedHistorySummary}\n</earlier_conversation>" : null,
             $systemPromptExtension ? "<task_context>\n{$systemPromptExtension}\n</task_context>" : null,
-            $this->promptThinkFirstSection(),
-            $this->promptIdRulesSection($user->name ?? 'Unknown', $user->id, $profileId),
-            $this->promptDatabaseSchemaSection(),
-            $this->promptToolGuidanceSection(),
-            $this->promptProactiveModeSection(),
-            $this->promptFormattingSection($mode),
+            $this->promptThinkFirstSection($organizationId),
+            $this->promptIdRulesSection($user->name ?? 'Unknown', $user->id, $profileId, $organizationId),
+            $this->promptDatabaseSchemaSection($organizationId),
+            $this->promptToolGuidanceSection($organizationId),
+            $this->promptProactiveModeSection($organizationId),
+            $this->promptFormattingSection($mode, $organizationId),
         ]);
 
         return app(LlmPromptService::class)->renderView(
             slug: 'agent.system',
             organizationId: $organizationId,
-            fallbackView: 'llm-prompts.shared.prompt-body',
-            variables: ['prompt_body' => implode("\n\n", $sections)],
+            fallbackView: 'llm-prompts.agent.system',
+            variables: ['sections' => implode("\n\n", $sections)],
             name: 'Agent system prompt',
         );
     }
 
-    private function promptRoleSection(): string
+    private function promptRoleSection(?int $organizationId): string
     {
-        return <<<'XML'
-<role>
-You are Wanda — an AI chief of staff for engineering teams. You have full access to the team's meetings, tasks, and people data via tools. Analyze data and give the team actionable insights to make good decisions fast.
-
-Respond in the user's language. Default to Russian for this team.
-</role>
-XML;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.role',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-role',
+            name: 'Agent role section',
+        );
     }
 
     private function promptContextSection(User $user, ?int $profileId, ?int $organizationId): string
@@ -1140,7 +1139,19 @@ XML;
         $userId = $user->id;
         $profileHint = $profileId ? ", profile_id={$profileId}" : '';
 
-        $contextBlock = "<context>\nToday: {$currentDate}, {$currentTime} MSK\nCurrent user: {$userName} (user_id={$userId}{$profileHint})\n\nWhen the user says \"me\", \"я\", \"мне\", \"мой профиль\" — they refer to {$userName} (user_id={$userId}{$profileHint}).\nDo NOT call any tool to look up the current user — IDs are already here.\n</context>";
+        $contextBlock = app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.context',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-context',
+            variables: [
+                'current_date' => $currentDate,
+                'current_time' => $currentTime,
+                'user_name' => $userName,
+                'user_id' => $userId,
+                'profile_hint' => $profileHint,
+            ],
+            name: 'Agent context section',
+        );
 
         if (! $organizationId) {
             return $contextBlock;
@@ -1169,153 +1180,103 @@ XML;
             $u->email ?? '—',
         ))->join("\n");
 
-        $orgName = $org->name;
-        $rosterBlock = "<team_roster org=\"{$orgName}\">\nUse ONLY these IDs. Match names case-insensitively (\"Борис\" = Boris, \"Слава\" = slava). Do NOT call query_db for users already listed here.\n\n| Name | user_id | profile_id | email |\n|------|---------|------------|-------|\n{$rows}\n</team_roster>";
+        $rosterBlock = app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.team_roster',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-team-roster',
+            variables: [
+                'organization_name' => $org->name,
+                'rows' => $rows,
+            ],
+            name: 'Agent team roster section',
+        );
 
         $links = $org->links()->pluck('url');
         $linksBlock = $links->isNotEmpty()
-            ? "<org_links>\nOrganization linked resources (call get_organization_context to read their content):\n"
-                . $links->map(fn ($url) => "- {$url}")->join("\n")
-                . "\n</org_links>"
+            ? app(LlmPromptService::class)->renderView(
+                slug: 'agent.section.org_links',
+                organizationId: $organizationId,
+                fallbackView: 'llm-prompts.agent.section-org-links',
+                variables: ['links' => $links->map(fn ($url) => "- {$url}")->join("\n")],
+                name: 'Agent organization links section',
+            )
             : null;
 
         return implode("\n\n", array_filter([$contextBlock, $rosterBlock, $linksBlock]));
     }
 
-    private function promptThinkFirstSection(): string
+    private function promptThinkFirstSection(?int $organizationId): string
     {
-        return <<<'XML'
-<think_first>
-Before calling any tool, write a brief plan:
-1. What does the user actually want? (one sentence)
-2. What data do I need? Do I already have it from this conversation or <team_roster>?
-3. Which tools in what order? Can I combine calls?
-4. Every fact in my answer — numbers, dates, counts, metrics, roles, responsibilities, what someone does, their position — MUST come from a tool result in THIS conversation. If I don't have the data — say so and offer to look it up. NEVER invent or infer roles, titles, or responsibilities.
-
-Never call a tool "just in case". Stop after you have enough data to answer.
-</think_first>
-XML;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.think_first',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-think-first',
+            name: 'Agent think first section',
+        );
     }
 
-    private function promptIdRulesSection(string $userName, int $userId, ?int $profileId): string
+    private function promptIdRulesSection(string $userName, int $userId, ?int $profileId, ?int $organizationId): string
     {
         $profileRef = $profileId ? "profile_id={$profileId}" : 'no profile yet';
 
-        return <<<XML
-<id_rules>
-Use only IDs returned by tools in THIS conversation. Never invent or guess IDs.
-profile_id ≠ user_id. Use profile_id from meeting_summary.participants directly — no intermediate user lookup needed.
-For {$userName}: user_id={$userId}, {$profileRef} — already known, no tool call needed.
-If you don't have an ID — say so and offer to look it up. Never substitute a plausible-looking number.
-</id_rules>
-XML;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.id_rules',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-id-rules',
+            variables: [
+                'user_name' => $userName,
+                'user_id' => $userId,
+                'profile_ref' => $profileRef,
+            ],
+            name: 'Agent ID rules section',
+        );
     }
 
-    private function promptDatabaseSchemaSection(): string
+    private function promptDatabaseSchemaSection(?int $organizationId): string
     {
         $dbSchema = $this->databaseSchemaService->getSchemaForAgent();
 
-        return <<<SQL
-<db_schema>
-Available tables for execute_sql_query:
-
-```
-{$dbSchema}
-```
-
-Use execute_sql_query as universal fallback when no specialized tool fits:
-- Read-only SELECT only; ILIKE for case-insensitive text search; JOINs for multi-table queries
-- Include `__ACCESSIBLE_USER_IDS__` in WHERE for: followups, sources, calendar_events
-- Meeting action items are in issues, linked to calendar_events via sourceable_type/sourceable_id
-</db_schema>
-SQL;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.db_schema',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-db-schema',
+            variables: ['db_schema' => $dbSchema],
+            name: 'Agent database schema section',
+        );
     }
 
-    private function promptToolGuidanceSection(): string
+    private function promptToolGuidanceSection(?int $organizationId): string
     {
-        return <<<'XML'
-<tool_guidance>
-## Meetings
-- query_tribes_data(entity="meeting_summary") — AI summary, decisions, discussion. Use first for any meeting question. Sufficient alone unless user explicitly asks about tasks.
-- query_tribes_data(entity="tasks", filters:{calendar_event_id:X}) — action items. Only if user asks about tasks/assignments.
-- query_tribes_data(entity="followups") — AI evaluation reports per participant.
-- create_entity(entity="followup", data:{calendar_event_id:X}) — regenerate followup report.
-- get_transcript — LAST RESORT. Explain to user why needed and ask permission first. Use only for verbatim quotes or when summary is clearly insufficient.
-
-## People
-- If the user is in <team_roster> — use their user_id directly. Do NOT call query_db(entity="users") for them.
-- Match names case-insensitively across scripts: "Борис" = Boris, "Слава" = slava.
-- If a name is NOT in roster and you resolve it via query_db → save to memory: update_entity(entity="memory", key="alias_{name}", value="user_id=X (Name, email)")
-- get_user_insights(profile_id) — use for ANY question about a person: role, function, position, what they do, what they're responsible for, communication style, strengths, work patterns. NEVER guess or infer a person's role — always call this tool.
-- query_tribes_data(entity="extracted_facts") — transcript-specific facts. Requires profile_id.
-- query_tribes_data(entity="insight_history") — how a person changed over time. Requires profile_id.
-- RULE: If team members' roles are not in <team_roster> or previous tool results — call get_user_insights for each person. Do not say "role is not filled in" without first checking insights.
-
-## Agent Memory
-- query_tribes_data(entity="agent_memories") — prior agent findings (repo architecture, analysis). Filter by repo when user mentions one.
-
-## Memory Updates
-When user shares important info → call update_entity(entity="memory") with COMPLETE text (old + new). Write as notes to yourself. Confirm briefly what you saved.
-
-## Focus
-- set_user_focus — explicit priority statement only. Convert natural-language dates to YYYY-MM-DD. Do NOT infer from task patterns.
-- clear_user_focus — only when user explicitly asks to clear.
-- get_user_focus — only when user asks about expiry TTL (focus text is already in memory context).
-- get_focused_issues — for "focused tasks", "мои фокусные задачи". Web: create_artifact(type="task_table"). Telegram: numbered list with inline links [Task](url).
-
-When "### Urgent Tasks" appears in memory context — mention those tasks proactively in the FIRST response only. Do NOT repeat on subsequent messages.
-
-## Daily Planning
-1. Call build_daily_plan
-2. Order tasks: blockers → overdue → due today → critical/high
-3. Format: "Today: (1) Task — one-clause reason. Later: - Task (priority)"
-4. Team plan: group by assignee. Telegram: no tables/headers, bold sections + bullets + inline links [name](url).
-
-## Pending Issue Validations
-When user message reads as an answer to a clarifying question:
-1. Call get_pending_issue_validations
-2. One pending + clear answer → call answer_issue_validation(issue_id, answers)
-3. Multiple pending → ask which issue first
-Do NOT call answer_issue_validation speculatively.
-
-## Sending messages / reminders
-- When the user asks "send message to X", "напомни X", "отправь X сообщение" and provides the message text, call send_user_message.
-- If X is the current user from <context> or <team_roster>, do NOT ask for confirmation; send it to that user.
-- Do not choose the delivery channel yourself. Omit channel unless the user explicitly requires a channel; send_user_message enforces Telegram-first delivery when available, then web chat fallback.
-
-## Reflection
-After each tool call — verify: Did it succeed? Does the result make sense? Is it complete?
-If empty result → investigate: wrong parameters? wrong entity? different approach?
-Do not accept unexpected empty results without investigation.
-</tool_guidance>
-XML;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.tool_guidance',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-tool-guidance',
+            name: 'Agent tool guidance section',
+        );
     }
 
-    private function promptProactiveModeSection(): string
+    private function promptProactiveModeSection(?int $organizationId): string
     {
-        return <<<'XML'
-<proactive_mode>
-After your main answer, scan tool results from this conversation:
-- Is there a blocker the user didn't ask about?
-- Is there an overdue task assigned to someone you just mentioned?
-- Is there a meeting in the next 2 hours relevant to this topic?
-- Is there a critical unassigned task?
-
-If yes and clearly relevant — append 1-2 sentences:
-  ⚠️ Кстати, задача X заблокирована — хочешь разберём?
-  📅 Через 1.5 часа встреча по теме — подготовить agenda?
-
-Only add if actionable. Do not repeat the same insight twice in a session.
-</proactive_mode>
-XML;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.proactive_mode',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-proactive-mode',
+            name: 'Agent proactive mode section',
+        );
     }
 
-    private function promptFormattingSection(OutputMode $mode): string
+    private function promptFormattingSection(OutputMode $mode, ?int $organizationId): string
     {
         $rules = $mode === OutputMode::MD
             ? 'Use Markdown: headings, bullet lists, bold, italic, code blocks where appropriate.'
             : 'Plain text only. No Markdown syntax (no **, ##, backticks, bullet dashes).';
 
-        return "<formatting>\n{$rules}\n</formatting>";
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.section.formatting',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.agent.section-formatting',
+            variables: ['rules' => $rules],
+            name: 'Agent formatting section',
+        );
     }
 }
