@@ -10,6 +10,7 @@ use App\Models\ChannelConversation;
 use App\Models\ChannelMessage;
 use App\Models\Issue;
 use App\Models\Organization;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -96,7 +97,7 @@ class TelegramTaskService
 
         $orgContext = Organization::find($conversation->organization_id)?->context;
 
-        $result = $this->callLLM($recentMessages, $openTasks, $orgContext);
+        $result = $this->callLLM($recentMessages, $openTasks, $orgContext, $conversation->organization_id);
 
         if (! $result) {
             return false;
@@ -180,7 +181,7 @@ class TelegramTaskService
         return $changed;
     }
 
-    private function callLLM(Collection $messages, Collection $existingTasks, ?string $orgContext = null): ?array
+    private function callLLM(Collection $messages, Collection $existingTasks, ?string $orgContext = null, ?int $organizationId = null): ?array
     {
         $messagesText = $messages->map(
             fn ($m) => "[ID:{$m->id}] {$m->content}"
@@ -196,42 +197,17 @@ class TelegramTaskService
             ? "\n## Контекст организации\n\nИспользуй это для лучшего понимания предметной области, ролей команды и терминологии при определении задач:\n\n{$orgContext}\n"
             : '';
 
-        $prompt = <<<PROMPT
-Ты — ассистент, который анализирует переписку в Telegram и отслеживает задачи.{$contextBlock}
-
-Вот последние сообщения из чата:
-{$messagesText}
-
-Вот текущие активные задачи из этого чата:
-{$tasksText}
-
-Твоя задача:
-1. Найди в новых сообщениях упоминания новых задач, поручений или договорённостей о действиях.
-2. Найди в новых сообщениях упоминания о выполнении, отмене или изменении статуса существующих задач.
-
-Верни JSON в следующем формате:
-{
-    "new_tasks": [
-        {
-            "message_id": <ID сообщения, в котором упоминается задача>,
-            "title": "Краткое название задачи",
-            "description": "Подробное описание или null",
-            "assignee_name": "Имя ответственного или null",
-            "due_date": "YYYY-MM-DD или null"
-        }
-    ],
-    "status_updates": [
-        {
-            "task_id": <ID существующей задачи>,
-            "status": "done|paused|in_progress|open"
-        }
-    ]
-}
-
-Если новых задач нет — верни пустой массив для new_tasks.
-Если изменений статусов нет — верни пустой массив для status_updates.
-Отвечай только валидным JSON без дополнительного текста.
-PROMPT;
+        $prompt = app(LlmPromptService::class)->renderView(
+            slug: 'telegram.tasks.user',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.telegram.tasks-user',
+            variables: [
+                'context_block' => $contextBlock,
+                'messages' => $messagesText,
+                'tasks' => $tasksText,
+            ],
+            name: 'Telegram task extraction prompt',
+        );
 
         try {
             $json = $this->llm->chat(

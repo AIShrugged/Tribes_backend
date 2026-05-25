@@ -4,6 +4,7 @@ namespace App\Services\Demo;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Models\Setting;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -68,38 +69,16 @@ class DemoTranscriptGeneratorService
             return "- {$p['name']} ({$p['role']}): {$p['speaking_style']}";
         })->join("\n");
 
-        return <<<PROMPT
-Сгенерируй реалистичную транскрипцию рабочей встречи.
-
-Тип встречи: {$context}
-
-Участники:
-{$participantList}
-
-Требования к транскрипции:
-- 15-25 реплик суммарно
-- Каждый участник говорит хотя бы 2 раза
-- Реплики должны отражать стиль речи каждого участника
-- Обсуждение должно быть связным и реалистичным — с конкретными задачами, проблемами, решениями
-- Для стендапа: конкретные технические задачи, блокеры
-- Для планирования: оценка задач, приоритеты, риски
-- Для ретро: конкретные примеры из прошлого спринта
-- Смещения по времени (offset_seconds) должны расти последовательно, шаг 15-60 секунд
-- Используй имена участников точно как в списке выше
-
-Верни JSON:
-{
-  "transcript": [
-    {
-      "speaker_name": "Имя участника",
-      "text": "Текст реплики",
-      "offset_seconds": 0
-    }
-  ]
-}
-
-Только JSON, без пояснений.
-PROMPT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'demo.transcript.user',
+            organizationId: null,
+            fallbackView: 'llm-prompts.demo.transcript-user',
+            variables: [
+                'meeting_context' => $context,
+                'participants' => $participantList,
+            ],
+            name: 'Demo transcript generation prompt',
+        );
     }
 
     public static function getMeetingTitle(string $meetingType): string

@@ -10,6 +10,7 @@ use App\Models\CalendarEvent;
 use App\Models\MeetingReview;
 use App\Models\Setting;
 use App\Services\Followup\TranscriptBuilderService;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -190,68 +191,17 @@ class MeetingReviewService
             HIST;
         }
 
-        return <<<TXT
-        Ты — опытный фасилитатор встреч и эксперт по эффективности командной работы.
-        Проанализируй транскрипт встречи и оцени её эффективность.
-
-        Твоя задача — дать **один самый важный инсайт** для повышения эффективности этой встречи,
-        общую оценку и конкретные рекомендации. Представь, что ты был невидимым участником встречи
-        и теперь делишься своим экспертным мнением.
-
-        ## Метаданные встречи:
-        {$metaJson}
-
-        ## Статистика участия (предрасчитанная):
-        {$participationJson}
-        {$historyBlock}
-        ## Критерии оценки (каждый от 1 до 10):
-        - **goal_clarity** — Была ли чётко сформулирована цель/повестка встречи? Следовали ли ей?
-        - **participation_balance** — Насколько равномерно участники вовлечены? (используй статистику выше)
-        - **decisions_made** — Были ли приняты конкретные решения с ответственными и сроками?
-        - **time_efficiency** — Насколько эффективно использовано время? Были ли затянутые или нерелевантные обсуждения?
-        - **action_items_clarity** — Зафиксированы ли конкретные следующие шаги?
-
-        ## Формат ответа (строго JSON):
-        {
-            "score": <среднее от всех критериев, число от 1.0 до 10.0>,
-            "score_breakdown": {
-                "goal_clarity": <1-10>,
-                "participation_balance": <1-10>,
-                "decisions_made": <1-10>,
-                "time_efficiency": <1-10>,
-                "action_items_clarity": <1-10>
-            },
-            "key_insight": "<Один самый важный инсайт — конкретное наблюдение, которое поможет команде проводить встречи эффективнее. Будь конкретен, приводи примеры из транскрипта.>",
-            "suggestions": [
-                "<Конкретная рекомендация 1>",
-                "<Конкретная рекомендация 2>",
-                "<Конкретная рекомендация 3>"
+        return app(LlmPromptService::class)->renderView(
+            slug: 'meeting.review.user',
+            organizationId: null,
+            fallbackView: 'llm-prompts.meeting.review-user',
+            variables: [
+                'meta_json' => $metaJson,
+                'participation_json' => $participationJson,
+                'history_block' => $historyBlock,
+                'transcript' => $transcript,
             ],
-            "participation": [
-                {"name": "<имя>", "assessment": "<краткая оценка вовлечённости участника>"}
-            ],
-            "agenda_analysis": {
-                "had_clear_agenda": <true/false>,
-                "discussed_topics": ["<тема 1>", "<тема 2>"],
-                "unplanned_topics": ["<тема, которой не было в повестке>"],
-                "missed_topics": ["<тема из описания встречи, которую не обсудили>"],
-                "summary": "<Краткий вывод о том, насколько повестка была соблюдена>"
-            },
-            "trend": "<Сравнение с предыдущими встречами: что улучшилось, что ухудшилось. Если истории нет — null>",
-            "previous_suggestions_check": [
-                {"suggestion": "<рекомендация>", "status": "implemented|ignored|partially", "comment": "<вывод>"}
-            ]
-        }
-
-        Если описания встречи нет (description = null), в agenda_analysis.missed_topics верни пустой массив
-        и в summary напиши, что повестка не была задана заранее.
-        Если истории предыдущих встреч нет — в trend верни null, в previous_suggestions_check верни пустой массив.
-
-        Давай 2-4 рекомендации. Будь конкретен и практичен — избегай общих фраз вроде «улучшите коммуникацию».
-        Отвечай только валидным JSON.
-
-        ## Транскрипт встречи:
-        {$transcript}
-        TXT;
+            name: 'Meeting review prompt',
+        );
     }
 }

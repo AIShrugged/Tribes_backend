@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Issue\IncompleteIssuesNotifier;
 use App\Services\Issue\IssueAutoPipelineDispatcher;
 use App\Services\IssueMergeService;
+use App\Services\LlmPromptService;
 use App\Services\Meeting\MeetingSummaryService;
 use App\Services\OpenRouterClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -273,20 +274,16 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
             mb_substr((string) $i->description, 0, 250),
         ))->implode("\n");
 
-        $prompt = <<<TXT
-        Для каждого решения определи, какая открытая задача из списка его покрывает.
-        Решение покрыто, если задача напрямую реализует то, что в решении сформулировано.
-        Если ни одна задача не покрывает решение — верни issue_id = null.
-
-        Решения:
-        {$decisionsList}
-
-        Открытые задачи команды:
-        {$issuesList}
-
-        Верни JSON: {"items":[{"decision_id": <id>, "issue_id": <id|null>}, ...]}
-        Возвращай по одному элементу для каждого решения.
-        TXT;
+        $prompt = app(LlmPromptService::class)->renderView(
+            slug: 'meeting.verify_artifacts.coverage.user',
+            organizationId: $this->event->source?->organization_id,
+            fallbackView: 'llm-prompts.meeting.verify-artifacts-coverage-user',
+            variables: [
+                'decisions' => $decisionsList,
+                'issues' => $issuesList,
+            ],
+            name: 'Meeting artifact coverage prompt',
+        );
 
         try {
             $json = app(OpenRouterClient::class)->chat(

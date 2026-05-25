@@ -9,6 +9,7 @@ use App\Models\Decision;
 use App\Models\MeetingSummary;
 use App\Models\Setting;
 use App\Services\Followup\TranscriptBuilderService;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -98,23 +99,16 @@ class ExtractDecisionsService
         }
         $listStr = implode("\n", $list);
 
-        $prompt = <<<TXT
-        Для каждого решения из списка ниже определи по транскрипту:
-        - кто его сформулировал/принял (имя участника, как оно звучит в транскрипте) — если явно не видно, верни null
-        - короткую тему решения (3-7 слов, на русском)
-
-        Извлекай только содержательные решения, влияющие на работу команды.
-        Если решение из списка процедурное (перерыв, переход к следующему пункту, согласие "ок, давай") — отметь его skip=true.
-
-        Верни JSON: {"items": [{"index": 1, "author_name": "Имя или null", "topic": "Тема", "skip": false}]}
-        Порядок и количество элементов должны совпадать со списком.
-
-        Список решений:
-        {$listStr}
-
-        Транскрипт:
-        {$transcript}
-        TXT;
+        $prompt = app(LlmPromptService::class)->renderView(
+            slug: 'decisions.extract.authors.user',
+            organizationId: $event->source?->organization_id,
+            fallbackView: 'llm-prompts.decisions.extract-authors-user',
+            variables: [
+                'decisions' => $listStr,
+                'transcript' => $transcript,
+            ],
+            name: 'Decision author extraction prompt',
+        );
 
         try {
             $json = app(OpenRouterClient::class)->chat(

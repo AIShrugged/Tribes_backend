@@ -5,6 +5,7 @@ namespace App\Services\Chat;
 use App\Domain\DTO\AI\MessageDTO;
 use App\Models\ChannelMessage;
 use App\Models\User;
+use App\Services\LlmPromptService;
 use Illuminate\Database\Eloquent\Collection;
 
 class WandaPromptBuilder
@@ -225,7 +226,13 @@ WHERE ua.id IN (__ACCESSIBLE_USER_IDS__) AND ub.id IN (__ACCESSIBLE_USER_IDS__)
 ```
 PROMPT;
 
-        return $systemPrompt;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'chat.wanda.system',
+            organizationId: $accessInfo['organization_ids'][0] ?? null,
+            fallbackView: 'llm-prompts.shared.prompt-body',
+            variables: ['prompt_body' => $systemPrompt],
+            name: 'Wanda report chat system prompt',
+        );
     }
 
     /**

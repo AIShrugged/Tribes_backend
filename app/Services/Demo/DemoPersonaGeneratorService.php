@@ -4,6 +4,7 @@ namespace App\Services\Demo;
 
 use App\Domain\DTO\AI\MessageDTO;
 use App\Models\Setting;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -49,31 +50,16 @@ class DemoPersonaGeneratorService
     {
         $contextHint = $teamContext ? "Контекст команды: {$teamContext}." : '';
 
-        return <<<PROMPT
-Сгенерируй {$count} уникальных персонажей для IT-команды. {$contextHint}
-
-Требования:
-- Русские имена и фамилии (реалистичные)
-- Разные роли: разработчики, тестировщики, аналитики, дизайнеры, девопс и т.д.
-- Разные характеры: кто-то аналитичный, кто-то энергичный, кто-то осторожный
-- Разные стили речи в переписке/встречах
-- Никаких повторяющихся имён
-
-Верни JSON:
-{
-  "personas": [
-    {
-      "name": "Полное имя",
-      "role": "Должность",
-      "specialization": "Специализация (1-2 предложения)",
-      "personality_traits": "Характер и особенности поведения (2-3 черты)",
-      "speaking_style": "Как говорит на встречах: тезисно, многословно, с юмором, серьёзно и т.д."
-    }
-  ]
-}
-
-Только JSON, без пояснений.
-PROMPT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'demo.personas.user',
+            organizationId: null,
+            fallbackView: 'llm-prompts.demo.personas-user',
+            variables: [
+                'count' => $count,
+                'context_hint' => $contextHint,
+            ],
+            name: 'Demo persona generation prompt',
+        );
     }
 
     private function fallbackPersonas(int $count): array

@@ -76,6 +76,11 @@ class Organization extends Model
         return $this->hasMany(OrganizationLink::class);
     }
 
+    public function llmPrompts(): HasMany
+    {
+        return $this->hasMany(LlmPrompt::class);
+    }
+
     public function workspaces(): HasMany
     {
         return $this->hasMany(Workspace::class);

@@ -72,6 +72,7 @@ class AgentActivityLog extends Model
             'get_user_insights'        => 'Получил инсайты',
             'get_team_members'         => 'Получил участников команды',
             'create_issue'             => 'Создал задачу',
+            'create_entity'            => 'Создал объект',
             'create_agent_task'        => 'Создал задачу агента',
             'update_agent_task'        => 'Обновил задачу агента',
             'update_task_status'       => 'Обновил статус задачи',
@@ -139,7 +140,13 @@ class AgentActivityLog extends Model
 
         // Enrich with context from result
         if (is_array($result)) {
-            if (isset($result['title'])) {
+            if (isset($result['issue']['name'])) {
+                $base = 'Создал задачу: ' . $result['issue']['name'];
+            } elseif (isset($result['agent_task']['name'])) {
+                $base = 'Создал задачу агента: ' . $result['agent_task']['name'];
+            } elseif (isset($result['message']['content'], $result['recipient']['name'])) {
+                $base = 'Отправил сообщение: ' . $result['recipient']['name'];
+            } elseif (isset($result['title'])) {
                 $base .= ': ' . $result['title'];
             } elseif (isset($result['name'])) {
                 $base .= ': ' . $result['name'];

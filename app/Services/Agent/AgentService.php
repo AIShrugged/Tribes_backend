@@ -12,7 +12,9 @@ use App\Models\User;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Artifact\ArtifactStateService;
 use App\Services\Chat\PageContextFormatter;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
+use App\Support\NameNormalizer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -144,6 +146,12 @@ class AgentService
         $systemPromptExtension = $options->systemPromptExtension;
 
         $this->registerDefaultTools($user, $channel, $options->organizationId, $options->enableSqlTool);
+
+        if ($directMessageResponse = $this->tryHandleDirectMessageCommand($user, $content, $options)) {
+            $this->logAgentRunCompleted($user, $options, $directMessageResponse, 0);
+
+            return $directMessageResponse;
+        }
 
         // Load memory context
         $memoryContext = $this->memoryService->composeMemoryContext($user, $channel);
@@ -437,6 +445,51 @@ class AgentService
         }
 
         $callback($stage, $context);
+    }
+
+    private function tryHandleDirectMessageCommand(User $user, string $content, AgentRunOptions $options): ?string
+    {
+        if (! preg_match('/^\s*отправь\s+сообщение\s+(.+?)\s*[-—:]\s*(.+?)\s*$/iu', $content, $matches)) {
+            return null;
+        }
+
+        $target = trim($matches[1]);
+        $message = trim($matches[2]);
+
+        if ($target === '' || $message === '') {
+            return null;
+        }
+
+        $targetNorm = NameNormalizer::normalize($target);
+        $currentNameNorm = NameNormalizer::normalize((string) $user->name);
+        $parameters = ['content' => $message];
+
+        if ($currentNameNorm !== '' && (str_starts_with($targetNorm, $currentNameNorm) || str_starts_with($currentNameNorm, $targetNorm))) {
+            $parameters['target_user_id'] = $user->id;
+        } else {
+            $parameters['target_name'] = $target;
+        }
+
+        $tool = $this->toolRegistry->get('send_user_message');
+        if (! $tool) {
+            return null;
+        }
+
+        $result = $tool->execute($parameters);
+        $success = is_array($result) && (bool) ($result['success'] ?? false);
+        $this->logToolActivity($user, $options, 'send_user_message', $parameters, $result);
+
+        if (! $success) {
+            $error = is_array($result) ? (string) ($result['error'] ?? 'неизвестная ошибка') : 'неизвестная ошибка';
+
+            return "Не удалось отправить сообщение: {$error}";
+        }
+
+        $recipientName = (string) data_get($result, 'recipient.name', $target);
+        $channelType = (string) data_get($result, 'conversation.channel_type', '');
+        $channelLabel = $channelType === 'telegram' ? 'Telegram' : 'веб-чат';
+
+        return "✅ Сообщение «{$message}» отправлено {$recipientName} в {$channelLabel}.";
     }
 
     private function registerDefaultTools(User $user, ?string $channel, ?int $organizationId = null, bool $enableSqlTool = true): void
@@ -1058,7 +1111,13 @@ class AgentService
             $this->promptFormattingSection($mode),
         ]);
 
-        return implode("\n\n", $sections);
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agent.system',
+            organizationId: $organizationId,
+            fallbackView: 'llm-prompts.shared.prompt-body',
+            variables: ['prompt_body' => implode("\n\n", $sections)],
+            name: 'Agent system prompt',
+        );
     }
 
     private function promptRoleSection(): string
@@ -1218,6 +1277,11 @@ When user message reads as an answer to a clarifying question:
 2. One pending + clear answer → call answer_issue_validation(issue_id, answers)
 3. Multiple pending → ask which issue first
 Do NOT call answer_issue_validation speculatively.
+
+## Sending messages / reminders
+- When the user asks "send message to X", "напомни X", "отправь X сообщение" and provides the message text, call send_user_message.
+- If X is the current user from <context> or <team_roster>, do NOT ask for confirmation; send it to that user.
+- Do not choose the delivery channel yourself. Omit channel unless the user explicitly requires a channel; send_user_message enforces Telegram-first delivery when available, then web chat fallback.
 
 ## Reflection
 After each tool call — verify: Did it succeed? Does the result make sense? Is it complete?

@@ -7,6 +7,7 @@ use App\Models\CalendarEvent;
 use App\Models\MeetingSeriesState;
 use App\Models\MeetingSummary;
 use App\Models\Setting;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -112,6 +113,12 @@ class MeetingSeriesStateService
         $parts[] = '';
         $parts[] = 'Верни ТОЛЬКО обновлённый документ, без пояснений.';
 
-        return implode("\n", $parts);
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agenda.meeting_series_state.user',
+            organizationId: $event->source?->organization_id,
+            fallbackView: 'llm-prompts.shared.prompt-body',
+            variables: ['prompt_body' => implode("\n", $parts)],
+            name: 'Meeting series state prompt',
+        );
     }
 }

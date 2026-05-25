@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\IssueAttachment;
+use App\Models\Organization;
+use App\Observers\OrganizationObserver;
 use App\Policies\IssueAttachmentPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
@@ -44,6 +46,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(IssueAttachment::class, IssueAttachmentPolicy::class);
+        Organization::observe(OrganizationObserver::class);
 
         Http::macro('withProxy', function () {
             if (! config('proxy.enabled', true)) {

@@ -11,6 +11,7 @@ use App\Models\Issue;
 use App\Models\Setting;
 use App\Models\UpcomingAgenda;
 use App\Models\User;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -183,7 +184,13 @@ class UpcomingAgendaService
         $parts[] = '- "open_questions": массив строк — вопросы которые остались открытыми или требуют ответа (2-4 пункта)';
         $parts[] = '- "focus_areas": массив строк — на что сделать акцент на следующей встрече (2-4 пункта)';
 
-        return implode("\n", $parts);
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agenda.upcoming.user',
+            organizationId: $event->source?->organization_id,
+            fallbackView: 'llm-prompts.shared.prompt-body',
+            variables: ['prompt_body' => implode("\n", $parts)],
+            name: 'Upcoming agenda prompt',
+        );
     }
 
     private function resolveTemplate(User $user): ?AgendaTemplate

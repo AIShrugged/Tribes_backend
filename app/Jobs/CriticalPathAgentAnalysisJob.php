@@ -9,6 +9,7 @@ use App\Models\CriticalPathGraph;
 use App\Models\CriticalPathNode;
 use App\Models\Issue;
 use App\Services\AgentTaskSchedulerService;
+use App\Services\LlmPromptService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -118,23 +119,20 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
         $duration = round($node->duration_days, 1);
         $earlyStart = round($node->early_start ?? 0, 1);
 
-        return <<<PROMPT
-You are a project manager. You are looking at an issue that is currently on the project's critical path.
-
-Issue: {$issue->name} (ID: #{$issue->id}){$description}
-
-Critical path parameters:
-- Estimated duration: {$duration} work days
-- Earliest start: {$earlyStart} days from today
-- Due date: {$dueDate}
-- Assignee: {$assignee}
-
-Your actions:
-1. If the issue is large (duration > 3 days), decompose it: create sub-issues via create_entity (entity type "issue") and reference the parent issue in the description.
-2. Improve the issue via update_entity: add acceptance criteria, clarify context, and define the expected result.
-3. Leave a comment on the issue with implementation options and a recommendation via create_entity (entity type "issue_comment").
-
-Remember: this issue is on the critical path, so any delay delays the whole project.
-PROMPT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'critical_path.agent_analysis.task',
+            organizationId: $issue->organization_id,
+            fallbackView: 'llm-prompts.critical-path.agent-analysis-task',
+            variables: [
+                'issue_name' => $issue->name,
+                'issue_id' => $issue->id,
+                'description' => $description,
+                'duration' => $duration,
+                'early_start' => $earlyStart,
+                'due_date' => $dueDate,
+                'assignee' => $assignee,
+            ],
+            name: 'Critical path agent analysis task prompt',
+        );
     }
 }

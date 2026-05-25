@@ -26,6 +26,7 @@ use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\OrganizationController;
+use App\Http\Controllers\API\v1\OrganizationLlmPromptController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SandboxToolGatewayController;
 use App\Http\Controllers\API\v1\SourceController;
@@ -276,6 +277,11 @@ Route::group(['prefix' => 'v1'], function () {
         });
 
         Route::apiResource('organizations', OrganizationController::class);
+        Route::get('organizations/{organization}/llm-prompts', [OrganizationLlmPromptController::class, 'index']);
+        Route::get('organizations/{organization}/llm-prompts/{llmPrompt}', [OrganizationLlmPromptController::class, 'show']);
+        Route::patch('organizations/{organization}/llm-prompts/{llmPrompt}', [OrganizationLlmPromptController::class, 'update']);
+        Route::post('organizations/{organization}/llm-prompts/{llmPrompt}/reset', [OrganizationLlmPromptController::class, 'reset']);
+        Route::post('organizations/{organization}/llm-prompts/seed', [OrganizationLlmPromptController::class, 'seed']);
         Route::post('organizations/{organization}/generate-structure', [OnboardingController::class, 'generate'])
             ->middleware('throttle:10,1')
             ->name('organizations.generate-structure');

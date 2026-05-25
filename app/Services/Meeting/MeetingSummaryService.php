@@ -11,6 +11,7 @@ use App\Models\MeetingSummary;
 use App\Models\MeetingSummaryTemplate;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -97,7 +98,18 @@ class MeetingSummaryService
             return strtr($override, $substitutions);
         }
 
-        return strtr(self::defaultPromptTemplate(), $substitutions);
+        return app(LlmPromptService::class)->renderView(
+            slug: 'meeting.summary.user',
+            organizationId: $event->source?->organization_id,
+            fallbackView: 'llm-prompts.meeting.summary-user',
+            variables: [
+                'transcript' => $transcript,
+                'meeting_date' => $meetingDate,
+                'next_day' => $nextDay,
+                'example' => $example,
+            ],
+            name: 'Meeting summary prompt',
+        );
     }
 
     /**
@@ -125,36 +137,7 @@ class MeetingSummaryService
      */
     public static function defaultPromptTemplate(): string
     {
-        return <<<'TXT'
-        Составь протокол встречи по транскрипту. Протокол должен быть аналогичен примеру ниже.
-        Дата встречи: {meeting_date}. "Завтра" = {next_day}. Используй конкретные даты в дедлайнах.
-
-        Верни JSON:
-        {
-            "title": "Краткое название встречи (до 10 слов)",
-            "summary": "Протокол встречи в формате как в примере (markdown-строка)",
-            "key_points": ["Факт 1 с именем участника", "Факт 2"],
-            "decisions": ["Решение 1", "Решение 2"],
-            "commitments": [
-                {"who": "Имя", "what": "Что делает", "deadline": "Конкретная дата или null"}
-            ]
-        }
-
-        === ПРИМЕР ПРОТОКОЛА ===
-        {example}
-        === КОНЕЦ ПРИМЕРА ===
-
-        Правила:
-        - summary: формат ТОЧНО как в примере. Ключевые слова, краткое содержание по пунктам. Секцию "Задачи" НЕ включай — задачи фиксируются отдельно.
-        - Дедлайны: пересчитывай в конкретные даты (не "завтра", а "10.04.2026").
-        - key_points: 5-10 конкретных фактов с именами.
-        - decisions: ТОЛЬКО явные решения из транскрипта. НЕ ВЫДУМЫВАЙ.
-        - commitments: ТОЛЬКО явные обязательства. Лучше пустой массив, чем выдуманный.
-        - НЕ придумывай факты, которых нет в транскрипте.
-
-        Транскрипт встречи:
-        {transcript}
-        TXT;
+        return view('llm-prompts.meeting.summary-user')->render();
     }
 
     private function getProtocolExample(): string

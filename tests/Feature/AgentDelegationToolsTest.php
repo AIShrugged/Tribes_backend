@@ -96,6 +96,57 @@ class AgentDelegationToolsTest extends TestCase
         $this->assertSame('Organization binding is required.', data_get($result, 'error'));
     }
 
+    #[Test]
+    public function query_db_tasks_cannot_escape_the_conversation_organization_scope(): void
+    {
+        $user = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($user);
+
+        $foreignOrganization = Organization::create([
+            'name' => 'Foreign',
+            'slug' => 'foreign',
+        ]);
+
+        Issue::create([
+            'name' => 'Scoped onboarding task',
+            'description' => 'Visible in the current organization.',
+            'status' => 'open',
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+        ]);
+
+        Issue::create([
+            'name' => 'Foreign onboarding task',
+            'description' => 'Must not leak into the current organization.',
+            'status' => 'open',
+            'organization_id' => $foreignOrganization->id,
+        ]);
+
+        $registry = new ToolRegistry;
+        $this->app->make(AgentToolRegistrar::class)->registerDefaults(
+            $registry,
+            $user,
+            'web',
+            organizationId: $organization->id,
+            teamId: $team->id,
+        );
+
+        $result = $registry->get('query_db')?->execute([
+            'entity' => 'tasks',
+            'filters' => [
+                'organization_id' => $foreignOrganization->id,
+                'statuses' => 'open',
+            ],
+            'limit' => 10,
+        ]);
+
+        $this->assertTrue((bool) data_get($result, 'success'));
+        $this->assertSame(1, data_get($result, 'tasks_count'));
+        $this->assertSame('Scoped onboarding task', data_get($result, 'tasks.0.name'));
+        $this->assertSame($organization->id, data_get($result, 'tasks.0.organization_id'));
+    }
+
     private function createTenantContextFor(User $user): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()

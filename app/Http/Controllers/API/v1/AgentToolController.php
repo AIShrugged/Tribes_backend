@@ -63,7 +63,7 @@ class AgentToolController extends Controller
         $registry = new ToolRegistry;
         $this->toolRegistrar->registerDefaults($registry, $request->user(), 'web');
 
-        $allowedNames = $agentProfile->allowed_tools ?? [];
+        $allowedNames = $this->normalizeAllowedToolNames($agentProfile->allowed_tools);
 
         $tools = collect($registry->getAll())
             ->when(
@@ -82,5 +82,35 @@ class AgentToolController extends Controller
             ->all();
 
         return ApiResponse::success(data: $tools);
+    }
+
+    /**
+     * Historical/profile seed data may contain JSON scalar values in allowed_tools.
+     */
+    private function normalizeAllowedToolNames(mixed $allowedTools): array
+    {
+        if (is_array($allowedTools)) {
+            return array_values(array_filter(
+                $allowedTools,
+                fn ($tool): bool => is_string($tool) && $tool !== '',
+            ));
+        }
+
+        if (is_string($allowedTools)) {
+            $trimmed = trim($allowedTools);
+
+            if ($trimmed === '') {
+                return [];
+            }
+
+            $decoded = json_decode($trimmed, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $this->normalizeAllowedToolNames($decoded);
+            }
+
+            return [$trimmed];
+        }
+
+        return [];
     }
 }

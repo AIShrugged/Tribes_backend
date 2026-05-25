@@ -15,6 +15,7 @@ use App\Models\MeetingSummary;
 use App\Models\Setting;
 use App\Models\UpcomingAgenda;
 use App\Models\User;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -429,7 +430,13 @@ class AgendaService
         $parts[] = '';
         $parts[] = 'ВАЖНО: в "questions" должно быть ровно ' . count($allCommitments) . ' элементов.';
 
-        return implode("\n", $parts);
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agenda.general.user',
+            organizationId: $event->source?->organization_id,
+            fallbackView: 'llm-prompts.shared.prompt-body',
+            variables: ['prompt_body' => implode("\n", $parts)],
+            name: 'General agenda prompt',
+        );
     }
 
     private function buildPersonalPrompt(
@@ -543,6 +550,12 @@ class AgendaService
         $parts[] = '- "due_by_this_meeting": массив объектов {name, description} — задачи с дедлайном до этого митинга';
         $parts[] = '- "discussion_points": массив тем для обсуждения конкретно для этого участника (2-5 пунктов)';
 
-        return implode("\n", $parts);
+        return app(LlmPromptService::class)->renderView(
+            slug: 'agenda.personal.user',
+            organizationId: $event->source?->organization_id,
+            fallbackView: 'llm-prompts.shared.prompt-body',
+            variables: ['prompt_body' => implode("\n", $parts)],
+            name: 'Personal agenda prompt',
+        );
     }
 }
