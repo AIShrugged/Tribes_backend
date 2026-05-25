@@ -94,6 +94,26 @@ class AgentProfileControllerTest extends TestCase
     }
 
     #[Test]
+    public function profile_tools_endpoint_handles_scalar_allowed_tools(): void
+    {
+        $user = User::factory()->create();
+        $organization = Organization::create(['name' => 'Acme', 'slug' => 'acme']);
+        $organization->users()->attach($user->id, ['role' => 'manager']);
+
+        $profile = AgentProfile::create([
+            'key' => 'legacy-profile',
+            'name' => 'Legacy Profile',
+            'allowed_tools' => 'get_user_info',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/agent-profiles/{$profile->id}/tools")
+            ->assertStatus(200)
+            ->assertJsonFragment(['name' => 'get_user_info'])
+            ->assertJsonMissing(['name' => 'list_workspaces']);
+    }
+
+    #[Test]
     public function non_manager_cannot_manage_agent_profiles(): void
     {
         $user = User::factory()->create();

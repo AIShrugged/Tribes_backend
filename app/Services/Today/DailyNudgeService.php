@@ -8,6 +8,7 @@ use App\Models\DailyNudge;
 use App\Models\Issue;
 use App\Models\Source;
 use App\Models\User;
+use App\Services\LlmPromptService;
 use App\Services\Meeting\MeetingContextService;
 use App\Services\OpenRouterClient;
 use Carbon\Carbon;
@@ -213,12 +214,12 @@ class DailyNudgeService
             $data .= "- Задачи, ожидающие тебя: {$context['waiting_on_you']}\n";
         }
 
-        return <<<PROMPT
-Ты — AI-ассистент руководителя. Проанализируй данные и напиши ОДНО предложение — самое важное наблюдение или совет на сегодня. Максимум 200 символов. На русском языке.
-
-Данные:
-{$data}
-Ответь только текстом предупреждения, без кавычек и форматирования.
-PROMPT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'today.daily_nudge.user',
+            organizationId: null,
+            fallbackView: 'llm-prompts.today.daily-nudge-user',
+            variables: ['data' => $data],
+            name: 'Daily nudge prompt',
+        );
     }
 }

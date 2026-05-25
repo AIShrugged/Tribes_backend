@@ -8,6 +8,7 @@ use App\Models\AgentActivityLog;
 use App\Models\Channel;
 use App\Models\Profile;
 use App\Models\Setting;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -144,28 +145,15 @@ class ParticipantProfileMatchingService
             return $data;
         })->values()->toJson(JSON_UNESCAPED_UNICODE);
 
-        return <<<TXT
-        You are given a list of meeting participants and a list of registered profiles in the system.
-        Match each participant to the most suitable profile based on name and email.
-
-        Meeting participants:
-        {$participantsJson}
-
-        System profiles:
-        {$profilesData}
-
-        Return a JSON array in the following format:
-        [
-            {"participant_id": 1, "profile_id": 5, "confidence": 95},
-            {"participant_id": 2, "profile_id": null, "confidence": 0}
-        ]
-
-        Rules:
-        - confidence is from 0 to 100, where 100 = full certainty
-        - If no matching profile exists — use profile_id: null, confidence: 0
-        - Every participant must be present in the response
-        - One profile can be matched to only one participant
-        - Respond with valid JSON only, no additional text
-        TXT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'meeting.participant_profile_matching.user',
+            organizationId: null,
+            fallbackView: 'llm-prompts.meeting.participant-profile-matching-user',
+            variables: [
+                'participants_json' => $participantsJson,
+                'profiles_json' => $profilesData,
+            ],
+            name: 'Participant profile matching prompt',
+        );
     }
 }

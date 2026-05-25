@@ -5,6 +5,7 @@ namespace App\Services\Onboarding;
 use App\Exceptions\AppException;
 use App\Models\Organization;
 use App\Models\Participant;
+use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
@@ -190,31 +191,22 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
 
     private function systemPrompt(): string
     {
-        return <<<'PROMPT'
-You are a business analyst and product planning expert.
-Analyze all provided information to produce a comprehensive organization setup plan.
-
-IMPORTANT: Do NOT invent or fabricate details. If the provided description is too vague to produce a meaningful
-and specific organization plan (e.g. just "we are a startup doing AI" with no further context), you MUST
-respond with the needs_more_info format instead of guessing.
-
-Respond with strict valid JSON only — no extra commentary.
-PROMPT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'onboarding.combined.system',
+            organizationId: null,
+            fallbackView: 'llm-prompts.onboarding.combined-system',
+            name: 'Combined onboarding system prompt',
+        );
     }
 
     private function systemPromptBrowsing(): string
     {
-        return <<<'PROMPT'
-You are a business analyst and product planning expert with web browsing capability.
-Use the fetch_url tool to gather information from the provided links before writing your analysis.
-For repositories, explore sub-pages: contributor lists, commit history, README, open/closed issues, milestones.
-For GitHub repositories, also try the GitHub REST API (https://api.github.com/repos/{owner}/{repo}/contributors, /commits, /issues, /readme).
-
-IMPORTANT: Do NOT invent or fabricate details. If after browsing all links and reading all documents the
-information is still too vague to produce a meaningful organization plan, respond with the needs_more_info format.
-
-Your final response must be strict valid JSON only — no extra commentary.
-PROMPT;
+        return app(LlmPromptService::class)->renderView(
+            slug: 'onboarding.combined_browsing.system',
+            organizationId: null,
+            fallbackView: 'llm-prompts.onboarding.combined-browsing-system',
+            name: 'Combined onboarding browsing system prompt',
+        );
     }
 
     private function taskSection(): string

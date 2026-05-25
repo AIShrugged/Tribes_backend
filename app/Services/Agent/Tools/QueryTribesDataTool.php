@@ -31,6 +31,8 @@ class QueryTribesDataTool extends AbstractAgentTool
     public function __construct(
         private readonly User $user,
         private readonly AgentMemoryLookupService $memoryLookupService,
+        private readonly ?int $organizationId = null,
+        private readonly ?int $teamId = null,
     ) {
         parent::__construct();
     }
@@ -136,8 +138,10 @@ class QueryTribesDataTool extends AbstractAgentTool
     {
         $filters = $parameters['filters'] ?? [];
         $limit = min((int) ($parameters['limit'] ?? 20), 200);
+        $entity = (string) ($parameters['entity'] ?? '');
+        $filters = $this->applyConversationScope($entity, is_array($filters) ? $filters : []);
 
-        return match ($parameters['entity'] ?? '') {
+        return match ($entity) {
             'current_user' => $this->queryCurrentUser(),
             'users' => $this->queryUsers($filters, $limit),
             'tasks' => $this->queryTasks($filters, $limit),
@@ -156,6 +160,23 @@ class QueryTribesDataTool extends AbstractAgentTool
             'agent_memories' => $this->queryAgentMemories($filters, $limit),
             default => ['success' => false, 'error' => 'Unknown entity: '.($parameters['entity'] ?? 'null')],
         };
+    }
+
+    private function applyConversationScope(string $entity, array $filters): array
+    {
+        if ($this->organizationId === null) {
+            return $filters;
+        }
+
+        if (in_array($entity, ['tasks', 'meetings', 'teams', 'team_members'], true)) {
+            $filters['organization_id'] = $this->organizationId;
+        }
+
+        if ($this->teamId !== null && in_array($entity, ['tasks', 'team_members'], true)) {
+            $filters['team_id'] = $this->teamId;
+        }
+
+        return $filters;
     }
 
     // ── current_user ──────────────────────────────────────────────────────────
@@ -212,6 +233,9 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         $query = User::query()->with(['organizations', 'teams', 'profiles.channel']);
+        if ($this->organizationId !== null) {
+            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $this->organizationId));
+        }
 
         if ($userId) {
             $user = $query->find($userId);
@@ -407,6 +431,9 @@ class QueryTribesDataTool extends AbstractAgentTool
             })
             ->with('participants');
 
+        if (! empty($filters['organization_id'])) {
+            $query->where('organization_id', (int) $filters['organization_id']);
+        }
         if (! empty($filters['query'])) {
             $query->where('title', 'ilike', '%'.$filters['query'].'%');
         }
@@ -520,12 +547,16 @@ class QueryTribesDataTool extends AbstractAgentTool
     {
         $teamId = $filters['team_id'] ?? null;
         $teamName = $filters['team_name'] ?? null;
+        $organizationId = $filters['organization_id'] ?? null;
 
         if (! $teamId && ! $teamName) {
             return ['success' => false, 'error' => 'Either team_id or team_name must be provided'];
         }
 
         $query = Team::query()->with(['users', 'organization']);
+        if ($organizationId) {
+            $query->where('organization_id', (int) $organizationId);
+        }
         $team = $teamId
             ? $query->find($teamId)
             : $query->where('name', 'ilike', "%{$teamName}%")->first();
@@ -845,6 +876,13 @@ class QueryTribesDataTool extends AbstractAgentTool
         $msgLimit = max(1, min($limit, 100));
         $convType = $filters['type'] ?? 'direct';
 
+        if ($convType === 'direct' && $user->id !== $this->user->id) {
+            return [
+                'success' => false,
+                'error' => 'Direct/private messages are only visible to their owner.',
+            ];
+        }
+
         [$operator, $value] = $convType === 'general' ? ['>=', 3] : ['=', 2];
 
         $query = ChannelMessage::query()
@@ -861,6 +899,10 @@ class QueryTribesDataTool extends AbstractAgentTool
                     ->groupBy('conversation_id')
                     ->havingRaw("COUNT(*) {$operator} ?", [$value]);
             });
+
+        if ($this->organizationId !== null && $convType === 'general') {
+            $query->whereHas('conversation', fn ($q) => $q->where('organization_id', $this->organizationId));
+        }
 
         if (! empty($filters['since'])) {
             try {

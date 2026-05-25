@@ -110,7 +110,7 @@ class AgentToolRegistrar
     ): void {
         Auth::setUser($user);
 
-        $toolRegistry->register(new QueryTribesDataTool($user, $this->agentMemoryLookupService));
+        $toolRegistry->register(new QueryTribesDataTool($user, $this->agentMemoryLookupService, $organizationId, $teamId));
         $toolRegistry->register(new GetOrganizationContextTool($user, $organizationId));
         $toolRegistry->register(new SaveTeamDecisionTool());
         $toolRegistry->register(new SearchTeamDecisionsTool());
