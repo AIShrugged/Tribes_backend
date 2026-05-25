@@ -88,6 +88,11 @@ class User extends Authenticatable
         return $this->hasMany(Profile::class);
     }
 
+    public function sources(): HasMany
+    {
+        return $this->hasMany(Source::class);
+    }
+
     public function organizations(): BelongsToMany
     {
         return $this->belongsToMany(Organization::class)

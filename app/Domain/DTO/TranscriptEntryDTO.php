@@ -2,8 +2,6 @@
 
 namespace App\Domain\DTO;
 
-use App\Domain\DTO\BaseDTO;
-
 class TranscriptEntryDTO extends BaseDTO
 {
     public function __construct(
@@ -15,5 +13,22 @@ class TranscriptEntryDTO extends BaseDTO
         public readonly ?string $endAbsolute,
         public readonly ?float $durationSeconds,
     ) {
+    }
+
+    public function withTimings(
+        float $startRelative,
+        ?string $startAbsolute,
+        float $endRelative,
+        ?string $endAbsolute,
+    ): self {
+        return new self(
+            speaker: $this->speaker,
+            paragraph: $this->paragraph,
+            startRelative: $startRelative,
+            startAbsolute: $startAbsolute,
+            endRelative: $endRelative,
+            endAbsolute: $endAbsolute,
+            durationSeconds: $endRelative - $startRelative,
+        );
     }
 }

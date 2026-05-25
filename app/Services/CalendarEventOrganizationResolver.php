@@ -48,6 +48,35 @@ class CalendarEventOrganizationResolver
         return $team ? ['team' => $team, 'user' => $user] : null;
     }
 
+    /**
+     * Best-effort organization binding for a calendar event.
+     *
+     * Order:
+     *   1. event.source.organization_id  (authoritative when the Source was created in a known org)
+     *   2. event.creator.organizations    (one-to-many; only used if creator belongs to exactly one org —
+     *      ambiguous otherwise, return null rather than guessing)
+     *
+     * Returns null when the event cannot be tied to any organization. Callers performing
+     * auth checks should treat null as "deny" rather than "allow".
+     */
+    public function resolveOrganizationId(CalendarEvent $event): ?int
+    {
+        $fromSource = $event->source?->organization_id;
+        if ($fromSource) {
+            return (int) $fromSource;
+        }
+
+        $creator = $event->creator;
+        if ($creator) {
+            $orgIds = $creator->organizations()->pluck('organizations.id');
+            if ($orgIds->count() === 1) {
+                return (int) $orgIds->first();
+            }
+        }
+
+        return null;
+    }
+
     private function resolveOwner(CalendarEvent $event): ?User
     {
         if ($event->creator) {

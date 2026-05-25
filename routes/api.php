@@ -59,6 +59,7 @@ use App\Http\Controllers\API\v1\DashboardController;
 use App\Http\Controllers\API\v1\DemoController;
 use App\Http\Controllers\API\v1\PersonController;
 use App\Http\Controllers\API\v1\TranscriptController;
+use App\Http\Controllers\API\v1\TranscriptUploadController;
 use App\Http\Controllers\API\v1\UserController;
 use App\Http\Controllers\API\v1\UserFocusController;
 use App\Http\Controllers\API\v1\UserPreferencesController;
@@ -192,6 +193,10 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::get('/tasks/{task_id}', [MeetingTaskController::class, 'show'])
             ->name('tasks.show');
+
+        Route::post('transcripts/upload', [TranscriptUploadController::class, 'upload'])
+            ->middleware('throttle:upload-transcripts')
+            ->name('transcripts.upload');
 
         Route::get('me/focus', [UserFocusController::class, 'show'])->name('me.focus.show');
         Route::get('me/issues/focused', [FocusedIssuesController::class, 'index'])->name('me.issues.focused');
