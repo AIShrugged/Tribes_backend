@@ -229,8 +229,8 @@ PROMPT;
         return app(LlmPromptService::class)->renderView(
             slug: 'chat.wanda.system',
             organizationId: $accessInfo['organization_ids'][0] ?? null,
-            fallbackView: 'llm-prompts.shared.prompt-body',
-            variables: ['prompt_body' => $systemPrompt],
+            fallbackView: 'llm-prompts.chat.wanda-system',
+            variables: ['system_prompt' => $systemPrompt],
             name: 'Wanda report chat system prompt',
         );
     }
