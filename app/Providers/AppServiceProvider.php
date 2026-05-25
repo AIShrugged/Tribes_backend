@@ -63,5 +63,17 @@ class AppServiceProvider extends ServiceProvider
 
         // Throttle digest LLM dispatches to respect OpenRouter ~200 RPM cap with headroom.
         RateLimiter::for('openrouter-digests', fn () => Limit::perMinute(60));
+
+        // Manual transcript upload: each upload fans out to ~10 LLM jobs across listeners,
+        // so per-user is tight and a separate per-org/day cap guards against cost spikes.
+        RateLimiter::for('upload-transcripts', function ($request) {
+            $user = $request->user();
+            $perUser = Limit::perMinute(3)->by($user?->id ?: $request->ip());
+
+            $orgId = $user?->organizations()->value('organizations.id');
+            $perOrg = Limit::perDay(100)->by('org:' . ($orgId ?: 'none'));
+
+            return [$perUser, $perOrg];
+        });
     }
 }

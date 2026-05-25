@@ -112,12 +112,16 @@ class RecallTranscriptParser
             }
 
             if ($last !== null && $key !== null && $key === $lastKey) {
-                // добавляем слова к предыдущей записи
-                $lastWords = isset($keepers[$lastIndex]['words']) && is_array($keepers[$lastIndex]['words'])
-                    ? $keepers[$lastIndex]['words']
-                    : [];
-
-                $keepers[$lastIndex]['words'] = array_merge($lastWords, $words);
+                // Дописываем слова in-place к предыдущей записи.
+                // Раньше тут был array_merge(O(n)) на каждом слиянии → суммарно O(n²)
+                // для длинных монологов одного спикера. Push-в-конец даёт амортизированную O(1)
+                // и убирает квадратичный рост памяти/времени на 50k-словных JSON-транскриптах.
+                if (!isset($keepers[$lastIndex]['words']) || !is_array($keepers[$lastIndex]['words'])) {
+                    $keepers[$lastIndex]['words'] = [];
+                }
+                foreach ($words as $word) {
+                    $keepers[$lastIndex]['words'][] = $word;
+                }
             } else {
                 // сохраняем оригинальный массив, чтобы не потерять неизвестные поля
                 $keepers[] = $entry;

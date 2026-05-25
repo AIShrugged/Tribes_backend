@@ -77,7 +77,10 @@ class ParseTranscriptJobTest extends TestCase
         $this->expectException(\App\Exceptions\AppException::class);
 
         $job = new ParseTranscriptJob($this->event, 'https://recall-cdn.example.com/transcript.json');
-        $job->handle($this->app->make(RecallTranscriptParser::class));
+        $job->handle(
+            $this->app->make(RecallTranscriptParser::class),
+            $this->app->make(\App\Services\Transcript\TranscriptPersistenceService::class),
+        );
 
         $this->assertDatabaseCount('transcript_entries', 1);
         $this->assertDatabaseHas('transcript_entries', ['text' => 'Pre-existing entry']);
@@ -106,7 +109,10 @@ class ParseTranscriptJobTest extends TestCase
         Http::fake(['recall-cdn.example.com/*' => Http::response($payload, 200)]);
 
         $job = new ParseTranscriptJob($this->event, 'https://recall-cdn.example.com/transcript.json');
-        $job->handle($this->app->make(RecallTranscriptParser::class));
+        $job->handle(
+            $this->app->make(RecallTranscriptParser::class),
+            $this->app->make(\App\Services\Transcript\TranscriptPersistenceService::class),
+        );
 
         $this->assertDatabaseMissing('transcript_entries', ['text' => 'Old entry']);
         $this->assertDatabaseHas('participants', ['name' => 'Bob']);
@@ -125,7 +131,10 @@ class ParseTranscriptJobTest extends TestCase
         Http::fake(['recall-cdn.example.com/*' => Http::response($payload, 200)]);
 
         $job = new ParseTranscriptJob($this->event, 'https://recall-cdn.example.com/transcript.json');
-        $job->handle($this->app->make(RecallTranscriptParser::class));
+        $job->handle(
+            $this->app->make(RecallTranscriptParser::class),
+            $this->app->make(\App\Services\Transcript\TranscriptPersistenceService::class),
+        );
 
         Event::assertDispatched(TranscriptParsed::class, function ($e) {
             return $e->calendarEvent->id === $this->event->id;
