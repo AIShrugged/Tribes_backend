@@ -8,12 +8,15 @@ use App\Models\CalendarEvent;
 use App\Models\User;
 use App\Services\Transcript\Exceptions\TooManyEntriesException;
 use App\Services\Transcript\Exceptions\TranscriptParseException;
-use App\Services\Transcript\Parsers\TranscriptParserRegistry;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Orchestrates manual transcript upload — alternate intake path that lands at the
  * same TranscriptParsed event boundary as the Recall webhook flow.
+ *
+ * Format detection cascade lives in {@see TranscriptFormatResolver} (signature
+ * detectors → LLM fallback). This service stays linear:
+ *   resolve event → normalize → resolve format → parse → persist → dispatch.
  *
  * Behaviour on re-upload to an existing event is intentional "сам дурак":
  *   - transcript_entries / participants are replaced atomically (idempotent)
@@ -26,12 +29,13 @@ use Illuminate\Support\Facades\Log;
 class TranscriptUploadService
 {
     private const ENTRY_LIMIT = 10_000;
+    private const MIN_YIELD_RATIO = 0.6;
 
     public function __construct(
         private readonly UploadEventResolver $eventResolver,
         private readonly TranscriptContentNormalizer $normalizer,
-        private readonly TranscriptFormatDetector $detector,
-        private readonly TranscriptParserRegistry $parsers,
+        private readonly TranscriptFormatResolver $formatResolver,
+        private readonly TranscriptPatternDetector $patternDetector,
         private readonly TranscriptPersistenceService $persistence,
     ) {
     }
@@ -43,12 +47,28 @@ class TranscriptUploadService
     {
         $event   = $this->eventResolver->resolve($request, $uploader);
         $content = $this->normalizer->normalize($request->file('file')->get());
-        $format  = $this->detector->detect($content);
-        $parser  = $this->parsers->forFormat($format);
-        $parsed  = $parser->parse($content);
+
+        $resolved = $this->formatResolver->resolve($content);
+        $parsed   = $resolved->parser->parse($content);
+
+        // Generic parser reports a yield ratio; if it's too low, the spec doesn't fit
+        // the file. Invalidate the cached spec so the next upload won't get the same
+        // broken spec back. Plan D-FALLBACK-FAIL.
+        $isGeneric = $resolved->format === 'generic';
+        $yieldRatio = $parsed['_meta']['yield_ratio'] ?? 1.0;
+
+        if ($isGeneric && $yieldRatio < self::MIN_YIELD_RATIO) {
+            $this->patternDetector->invalidate($content);
+            throw new TranscriptParseException(
+                'LLM-detected spec parsed only ' . round($yieldRatio * 100) . '% of lines',
+            );
+        }
 
         if ($parsed['entries'] === []) {
-            throw new TranscriptParseException('No transcript entries found in file', $format);
+            if ($isGeneric) {
+                $this->patternDetector->invalidate($content);
+            }
+            throw new TranscriptParseException('No transcript entries found in file');
         }
 
         if (count($parsed['entries']) > self::ENTRY_LIMIT) {
@@ -62,11 +82,12 @@ class TranscriptUploadService
         );
 
         Log::info('transcript_upload.fanout', [
-            'event_id'         => $event->id,
-            'uploader_id'      => $uploader->id,
-            'format'           => $format->value,
-            'entries_count'    => $counts['transcript_entries_count'],
-            'participants'     => $counts['participants_count'],
+            'event_id'      => $event->id,
+            'uploader_id'   => $uploader->id,
+            'format'        => $resolved->format,
+            'entries_count' => $counts['transcript_entries_count'],
+            'participants'  => $counts['participants_count'],
+            'yield_ratio'   => $isGeneric ? round($yieldRatio, 2) : null,
         ]);
 
         TranscriptParsed::dispatch($event);

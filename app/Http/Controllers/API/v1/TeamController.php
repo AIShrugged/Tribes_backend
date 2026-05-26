@@ -66,6 +66,17 @@ class TeamController extends Controller
         $organization = Organization::findOrFail($request->getOrganizationId());
 
         $team = $organization->teams()->create($request->getStoreData());
+
+        // Auto-attach the creator to the team. Without this, the org manager who
+        // creates a team ends up with zero team_user rows, which breaks the
+        // post-transcript pipeline (GenerateFollowup early-returns on empty
+        // $user->teams() and never dispatches Followup/Issue extraction). The
+        // creator's `Team::scopeVisibleFor` already shows the team in the UI,
+        // so the previous behaviour silently misled users into thinking they
+        // were members. `syncWithoutDetaching` keeps the call idempotent for
+        // retries (`firstOrCreate` semantics on the pivot row).
+        $team->users()->syncWithoutDetaching([$request->user()->id]);
+
         $this->workspaceBootstrapService->ensureTeamDefaults($team);
 
         return ApiResponse::success(data: TeamResource::make($team));

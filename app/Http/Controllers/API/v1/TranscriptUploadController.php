@@ -52,7 +52,21 @@ class TranscriptUploadController extends Controller
                 data: ['error_code' => 'TOO_MANY_ENTRIES', 'count' => $e->count, 'limit' => $e->limit],
                 status: 422,
             );
-        } catch (UnsupportedFormatException | TranscriptParseException $e) {
+        } catch (UnsupportedFormatException $e) {
+            // Signature detector + LLM fallback both gave up on the file.
+            $logId = (string) Str::uuid();
+            Log::warning('TranscriptUpload: format unrecognized', [
+                'log_id'      => $logId,
+                'uploader_id' => $request->user()?->id,
+                'exception'   => $e->getMessage(),
+            ]);
+
+            return ApiResponse::error(
+                message: 'Transcript format not recognized',
+                data: ['error_code' => 'TRANSCRIPT_FORMAT_UNRECOGNIZED', 'log_id' => $logId],
+                status: 422,
+            );
+        } catch (TranscriptParseException $e) {
             // Don't leak parser internals (file paths, JSON byte offsets, etc).
             $logId = (string) Str::uuid();
             Log::warning('TranscriptUpload: parse failed', [
