@@ -8,9 +8,10 @@ use Carbon\Carbon;
 
 class GetDailyTaskDigestTool implements ToolInterface
 {
-    public function __construct(private readonly User $user)
-    {
-    }
+    public function __construct(
+        private readonly User $user,
+        private readonly ?int $organizationId = null,
+    ) {}
 
     public function getName(): string
     {
@@ -44,8 +45,12 @@ class GetDailyTaskDigestTool implements ToolInterface
         $dateStr = $parameters['date'] ?? null;
         $date = $dateStr ? Carbon::parse($dateStr) : Carbon::now();
 
-        // Multi-org: prefer the first active organization
-        $org = $this->user->organizations()->first();
+        $orgQuery = $this->user->organizations();
+        if ($this->organizationId !== null) {
+            $orgQuery->where('organizations.id', $this->organizationId);
+        }
+
+        $org = $orgQuery->first();
         if (! $org) {
             return ['ready' => false, 'reason' => 'User is not a member of any organization'];
         }

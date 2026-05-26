@@ -3,9 +3,18 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\Team;
+use App\Models\User;
 
 class GetTeamMembersTool extends AbstractAgentTool
 {
+    public function __construct(
+        private readonly ?User $user = null,
+        private readonly ?int $organizationId = null,
+        private readonly ?int $teamId = null,
+    ) {
+        parent::__construct();
+    }
+
     public function getName(): string
     {
         return 'get_team_members';
@@ -51,6 +60,14 @@ class GetTeamMembersTool extends AbstractAgentTool
 
         $query = Team::query()->with(['users', 'organization']);
 
+        if ($this->organizationId !== null) {
+            $query->where('organization_id', $this->organizationId);
+        }
+
+        if ($this->teamId !== null) {
+            $query->where('id', $this->teamId);
+        }
+
         if ($teamId) {
             $team = $query->find($teamId);
         } else {
@@ -58,15 +75,27 @@ class GetTeamMembersTool extends AbstractAgentTool
         }
 
         if (! $team) {
-            $suggestions = Team::where('name', 'ilike', '%' . mb_substr($teamName ?? '', 0, 3) . '%')
+            $suggestions = Team::query()
+                ->when(
+                    $this->organizationId !== null,
+                    fn ($q) => $q->where('organization_id', $this->organizationId)
+                )
+                ->where('name', 'ilike', '%' . mb_substr($teamName ?? '', 0, 3) . '%')
                 ->limit(5)
                 ->pluck('name')
                 ->toArray();
 
             return [
                 'success'     => false,
-                'error'       => "Team not found" . ($teamName ? " for name '{$teamName}'" : ''),
+                'error'       => 'Team not found in the current organization scope' . ($teamName ? " for name '{$teamName}'" : ''),
                 'suggestions' => $suggestions,
+            ];
+        }
+
+        if ($this->user !== null && ! $this->user->isTeamMember($team) && ! $this->user->isOrganizationManager($team->organization_id)) {
+            return [
+                'success' => false,
+                'error' => 'Team not found or access denied',
             ];
         }
 

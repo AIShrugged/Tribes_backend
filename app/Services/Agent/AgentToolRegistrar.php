@@ -165,12 +165,12 @@ class AgentToolRegistrar
         // Without these registrations the LLM falls back to query_db and hallucinates roles.
         $toolRegistry->register(new GetUserInfoTool);
         $toolRegistry->register(new GetUserInsightsTool);
-        $toolRegistry->register(new GetTeamMembersTool);
+        $toolRegistry->register(new GetTeamMembersTool($user, $organizationId, $teamId));
         $toolRegistry->register(new GetRelationshipInsightTool);
         $toolRegistry->register(new GetInsightProfileHistoryTool);
         $toolRegistry->register(new GetMeetingAgendaTool);
-        $toolRegistry->register(new GetDailyTaskDigestTool($user));
-        $toolRegistry->register(new GetWeeklyTaskDigestTool($user));
+        $toolRegistry->register(new GetDailyTaskDigestTool($user, $organizationId));
+        $toolRegistry->register(new GetWeeklyTaskDigestTool($user, $organizationId));
         $toolRegistry->register(new GetUserNotificationsTool($user));
         $toolRegistry->register(new GetPendingIssueValidationsTool($user));
         $toolRegistry->register(new AnswerIssueValidationTool($user, $this->issueAgentFlowService));
