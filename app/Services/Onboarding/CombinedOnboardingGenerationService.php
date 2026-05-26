@@ -7,7 +7,9 @@ use App\Models\Organization;
 use App\Models\Participant;
 use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
+use App\Support\IssueDescriptionFormatter;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class CombinedOnboardingGenerationService extends OnboardingLlmBase
 {
@@ -267,7 +269,12 @@ Include 2–5 targeted questions that, once answered, would provide enough conte
       "title": "<verb + outcome>",
       "description": "1–3 sentences",
       "tasks": [
-        { "title": "...", "description": "...", "type": "development|organization", "priority": 0 }
+        {
+          "title": "...",
+          "description": "## Context\nWhy this task is needed in the onboarding plan.\n\n## Steps\n1. Concrete step 1\n2. Concrete step 2\n\n## Definition of done\nHow to know the task is complete.",
+          "type": "development|organization",
+          "priority": 0
+        }
       ]
     }
   ],
@@ -281,6 +288,7 @@ Include 2–5 targeted questions that, once answered, would provide enough conte
   ]
 }
 IMPORTANT: if email is unknown, set it to JSON null — never use "N/A", "n/a", "unknown", or empty string.
+IMPORTANT: every task description must contain exactly these markdown sections: "## Context", "## Steps", and "## Definition of done".
 TASK;
     }
 
@@ -322,7 +330,11 @@ TASK;
             array_map(fn($g) => [
                 'title'       => (string) ($g['title'] ?? ''),
                 'description' => (string) ($g['description'] ?? ''),
-                'tasks'       => $this->normalizeTasks($g['tasks'] ?? []),
+                'tasks'       => $this->normalizeTasks(
+                    $g['tasks'] ?? [],
+                    (string) ($g['title'] ?? ''),
+                    (string) ($g['description'] ?? ''),
+                ),
             ], $data['goals']),
             fn($g) => $g['title'] !== '',
         ));
@@ -331,12 +343,17 @@ TASK;
         $nullishEmails = ['n/a', 'na', 'null', 'none', 'unknown', ''];
 
         $team = array_values(array_filter(
-            array_map(fn($m) => [
-                'name'     => (string) ($m['name'] ?? ''),
-                'email'    => $this->normalizeEmail($m['email'] ?? null, $nullishEmails),
-                'role'     => in_array($m['role'] ?? '', $validRoles, true) ? $m['role'] : 'employee',
-                'found_in' => is_array($m['found_in'] ?? null) ? $m['found_in'] : [],
-            ], $data['team'] ?? []),
+            array_map(function ($m) use ($nullishEmails, $validRoles) {
+                $name = (string) ($m['name'] ?? '');
+
+                return [
+                    'name'     => $name,
+                    'email'    => $this->normalizeEmail($m['email'] ?? null, $nullishEmails)
+                        ?? $this->fallbackEmailForName($name),
+                    'role'     => in_array($m['role'] ?? '', $validRoles, true) ? $m['role'] : 'employee',
+                    'found_in' => is_array($m['found_in'] ?? null) ? $m['found_in'] : [],
+                ];
+            }, $data['team'] ?? []),
             fn($m) => $m['name'] !== '',
         ));
 
@@ -350,7 +367,7 @@ TASK;
         ];
     }
 
-    private function normalizeTasks(mixed $tasks): array
+    private function normalizeTasks(mixed $tasks, string $goalTitle = '', ?string $goalDescription = null): array
     {
         if (!is_array($tasks)) {
             return [];
@@ -361,7 +378,11 @@ TASK;
         return array_values(array_filter(
             array_map(fn($t) => [
                 'title'       => (string) ($t['title'] ?? ''),
-                'description' => (string) ($t['description'] ?? ''),
+                'description' => IssueDescriptionFormatter::onboardingTask(
+                    (string) ($t['description'] ?? ''),
+                    $goalTitle,
+                    $goalDescription,
+                ),
                 'type'        => in_array($t['type'] ?? '', $allowed, true) ? $t['type'] : 'development',
                 'priority'    => (int) ($t['priority'] ?? 0),
             ], $tasks),
@@ -410,6 +431,17 @@ TASK;
         }
 
         return $str;
+    }
+
+    private function fallbackEmailForName(string $name): string
+    {
+        $username = Str::slug($name, '.');
+
+        if ($username === '') {
+            $username = 'user';
+        }
+
+        return "{$username}@shrugged.ai";
     }
 
     private function loadParticipantNames(Organization $org): string
