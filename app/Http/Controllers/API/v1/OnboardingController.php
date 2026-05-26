@@ -15,9 +15,12 @@ use App\Models\Organization;
 use App\Models\OrganizationIssueType;
 use App\Models\OrganizationLink;
 use App\Models\OrganizationOnboardingDraft;
+use App\Models\User;
+use App\Support\IssueDescriptionFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 
 class OnboardingController extends Controller
 {
@@ -82,7 +85,7 @@ class OnboardingController extends Controller
         $userId   = $request->user()->id;
         $orgData  = $request->input('organization');
         $goals    = $request->input('goals');
-        $team     = $request->input('team', []);
+        $team     = $this->normalizeOnboardingTeam($request->input('team', []));
         $template = $request->input('template');
 
         $draft = OrganizationOnboardingDraft::where('organization_id', $organization->id)
@@ -101,6 +104,8 @@ class OnboardingController extends Controller
             : collect();
 
         DB::transaction(function () use ($organization, $orgData, $goals, $team, $template, $epicType, $userId, $draftLinks, $draftAttachments): void {
+            $team = $this->ensureTeamUsers($organization, $team);
+
             $organization->update([
                 'name'         => $orgData['name'],
                 'context'      => $orgData['description'],
@@ -140,7 +145,11 @@ class OnboardingController extends Controller
                         'team_id'         => null,
                         'epic_id'         => $epic->id,
                         'name'            => $task['title'],
-                        'description'     => $task['description'] ?? null,
+                        'description'     => IssueDescriptionFormatter::onboardingTask(
+                            $task['description'] ?? null,
+                            $goal['title'],
+                            $goal['description'] ?? null,
+                        ),
                         'type'            => $task['type'] ?? Issue::TYPE_DEVELOPMENT,
                         'priority'        => $task['priority'] ?? Issue::PRIORITY_NORMAL,
                         'status'          => 'open',
@@ -150,5 +159,78 @@ class OnboardingController extends Controller
         });
 
         return ApiResponse::success('Success', $organization->refresh()->only(['id', 'name', 'slug', 'context', 'template', 'onboarded_at']));
+    }
+
+    private function normalizeOnboardingTeam(array $team): array
+    {
+        return array_values(array_filter(array_map(function (array $member): array {
+            $name = trim((string) ($member['name'] ?? ''));
+            $email = $this->normalizeEmail($member['email'] ?? null)
+                ?? $this->fallbackEmailForName($name);
+
+            return array_merge($member, [
+                'name'  => $name,
+                'email' => $email,
+                'role'  => in_array($member['role'] ?? '', ['manager', 'employee'], true)
+                    ? $member['role']
+                    : 'employee',
+            ]);
+        }, $team), fn(array $member): bool => $member['name'] !== ''));
+    }
+
+    private function ensureTeamUsers(Organization $organization, array $team): array
+    {
+        return array_map(function (array $member) use ($organization): array {
+            $email = (string) ($member['email'] ?? '');
+
+            if ($email === '') {
+                return $member;
+            }
+
+            $user = User::firstOrNew(['email' => $email]);
+
+            if (!$user->exists) {
+                $user->forceFill([
+                    'name'              => $member['name'],
+                    'password'          => Str::random(32),
+                    'email_verified_at' => now(),
+                ])->save();
+            }
+
+            $organization->users()->syncWithoutDetaching([
+                $user->id => ['role' => $member['role'] ?? 'employee'],
+            ]);
+
+            return array_merge($member, [
+                'already_in_system' => true,
+                'system_user_id'    => $user->id,
+            ]);
+        }, $team);
+    }
+
+    private function normalizeEmail(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $email = strtolower(trim((string) $value));
+
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+
+        return $email;
+    }
+
+    private function fallbackEmailForName(string $name): string
+    {
+        $username = Str::slug($name, '.');
+
+        if ($username === '') {
+            $username = 'user';
+        }
+
+        return "{$username}@shrugged.ai";
     }
 }
