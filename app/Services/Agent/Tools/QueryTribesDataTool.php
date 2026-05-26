@@ -183,7 +183,15 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryCurrentUser(): array
     {
-        $user = User::with(['organizations', 'teams', 'profiles.channel'])->find($this->user->id);
+        $user = User::with([
+            'organizations' => fn ($q) => $this->organizationId !== null
+                ? $q->where('organizations.id', $this->organizationId)
+                : $q,
+            'teams' => fn ($q) => $this->organizationId !== null
+                ? $q->where('teams.organization_id', $this->organizationId)
+                : $q,
+            'profiles.channel',
+        ])->find($this->user->id);
         if (! $user) {
             return ['success' => false, 'error' => 'Current user not found'];
         }
@@ -625,7 +633,12 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryOrganizations(): array
     {
-        $organizations = $this->user->organizations()->get(['organizations.id', 'organizations.name']);
+        $organizations = $this->user->organizations()
+            ->when(
+                $this->organizationId !== null,
+                fn ($q) => $q->where('organizations.id', $this->organizationId)
+            )
+            ->get(['organizations.id', 'organizations.name']);
 
         return [
             'success' => true,
@@ -996,9 +1009,16 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         // Tenant isolation: only expose orgs/teams the requesting user also belongs to
-        $requestingOrgIds = $this->user->organizations()->pluck('organizations.id')->toArray();
+        $requestingOrgIds = $this->user->organizations()
+            ->when(
+                $this->organizationId !== null,
+                fn ($q) => $q->where('organizations.id', $this->organizationId)
+            )
+            ->pluck('organizations.id')
+            ->toArray();
         $visibleOrgs = $user->organizations->filter(fn ($org) => in_array($org->id, $requestingOrgIds));
         $hasSharedOrg = $visibleOrgs->isNotEmpty();
+        $visibleOrgIds = $visibleOrgs->pluck('id')->all();
 
         return [
             'id' => $user->id,
@@ -1015,7 +1035,11 @@ class QueryTribesDataTool extends AbstractAgentTool
                 'name' => $org->name,
                 'role' => $org->pivot->role ?? null,
             ])->values()->toArray(),
-            'teams' => $user->teams->map(fn ($t) => ['id' => $t->id, 'name' => $t->name])->toArray(),
+            'teams' => $user->teams
+                ->filter(fn ($t) => in_array($t->organization_id, $visibleOrgIds, true))
+                ->map(fn ($t) => ['id' => $t->id, 'name' => $t->name])
+                ->values()
+                ->toArray(),
         ];
     }
 

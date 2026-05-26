@@ -8,9 +8,10 @@ use Carbon\Carbon;
 
 class GetWeeklyTaskDigestTool implements ToolInterface
 {
-    public function __construct(private readonly User $user)
-    {
-    }
+    public function __construct(
+        private readonly User $user,
+        private readonly ?int $organizationId = null,
+    ) {}
 
     public function getName(): string
     {
@@ -47,7 +48,12 @@ class GetWeeklyTaskDigestTool implements ToolInterface
             ? Carbon::parse($weekStr)->startOfWeek(Carbon::MONDAY)
             : Carbon::now()->startOfWeek(Carbon::MONDAY);
 
-        $org = $this->user->organizations()->first();
+        $orgQuery = $this->user->organizations();
+        if ($this->organizationId !== null) {
+            $orgQuery->where('organizations.id', $this->organizationId);
+        }
+
+        $org = $orgQuery->first();
         if (! $org) {
             return ['ready' => false, 'reason' => 'User is not a member of any organization'];
         }
