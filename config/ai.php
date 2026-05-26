@@ -19,6 +19,7 @@ return [
                 'digest'          => 'google/gemini-3.1-pro-preview',
                 'critical_path'   => env('AI_MODEL_CRITICAL_PATH', 'google/gemini-3.1-pro-preview'),
                 'onboarding'      => env('AI_MODEL_ONBOARDING', 'google/gemini-3.1-pro-preview'),
+                'transcript_format_detector' => env('AI_MODEL_TRANSCRIPT_FORMAT_DETECTOR', 'google/gemini-3.1-pro-preview'),
             ],
             'fallback_models' => [
                 // anthropic/claude-3.5-sonnet was deprecated on OpenRouter (404 No endpoints found),
