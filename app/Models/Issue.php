@@ -152,6 +152,14 @@ class Issue extends Model
         });
     }
 
+    public function scopeInOrganization(Builder $query, int $organizationId): Builder
+    {
+        return $query->where(function (Builder $builder) use ($organizationId): void {
+            $builder->where('organization_id', $organizationId)
+                ->orWhereHas('team', fn (Builder $team) => $team->where('organization_id', $organizationId));
+        });
+    }
+
     public function sourceable(): MorphTo
     {
         return $this->morphTo(__FUNCTION__, 'sourceable_type', 'sourceable_id');

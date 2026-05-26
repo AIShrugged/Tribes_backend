@@ -12,14 +12,20 @@ class TaskDeadlineGrouper
 {
     public function __construct(private readonly UserFocusService $userFocusService) {}
 
-    public function groupForUser(User $user): array
+    public function groupForUser(User $user, ?int $organizationId = null): array
     {
         $focused = $this->userFocusService->getFocusedIssues($user);
+        if ($organizationId !== null) {
+            $focused = $focused
+                ->filter(fn (Issue $issue) => $this->belongsToOrganization($issue, $organizationId))
+                ->values();
+        }
         $focusedIds = $focused->pluck('id')->all();
 
         $issues = Issue::query()
             ->where('assignee_id', $user->id)
             ->whereNotIn('status', ['done', 'closed', 'cancelled'])
+            ->when($organizationId !== null, fn($q) => $q->inOrganization($organizationId))
             ->when(! empty($focusedIds), fn($q) => $q->whereNotIn('id', $focusedIds))
             ->with('assignee')
             ->get();
@@ -68,5 +74,18 @@ class TaskDeadlineGrouper
         if ($b->due_date === null) return -1;
 
         return Carbon::parse($a->due_date) <=> Carbon::parse($b->due_date);
+    }
+
+    private function belongsToOrganization(Issue $issue, int $organizationId): bool
+    {
+        if ((int) $issue->organization_id === $organizationId) {
+            return true;
+        }
+
+        if ($issue->team_id === null) {
+            return false;
+        }
+
+        return (int) $issue->team?->organization_id === $organizationId;
     }
 }

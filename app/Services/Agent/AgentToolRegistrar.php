@@ -36,6 +36,7 @@ use App\Services\Agent\Tools\GetUserFocusTool;
 use App\Services\Agent\Tools\GetUserInfoTool;
 use App\Services\Agent\Tools\GetUserInsightsTool;
 use App\Services\Agent\Tools\GetUserMetricsTool;
+use App\Services\Agent\Tools\GetUserOrganizationsTool;
 use App\Services\Agent\Tools\GetWeeklyTaskDigestTool;
 use App\Services\Agent\Tools\GitHubCreateBranchTool;
 use App\Services\Agent\Tools\GitHubCreateOrUpdateFileTool;
@@ -164,6 +165,7 @@ class AgentToolRegistrar
         // (see AgentService::buildSystemPrompt — "get_user_insights for ANY question about a person").
         // Without these registrations the LLM falls back to query_db and hallucinates roles.
         $toolRegistry->register(new GetUserInfoTool);
+        $toolRegistry->register(new GetUserOrganizationsTool($user));
         $toolRegistry->register(new GetUserInsightsTool);
         $toolRegistry->register(new GetTeamMembersTool);
         $toolRegistry->register(new GetRelationshipInsightTool);

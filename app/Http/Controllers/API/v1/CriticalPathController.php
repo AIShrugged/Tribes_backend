@@ -6,19 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\RebuildCriticalPathJob;
 use App\Models\CriticalPathGraph;
+use App\Models\Team;
 use App\Services\CriticalPath\CriticalPathService;
+use App\Services\TenantScopeValidator;
 use Illuminate\Http\Request;
 
 class CriticalPathController extends Controller
 {
     public function __construct(
         private readonly CriticalPathService $service,
+        private readonly TenantScopeValidator $tenantScopeValidator,
     ) {}
 
     public function show(Request $request): ApiResponse
     {
-        $teamId = $request->integer('team_id') ?: null;
-        $orgId = $request->integer('organization_id') ?: null;
+        [$teamId, $orgId] = $this->validatedScope($request);
 
         $graph = $this->service->getGraphWithNodes($teamId, $orgId);
 
@@ -31,8 +33,7 @@ class CriticalPathController extends Controller
 
     public function rebuild(Request $request): ApiResponse
     {
-        $teamId = $request->integer('team_id') ?: null;
-        $orgId = $request->integer('organization_id') ?: null;
+        [$teamId, $orgId] = $this->validatedScope($request);
 
         // Immediately mark as computing for the frontend to start polling
         $graph = CriticalPathGraph::updateOrCreate(
@@ -99,5 +100,24 @@ class CriticalPathController extends Controller
             'nodes' => $graph->status === 'ready' ? $nodes : [],
             'edges' => $graph->status === 'ready' ? $edges : [],
         ];
+    }
+
+    private function validatedScope(Request $request): array
+    {
+        $validated = $request->validate([
+            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
+            'team_id'         => ['nullable', 'integer', 'exists:teams,id'],
+        ]);
+
+        $teamId = isset($validated['team_id']) ? (int) $validated['team_id'] : null;
+        $orgId = isset($validated['organization_id']) ? (int) $validated['organization_id'] : null;
+
+        if ($teamId !== null && $orgId === null) {
+            $orgId = (int) Team::query()->whereKey($teamId)->value('organization_id');
+        }
+
+        $this->tenantScopeValidator->assertScopeIsValid($request->user(), $orgId, $teamId);
+
+        return [$teamId, $orgId];
     }
 }
