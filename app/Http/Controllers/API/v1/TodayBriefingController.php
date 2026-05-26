@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\TodayBriefingRequest;
 use App\Http\Responses\ApiResponse;
+use App\Services\TenantScopeValidator;
 use App\Services\Today\DailyNudgeService;
 use App\Services\Today\TodayBriefingService;
 use Dedoc\Scramble\Attributes\Endpoint;
@@ -16,13 +17,19 @@ class TodayBriefingController extends Controller
 {
     public function __construct(
         private readonly TodayBriefingService $service,
+        private readonly TenantScopeValidator $tenantScopeValidator,
     ) {}
 
     #[Endpoint(title: 'Get daily briefing', description: 'Returns aggregated daily briefing: events with summaries/reviews/tasks, carried tasks, waiting-on-you, stale items, and AI nudge.')]
     public function show(TodayBriefingRequest $request): ApiResponse
     {
+        $user = Auth::user();
         $date = $request->getDate();
-        $briefing = $this->service->getBriefing(Auth::user(), $date);
+        $organizationId = $request->getOrganizationId();
+
+        $this->tenantScopeValidator->assertScopeIsValid($user, $organizationId, null);
+
+        $briefing = $this->service->getBriefing($user, $date, $organizationId);
 
         return ApiResponse::success(data: $briefing);
     }

@@ -35,17 +35,21 @@ class TodayBriefingService
         private readonly TaskDeadlineGrouper $taskGrouper,
     ) {}
 
-    public function getBriefing(User $user, Carbon $date): TodayBriefingDTO
+    public function getBriefing(User $user, Carbon $date, ?int $organizationId = null): TodayBriefingDTO
     {
-        $taskGroups = $this->buildTaskGroups($user);
+        $taskGroups = $this->buildTaskGroups($user, $organizationId);
 
-        $hasCalendar = Source::query()->where('user_id', $user->id)->withTrashed()->exists();
+        $hasCalendar = Source::query()
+            ->where('user_id', $user->id)
+            ->when($organizationId !== null, fn ($q) => $q->where('organization_id', $organizationId))
+            ->withTrashed()
+            ->exists();
 
         if (! $hasCalendar) {
             return $this->emptyBriefing($date, 'empty', $taskGroups);
         }
 
-        $events = $this->loadEvents($user, $date);
+        $events = $this->loadEvents($user, $date, $organizationId);
 
         if ($events->isEmpty()) {
             // Calendar connected but no events today — still show waiting/stale tasks
@@ -54,8 +58,8 @@ class TodayBriefingService
                 date: $date->format('Y-m-d'),
                 events: [],
                 carried_tasks: [],
-                waiting_on_you: $this->buildWaitingOnYou($user),
-                stale: $this->buildStaleForUser($user),
+                waiting_on_you: $this->buildWaitingOnYou($user, $organizationId),
+                stale: $this->buildStaleForUser($user, $organizationId),
                 nudge: $this->nudgeService->getCached($user->id, $date),
                 task_groups: $taskGroups,
             );
@@ -66,7 +70,10 @@ class TodayBriefingService
         );
         $state = $hasReadyMeeting ? 'active' : 'waiting';
 
-        $eventDTOs = $events->map(fn(CalendarEvent $e) => $this->buildEventDTO($e, $user))->values()->all();
+        $eventDTOs = $events
+            ->map(fn(CalendarEvent $e) => $this->buildEventDTO($e, $user, $organizationId))
+            ->values()
+            ->all();
 
         // Collect all carried tasks across all meetings
         $allCarried = collect();
@@ -97,7 +104,7 @@ class TodayBriefingService
             ->values()
             ->all();
 
-        $waitingDTOs = $this->buildWaitingOnYou($user);
+        $waitingDTOs = $this->buildWaitingOnYou($user, $organizationId);
 
         $nudge = $this->nudgeService->getCached($user->id, $date);
 
@@ -113,10 +120,10 @@ class TodayBriefingService
         );
     }
 
-    private function buildTaskGroups(User $user): TodayTaskGroupsDTO
+    private function buildTaskGroups(User $user, ?int $organizationId = null): TodayTaskGroupsDTO
     {
         $today = Carbon::today();
-        $groups = $this->taskGrouper->groupForUser($user);
+        $groups = $this->taskGrouper->groupForUser($user, $organizationId);
 
         $toDTO = function (Issue $issue) use ($today): TodayDeadlineTaskDTO {
             $due = $issue->due_date ? Carbon::parse($issue->due_date) : null;
@@ -143,19 +150,27 @@ class TodayBriefingService
         );
     }
 
-    private function loadEvents(User $user, Carbon $date): Collection
+    private function loadEvents(User $user, Carbon $date, ?int $organizationId = null): Collection
     {
         $startOfDay = $date->copy()->startOfDay()->utc();
         $endOfDay = $date->copy()->endOfDay()->utc();
-        $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
+        $sourceIds = Source::query()
+            ->where('user_id', $user->id)
+            ->when($organizationId !== null, fn ($q) => $q->where('organization_id', $organizationId))
+            ->pluck('id');
 
         return CalendarEvent::query()
-            ->where(function ($q) use ($user, $sourceIds) {
-                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+            ->where(function ($q) use ($user, $sourceIds, $organizationId) {
+                $q->whereHas('sources', function ($sq) use ($user, $organizationId) {
+                    $sq->where('user_id', $user->id)
+                        ->when($organizationId !== null, fn ($sourceQuery) => $sourceQuery->where('organization_id', $organizationId));
+                });
                 if ($sourceIds->isNotEmpty()) {
                     $q->orWhereIn('source_id', $sourceIds);
                 }
-                $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
+                if ($organizationId === null) {
+                    $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
+                }
             })
             ->whereBetween('starts_at', [$startOfDay, $endOfDay])
             ->with([
@@ -167,7 +182,7 @@ class TodayBriefingService
             ->get();
     }
 
-    private function buildEventDTO(CalendarEvent $event, User $user): TodayEventDTO
+    private function buildEventDTO(CalendarEvent $event, User $user, ?int $organizationId = null): TodayEventDTO
     {
         $summary = $event->meetingSummary;
         $review = $event->meetingReview;
@@ -184,6 +199,7 @@ class TodayBriefingService
         if ($meetingState === 'ready') {
             $allTasks = Issue::withoutTrashed()
                 ->forMeeting($event->id)
+                ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
                 ->with('assignee')
                 ->get();
@@ -201,6 +217,7 @@ class TodayBriefingService
             if ($prevEvent) {
                 $allPrevTasks = Issue::withoutTrashed()
                     ->forMeeting($prevEvent->id)
+                    ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                     ->whereNotIn('status', ['cancelled'])
                     ->with('assignee')
                     ->get();
@@ -336,11 +353,12 @@ class TodayBriefingService
         );
     }
 
-    private function buildWaitingOnYou(User $user): array
+    private function buildWaitingOnYou(User $user, ?int $organizationId = null): array
     {
         $issues = Issue::query()
             ->withoutTrashed()
             ->where('assignee_id', $user->id)
+            ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
             ->whereNotIn('status', ['done', 'cancelled'])
             ->with('sourceable')
             ->orderByDesc('registration_date')
@@ -363,18 +381,26 @@ class TodayBriefingService
         })->values()->all();
     }
 
-    private function buildStaleForUser(User $user): array
+    private function buildStaleForUser(User $user, ?int $organizationId = null): array
     {
-        $sourceIds = Source::query()->where('user_id', $user->id)->pluck('id');
+        $sourceIds = Source::query()
+            ->where('user_id', $user->id)
+            ->when($organizationId !== null, fn ($q) => $q->where('organization_id', $organizationId))
+            ->pluck('id');
 
         // Support both pivot-based (calendar_event_source) and direct source_id linkage
         $userEventIds = CalendarEvent::query()
-            ->where(function ($q) use ($user, $sourceIds) {
-                $q->whereHas('sources', fn($sq) => $sq->where('user_id', $user->id));
+            ->where(function ($q) use ($user, $sourceIds, $organizationId) {
+                $q->whereHas('sources', function ($sq) use ($user, $organizationId) {
+                    $sq->where('user_id', $user->id)
+                        ->when($organizationId !== null, fn ($sourceQuery) => $sourceQuery->where('organization_id', $organizationId));
+                });
                 if ($sourceIds->isNotEmpty()) {
                     $q->orWhereIn('source_id', $sourceIds);
                 }
-                $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
+                if ($organizationId === null) {
+                    $q->orWhereHas('profiles', fn($pq) => $pq->where('user_id', $user->id));
+                }
             })
             ->pluck('id');
 
@@ -386,6 +412,7 @@ class TodayBriefingService
             ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->whereIn('sourceable_id', $userEventIds)
+            ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
             ->whereNotIn('status', ['done', 'cancelled'])
             ->with(['assignee', 'sourceable'])
             ->limit(30)

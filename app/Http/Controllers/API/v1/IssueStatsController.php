@@ -6,12 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\IssueStatsHistoryRequest;
 use App\Http\Responses\ApiResponse;
 use App\Services\IssueStatsService;
+use App\Services\TenantScopeValidator;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class IssueStatsController extends Controller
 {
     public function __construct(
         private readonly IssueStatsService $issueStatsService,
+        private readonly TenantScopeValidator $tenantScopeValidator,
     ) {}
 
     /**
@@ -24,9 +27,16 @@ class IssueStatsController extends Controller
      *
      * @authenticated
      */
-    public function index(): ApiResponse
+    public function index(Request $request): ApiResponse
     {
-        $stats = $this->issueStatsService->getStats(Auth::user());
+        $validated = $request->validate([
+            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
+        ]);
+        $organizationId = isset($validated['organization_id']) ? (int) $validated['organization_id'] : null;
+
+        $this->tenantScopeValidator->assertScopeIsValid($request->user(), $organizationId, null);
+
+        $stats = $this->issueStatsService->getStats(Auth::user(), $organizationId);
 
         return ApiResponse::success(data: $stats);
     }
@@ -38,10 +48,14 @@ class IssueStatsController extends Controller
      */
     public function history(IssueStatsHistoryRequest $request): ApiResponse
     {
+        $organizationId = $request->getOrganizationId();
+        $this->tenantScopeValidator->assertScopeIsValid($request->user(), $organizationId, null);
+
         $dto = $this->issueStatsService->getHistory(
             Auth::user(),
             $request->getPeriod(),
             $request->getRange(),
+            $organizationId,
         );
 
         return ApiResponse::success(data: $dto);

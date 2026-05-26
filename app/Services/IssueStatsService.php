@@ -12,10 +12,12 @@ use Illuminate\Support\Facades\DB;
 
 class IssueStatsService
 {
-    public function getStats(User $user): IssueStatsDTO
+    public function getStats(User $user, ?int $organizationId = null): IssueStatsDTO
     {
         $now  = now();
-        $base = Issue::query()->visibleTo($user);
+        $base = Issue::query()
+            ->visibleTo($user)
+            ->when($organizationId !== null, fn (Builder $query) => $query->inOrganization($organizationId));
 
         $byStatus = (clone $base)
             ->select('status', DB::raw('COUNT(*) as count'))
@@ -94,10 +96,14 @@ class IssueStatsService
         );
     }
 
-    public function getHistory(User $user, string $period, int $range): IssueStatsHistoryDTO
+    public function getHistory(User $user, string $period, int $range, ?int $organizationId = null): IssueStatsHistoryDTO
     {
         $now  = now();
-        $base = Issue::query()->visibleTo($user)->where('status', 'done')->whereNotNull('close_date');
+        $base = Issue::query()
+            ->visibleTo($user)
+            ->when($organizationId !== null, fn (Builder $query) => $query->inOrganization($organizationId))
+            ->where('status', 'done')
+            ->whereNotNull('close_date');
 
         $startDate = match ($period) {
             'day'   => $now->copy()->subDays($range)->startOfDay(),

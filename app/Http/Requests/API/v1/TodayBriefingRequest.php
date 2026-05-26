@@ -10,7 +10,8 @@ class TodayBriefingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'date' => ['nullable', 'date_format:Y-m-d'],
+            'date'            => ['nullable', 'date_format:Y-m-d'],
+            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
         ];
     }
 
@@ -24,5 +25,12 @@ class TodayBriefingRequest extends FormRequest
         }
 
         return Carbon::today(config('app.timezone'));
+    }
+
+    public function getOrganizationId(): ?int
+    {
+        return $this->validated('organization_id') !== null
+            ? (int) $this->validated('organization_id')
+            : null;
     }
 }
