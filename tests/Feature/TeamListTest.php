@@ -55,6 +55,56 @@ class TeamListTest extends TestCase
     }
 
     #[Test]
+    public function creator_is_auto_attached_to_team_on_store()
+    {
+        // Regression for prod incident 2026-05-26: org manager creates team via
+        // POST /api/v1/teams, but is NOT added to team_user pivot. Symptoms:
+        // post-transcript pipeline GenerateFollowup early-returns on empty
+        // $user->teams(), so manually-uploaded transcripts produce no followups
+        // and no extracted issues. UI showed the team because of Team::scopeVisibleFor.
+        Sanctum::actingAs($this->manager);
+
+        $response = $this->postJson('/api/v1/teams', [
+            'organization_id' => $this->organization->id,
+            'name'            => 'Brand New Team',
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+
+        $teamId = $response->json('data.id');
+        $this->assertDatabaseHas('team_user', [
+            'team_id' => $teamId,
+            'user_id' => $this->manager->id,
+        ]);
+    }
+
+    #[Test]
+    public function store_is_idempotent_on_pivot_when_called_twice()
+    {
+        // Defensive: if a retry hits the endpoint (rare but possible), we should
+        // still end up with exactly one team_user row for the creator.
+        Sanctum::actingAs($this->manager);
+
+        $first = $this->postJson('/api/v1/teams', [
+            'organization_id' => $this->organization->id,
+            'name'            => 'Idempotent Test',
+        ]);
+        $first->assertOk();
+        $teamId = $first->json('data.id');
+
+        // Simulate a re-attach via the same code path. We can't POST twice with
+        // the same name (slug uniqueness), so we exercise the pivot directly to
+        // verify `syncWithoutDetaching` keeps it at 1 row.
+        Team::find($teamId)->users()->syncWithoutDetaching([$this->manager->id]);
+
+        $count = \DB::table('team_user')
+            ->where('team_id', $teamId)
+            ->where('user_id', $this->manager->id)
+            ->count();
+        $this->assertSame(1, $count);
+    }
+
+    #[Test]
     public function manager_sees_all_teams_in_organization()
     {
         $teamA = $this->createTeam('Team A', 'team-a');
