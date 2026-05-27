@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ChannelConversation;
 use App\Models\TelegramChatRegistration;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Validation\ValidationException;
 
 class TelegramChatRegistrationService
@@ -73,16 +74,26 @@ class TelegramChatRegistrationService
             return $existing->refresh();
         }
 
-        return TelegramChatRegistration::query()->create([
-            'channel_conversation_id' => null,
-            'telegram_chat_id' => $telegramChatId,
-            'message_thread_id' => null,
-            'chat_title' => $name,
-            'chat_type' => 'group',
-            'organization_id' => $organizationId,
-            'team_id' => $teamId,
-            'attach_requested_by_user_id' => $createdBy->id,
-        ]);
+        try {
+            return TelegramChatRegistration::query()->create([
+                'channel_conversation_id' => null,
+                'telegram_chat_id' => $telegramChatId,
+                'message_thread_id' => null,
+                'chat_title' => $name,
+                'chat_type' => 'group',
+                'organization_id' => $organizationId,
+                'team_id' => $teamId,
+                'attach_requested_by_user_id' => $createdBy->id,
+            ]);
+        } catch (QueryException $exception) {
+            if ($this->isUniqueConstraintViolation($exception)) {
+                throw ValidationException::withMessages([
+                    'telegram_chat_id' => ['A workspace chat with this Telegram chat ID is already registered.'],
+                ]);
+            }
+
+            throw $exception;
+        }
     }
 
     public function discoverGroupConversation(
@@ -130,5 +141,10 @@ class TelegramChatRegistrationService
         } else {
             $registration->delete();
         }
+    }
+
+    private function isUniqueConstraintViolation(QueryException $exception): bool
+    {
+        return in_array($exception->getCode(), ['23000', '23505'], true);
     }
 }

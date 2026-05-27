@@ -10,6 +10,7 @@ use App\Models\Team;
 use App\Models\TelegramChatRegistration;
 use App\Models\User;
 use App\Services\TelegramChatRegistrationService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\Test;
@@ -101,6 +102,27 @@ class TelegramChatRegistrationServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $service->createWorkspaceChat('Duplicate', 555125, $organization->id, null, $manager);
+    }
+
+    #[Test]
+    public function database_rejects_duplicate_root_chat_registrations(): void
+    {
+        $manager = User::factory()->create();
+        [$organization] = $this->createTenantContextFor($manager, 'manager');
+
+        TelegramChatRegistration::create([
+            'telegram_chat_id' => 555128,
+            'chat_type' => 'group',
+            'organization_id' => $organization->id,
+        ]);
+
+        $this->expectException(QueryException::class);
+
+        TelegramChatRegistration::create([
+            'telegram_chat_id' => 555128,
+            'chat_type' => 'group',
+            'organization_id' => $organization->id,
+        ]);
     }
 
     #[Test]
