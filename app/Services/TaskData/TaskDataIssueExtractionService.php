@@ -32,10 +32,16 @@ class TaskDataIssueExtractionService
     /**
      * @return array{created: Collection, updated: Collection}
      */
-    public function extract(string $text, Team $team, User $user, TaskDataUpload $upload): array
+    /**
+     * Step 1: LLM call — extract raw issue items from text.
+     * Separated from persist so the caller can update status between steps.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function extractItems(string $text, TaskDataUpload $upload, Team $team): array
     {
         if (blank($text)) {
-            return ['created' => collect(), 'updated' => collect()];
+            return [];
         }
 
         $orgContext = $team->organization?->context;
@@ -68,12 +74,20 @@ class TaskDataIssueExtractionService
                 'team_id'   => $team->id,
                 'error'     => $e->getMessage(),
             ]);
-
-            return ['created' => collect(), 'updated' => collect()];
+            return [];
         }
 
-        $items = array_values(array_filter($items, fn ($item) => trim($item['name'] ?? '') !== ''));
+        return array_values(array_filter($items, fn ($item) => trim($item['name'] ?? '') !== ''));
+    }
 
+    /**
+     * Step 2: Persist extracted items via IssueMergeService (LLM dedup + create/update/skip).
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array{created: \Illuminate\Support\Collection, updated: \Illuminate\Support\Collection}
+     */
+    public function persistItems(array $items, Team $team, User $user, TaskDataUpload $upload): array
+    {
         $ctx = new TaskDataUploadSourceContext($upload);
         $result = $this->issueMerge->persistFromSource($items, $team, $user, $ctx);
 
