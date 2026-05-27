@@ -33,9 +33,7 @@ class UploadTranscriptRequest extends FormRequest
             'file' => [
                 'required',
                 'file',
-                'max:5120',
-                'extensions:json,txt,vtt,srt',
-                'mimetypes:application/json,text/plain,text/vtt,application/x-subrip,text/x-subrip,text/srt',
+                'max:10240', // 10MB to accommodate archives; uncompressed content capped separately
             ],
             'calendar_event_id' => ['nullable', 'integer', 'exists:calendar_events,id'],
             'team_id'           => ['nullable', 'integer', 'exists:teams,id', 'required_without:calendar_event_id'],
@@ -79,7 +77,7 @@ class UploadTranscriptRequest extends FormRequest
     public function bodyParameters(): array
     {
         return [
-            'file'              => ['description' => 'Transcript file: JSON (Recall), TXT, VTT, or SRT. Max 5MB.'],
+            'file'              => ['description' => 'Transcript file in any text format, or a ZIP/GZ archive containing one. Max 10MB.'],
             'calendar_event_id' => ['description' => 'Attach transcript to an existing meeting. If omitted, a new synthetic CalendarEvent is created.'],
             'team_id'           => ['description' => 'Required when creating a new event (or when the user has >1 team). Auto-selected if user has exactly one team.'],
             'title'             => ['description' => 'Required when creating a new event.'],

@@ -59,7 +59,7 @@ class TranscriptFormatDetector
         $lines = preg_split('/\n/u', $trimmed) ?: [];
         $firstLine = trim($lines[0] ?? '');
 
-        if ($firstLine === 'WEBVTT' || str_starts_with($firstLine, 'WEBVTT ') || str_starts_with($firstLine, 'WEBVTT\t')) {
+        if ($firstLine === 'WEBVTT' || str_starts_with($firstLine, 'WEBVTT ') || str_starts_with($firstLine, "WEBVTT\t")) {
             return TranscriptFormat::VTT;
         }
 
