@@ -202,6 +202,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('tasks/upload', [TaskDataUploadController::class, 'upload'])
             ->middleware('throttle:upload-task-data')
             ->name('tasks.upload');
+        Route::get('tasks/uploads/{uploadId}', [TaskDataUploadController::class, 'status'])
+            ->name('tasks.upload.status');
 
         Route::get('me/focus', [UserFocusController::class, 'show'])->name('me.focus.show');
         Route::get('me/issues/focused', [FocusedIssuesController::class, 'index'])->name('me.issues.focused');
