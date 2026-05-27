@@ -11,6 +11,8 @@ use App\Models\Setting;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Decisions\DecisionAuthorResolver;
+use App\Services\Issue\CalendarEventSourceContext;
+use App\Services\Issue\IssueSourceContext;
 use App\Support\NameNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -63,6 +65,191 @@ class IssueMergeService
         }
 
         return $this->applyDecisions($decisions, $items, $existingIssues, $event, $team, $user);
+    }
+
+    /**
+     * Generic persist via IssueSourceContext — works for any source (CalendarEvent, TaskDataUpload, etc.)
+     *
+     * @return array{created: Collection<int, Issue>, updated: Collection<int, Issue>}
+     */
+    public function persistFromSource(array $items, Team $team, User $user, IssueSourceContext $ctx): array
+    {
+        if (empty($items)) {
+            return ['created' => collect(), 'updated' => collect()];
+        }
+
+        $existingIssues = Issue::query()
+            ->where('team_id', $team->id)
+            ->where('status', '!=', MeetingTaskStatus::DONE->value)
+            ->get();
+
+        if ($existingIssues->isEmpty()) {
+            $created = collect($items)->map(fn (array $item) => $this->createIssueFromSource($item, $team, $user, $ctx));
+            return ['created' => $created, 'updated' => collect()];
+        }
+
+        $decisions = $this->getDecisionsForSource($items, $existingIssues, $ctx);
+
+        if ($decisions === null) {
+            Log::warning('Issue merge fallback: creating all items without deduplication', [
+                'source' => $ctx->sourceTitle(),
+                'team_id' => $team->id,
+            ]);
+            $created = collect($items)->map(fn (array $item) => $this->createIssueFromSource($item, $team, $user, $ctx));
+            return ['created' => $created, 'updated' => collect()];
+        }
+
+        return $this->applyDecisionsFromSource($decisions, $items, $existingIssues, $team, $user, $ctx);
+    }
+
+    private function getDecisionsForSource(array $items, Collection $existingIssues, IssueSourceContext $ctx): ?array
+    {
+        $existingList = $existingIssues->map(fn (Issue $issue) => [
+            'id'                  => $issue->id,
+            'name'                => $issue->name,
+            'description_excerpt' => mb_substr(strip_tags($issue->description ?? ''), 0, 300),
+        ])->values()->all();
+
+        $newList = array_map(fn (int $i, array $item) => [
+            'index'       => $i,
+            'name'        => $item['name'],
+            'description' => $item['description'] ?? '',
+        ], array_keys($items), $items);
+
+        $userMessage = json_encode([
+            'meeting_title'   => $ctx->sourceTitle(),
+            'meeting_date'    => $ctx->sourceDate(),
+            'new_issues'      => array_values($newList),
+            'existing_issues' => $existingList,
+        ], JSON_UNESCAPED_UNICODE);
+
+        try {
+            $json = $this->llm->chat(
+                messages: [
+                    new MessageDTO('system', $this->buildMergeSystemPrompt()),
+                    new MessageDTO('user', $userMessage),
+                ],
+                model: Setting::get('model.followup', config('ai.providers.openrouter.models.followup')),
+                maxTokens: 4096,
+                forceJsonResponse: true,
+            );
+
+            if (is_string($json) && preg_match('/\{[\s\S]*\}/s', $json, $matches)) {
+                $json = $matches[0];
+            }
+
+            $decoded = is_string($json) ? json_decode($json, true) : $json;
+            return $decoded['decisions'] ?? null;
+        } catch (\Throwable $e) {
+            Log::error('Issue merge LLM call failed', [
+                'source' => $ctx->sourceTitle(),
+                'error'  => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * @return array{created: Collection<int, Issue>, updated: Collection<int, Issue>}
+     */
+    private function applyDecisionsFromSource(
+        array $decisions, array $items, Collection $existingIssues, Team $team, User $user, IssueSourceContext $ctx,
+    ): array {
+        return DB::transaction(function () use ($decisions, $items, $existingIssues, $team, $user, $ctx) {
+            $created = collect();
+            $updated = collect();
+            $existingById = $existingIssues->keyBy('id');
+            $processedIndexes = [];
+
+            foreach ($decisions as $decision) {
+                $index = $decision['index'] ?? null;
+                $action = $decision['action'] ?? 'create';
+
+                if ($index === null || !isset($items[$index])) {
+                    continue;
+                }
+                $processedIndexes[] = $index;
+
+                if ($action === 'skip') {
+                    continue;
+                }
+
+                if ($action === 'update' && !empty($decision['existing_issue_id'])) {
+                    $existing = $existingById->get($decision['existing_issue_id']);
+                    if (!$existing) {
+                        $created->push($this->createIssueFromSource($items[$index], $team, $user, $ctx));
+                        continue;
+                    }
+                    $updated->push($this->updateIssueFromSource($existing, $decision, $team, $user, $ctx));
+                    continue;
+                }
+
+                $created->push($this->createIssueFromSource($items[$index], $team, $user, $ctx));
+            }
+
+            foreach (array_keys($items) as $index) {
+                if (!in_array($index, $processedIndexes, strict: true)) {
+                    $created->push($this->createIssueFromSource($items[$index], $team, $user, $ctx));
+                }
+            }
+
+            return ['created' => $created, 'updated' => $updated];
+        });
+    }
+
+    private function createIssueFromSource(array $item, Team $team, User $user, IssueSourceContext $ctx): Issue
+    {
+        return Issue::create([
+            'user_id'         => $ctx->resolveAuthorUserId($item['author_name'] ?? null, $user),
+            'organization_id' => $team->organization_id,
+            'team_id'         => $team->id,
+            'sourceable_type' => $ctx->sourceableType(),
+            'sourceable_id'   => $ctx->sourceableId(),
+            'name'            => trim($item['name'] ?? ''),
+            'description'     => $item['description'] ?? null,
+            'type'            => $this->issueTypeResolver->resolve(
+                $team->organization_id, $team->id, $item['type'] ?? null,
+            )?->key ?? Issue::TYPE_DEVELOPMENT,
+            'status'          => MeetingTaskStatus::OPEN->value,
+            'assignee_name'   => $item['assignee_name'] ?? null,
+            'assignee_id'     => $ctx->resolveAssigneeId($item['assignee_name'] ?? null, $team),
+            'due_date'        => $this->parseDueDate($item['due_date'] ?? null),
+            'priority'        => $this->mapPriority($item['priority'] ?? null),
+        ]);
+    }
+
+    private function updateIssueFromSource(Issue $existing, array $decision, Team $team, User $user, IssueSourceContext $ctx): Issue
+    {
+        $updates = [];
+        if (!empty($decision['assignee_name'])) {
+            $updates['assignee_name'] = $decision['assignee_name'];
+            $updates['assignee_id'] = $ctx->resolveAssigneeId($decision['assignee_name'], $team);
+        }
+        if (!empty($decision['due_date'])) {
+            $parsed = $this->parseDueDate($decision['due_date']);
+            if ($parsed !== null) $updates['due_date'] = $parsed;
+        }
+        if (!empty($decision['priority'])) {
+            $updates['priority'] = $this->mapPriority($decision['priority']);
+        }
+        if (!empty($updates)) {
+            $existing->update($updates);
+        }
+
+        IssueComment::create([
+            'issue_id'          => $existing->id,
+            'user_id'           => $ctx->resolveCommentAuthorUserId($decision['author_name'] ?? null, $user),
+            'parent_id'         => null,
+            'calendar_event_id' => $ctx->calendarEventIdForComment(),
+            'content'           => $ctx->buildCommentContent($decision['update_description'] ?? ''),
+        ]);
+
+        Log::info('Issue updated via merge', [
+            'issue_id' => $existing->id,
+            'source'   => $ctx->sourceTitle(),
+        ]);
+
+        return $existing->fresh();
     }
 
     private function getDecisions(array $items, Collection $existingIssues, CalendarEvent $event): ?array

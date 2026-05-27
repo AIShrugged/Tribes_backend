@@ -78,5 +78,15 @@ class AppServiceProvider extends ServiceProvider
 
             return [$perUser, $perOrg];
         });
+
+        RateLimiter::for('upload-task-data', function ($request) {
+            $user = $request->user();
+            $perUser = Limit::perMinute(3)->by($user?->id ?: $request->ip());
+
+            $orgId = $user?->organizations()->value('organizations.id');
+            $perOrg = Limit::perDay(100)->by('org:task-data:' . ($orgId ?: 'none'));
+
+            return [$perUser, $perOrg];
+        });
     }
 }
