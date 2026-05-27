@@ -97,6 +97,47 @@ class AgentDelegationToolsTest extends TestCase
     }
 
     #[Test]
+    public function update_entity_tool_can_bind_unscoped_issue_to_current_team(): void
+    {
+        $user = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($user);
+
+        $issue = Issue::create([
+            'user_id' => $user->id,
+            'organization_id' => $organization->id,
+            'team_id' => null,
+            'name' => 'Automate Advertisement Verification',
+            'description' => 'Detect duplicate listings and broken images.',
+            'type' => 'epic',
+            'status' => 'open',
+        ]);
+
+        $registry = new ToolRegistry;
+        $this->app->make(AgentToolRegistrar::class)->registerDefaults(
+            $registry,
+            $user,
+            'web',
+            organizationId: $organization->id,
+            teamId: $team->id,
+        );
+
+        $result = $registry->get('update_entity')?->execute([
+            'entity' => 'issue',
+            'id' => $issue->id,
+            'data' => [
+                'team_id' => $team->id,
+            ],
+        ]);
+
+        $this->assertTrue((bool) data_get($result, 'success'), json_encode($result));
+        $this->assertSame($team->id, data_get($result, 'issue.team_id'));
+        $this->assertDatabaseHas('issues', [
+            'id' => $issue->id,
+            'team_id' => $team->id,
+        ]);
+    }
+
+    #[Test]
     public function query_db_tasks_cannot_escape_the_conversation_organization_scope(): void
     {
         $user = User::factory()->create();

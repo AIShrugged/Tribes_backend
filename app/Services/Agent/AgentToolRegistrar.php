@@ -116,7 +116,7 @@ class AgentToolRegistrar
         $toolRegistry->register(new SaveTeamDecisionTool());
         $toolRegistry->register(new SearchTeamDecisionsTool());
         $toolRegistry->register(new CreateEntityTool($user, $this->tenantScopeValidator, $this->schemaValidationService, $organizationId, $teamId));
-        $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $channel ?? 'web', $organizationId, $teamId));
+        $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $this->tenantScopeValidator, $channel ?? 'web', $organizationId, $teamId));
         $toolRegistry->register(new GetTranscriptTool);
         if ($enableSqlTool) {
             $toolRegistry->register(new ExecuteSqlQueryTool($user->id));

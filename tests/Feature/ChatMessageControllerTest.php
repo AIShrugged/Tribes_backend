@@ -383,21 +383,54 @@ class ChatMessageControllerTest extends TestCase
     #[Test]
     public function it_returns_chat_list_for_authenticated_user(): void
     {
-        Chat::create(['user_id' => $this->user->id, 'title' => 'Chat 1']);
-        Chat::create(['user_id' => $this->user->id, 'title' => 'Chat 2']);
+        Chat::create([
+            'user_id' => $this->user->id,
+            'organization_id' => $this->organization->id,
+            'title' => 'Chat 1',
+        ]);
+        Chat::create([
+            'user_id' => $this->user->id,
+            'organization_id' => $this->organization->id,
+            'title' => 'Chat 2',
+        ]);
 
         // Чужой чат — не должен попасть в список
         $otherUser = User::factory()->create();
-        Chat::create(['user_id' => $otherUser->id, 'title' => 'Other chat']);
+        Chat::create([
+            'user_id' => $otherUser->id,
+            'organization_id' => $this->organization->id,
+            'title' => 'Other chat',
+        ]);
+        $otherOrganization = Organization::create([
+            'name' => 'Other Chat Org',
+            'slug' => 'other-chat-org',
+        ]);
+        $otherOrganization->users()->attach($this->user->id, ['role' => 'employee']);
+        Chat::create([
+            'user_id' => $this->user->id,
+            'organization_id' => $otherOrganization->id,
+            'title' => 'Other org chat',
+        ]);
 
         $response = $this->actingAs($this->user)
-            ->getJson('/api/v1/chats');
+            ->getJson('/api/v1/chats?organization_id='.$this->organization->id);
 
         $response->assertStatus(200);
 
         $data = $response->json('data');
         // Пользователь видит только свои чаты (изначально создан 1 в setUp + 2 новых = 3)
         $this->assertCount(3, $data);
+        $this->assertNotContains('Other org chat', array_column($data, 'title'));
+    }
+
+    #[Test]
+    public function it_requires_organization_id_to_list_chats(): void
+    {
+        $response = $this->actingAs($this->user)
+            ->getJson('/api/v1/chats');
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['organization_id']);
     }
 
     #[Test]
@@ -406,6 +439,7 @@ class ChatMessageControllerTest extends TestCase
         $response = $this->actingAs($this->user)
             ->postJson('/api/v1/chats', [
                 'title' => 'Мой новый чат',
+                'organization_id' => $this->organization->id,
             ]);
 
         $response->assertStatus(200)
@@ -414,7 +448,20 @@ class ChatMessageControllerTest extends TestCase
         $this->assertDatabaseHas('chats', [
             'user_id' => $this->user->id,
             'title' => 'Мой новый чат',
+            'organization_id' => $this->organization->id,
         ]);
+    }
+
+    #[Test]
+    public function it_requires_organization_id_to_create_chat(): void
+    {
+        $response = $this->actingAs($this->user)
+            ->postJson('/api/v1/chats', [
+                'title' => 'Мой новый чат',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['organization_id']);
     }
 
     #[Test]
