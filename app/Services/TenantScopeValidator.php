@@ -62,9 +62,9 @@ class TenantScopeValidator
 
         $organization = Organization::query()->findOrFail($organizationId);
 
-        if (! $user->isOrganizationMember($organization)) {
+        if (! $user->isOrganizationManager($organization)) {
             throw ValidationException::withMessages([
-                'organization_id' => ['Only organization members can bind Telegram chats.'],
+                'organization_id' => ['Only organization managers can bind Telegram chats.'],
             ]);
         }
     }
