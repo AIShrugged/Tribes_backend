@@ -13,8 +13,17 @@ class ChatRequest extends ApiResourceRequest
     {
         return [
             'title' => ['nullable', 'string', 'max:255'],
-            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'team_id' => ['nullable', 'integer', 'exists:teams,id'],
+        ];
+    }
+
+    public function indexRules(): array
+    {
+        return [
+            'offset' => ['nullable', 'int', 'min:0'],
+            'limit' => ['nullable', 'int', 'min:1', 'max:100'],
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
         ];
     }
 
@@ -50,7 +59,7 @@ class ChatRequest extends ApiResourceRequest
                 'example'     => 'Q1 Strategy Discussion',
             ],
             'organization_id' => [
-                'description' => 'Optional organization binding for the chat.',
+                'description' => 'Required organization binding for the chat.',
                 'example'     => 1,
             ],
             'team_id' => [

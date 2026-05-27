@@ -13,6 +13,7 @@ use Dedoc\Scramble\Attributes\BodyParameter;
 use Dedoc\Scramble\Attributes\Endpoint;
 use Dedoc\Scramble\Attributes\Group;
 use Dedoc\Scramble\Attributes\PathParameter;
+use Dedoc\Scramble\Attributes\QueryParameter;
 use Dedoc\Scramble\Attributes\Response;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
@@ -55,6 +56,7 @@ class ChatController extends Controller
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
     #[Endpoint(title: 'List chats', description: 'Return paginated chats belonging to the authenticated user.')]
+    #[QueryParameter('organization_id', 'Organization ID to list chats for.', required: true, type: 'integer', example: 1)]
     #[Response(
         200,
         'Chat list envelope.',
@@ -63,9 +65,19 @@ class ChatController extends Controller
     public function index(ChatRequest $request): ApiResponse
     {
         $user = Auth::user();
-        $count = $this->chatService->countChatsForUser($user);
+        $organizationId = $request->getOrganizationId();
+
+        $this->tenantScopeValidator->assertScopeIsValid(
+            $user,
+            $organizationId,
+            null,
+            false,
+        );
+
+        $count = $this->chatService->countChatsForUser($user, $organizationId);
         $chats = $this->chatService->getChatsForUser(
             $user,
+            $organizationId,
             $request->getOffset(),
             $request->getLimit()
         );
@@ -97,6 +109,8 @@ class ChatController extends Controller
      */
     #[Endpoint(title: 'Create chat', description: 'Create a new AI chat session for the authenticated user.')]
     #[BodyParameter('title', 'Optional chat title.', required: false, type: 'string', example: 'Q1 Strategy Discussion')]
+    #[BodyParameter('organization_id', 'Organization ID to bind the chat to.', required: true, type: 'integer', example: 1)]
+    #[BodyParameter('team_id', 'Optional team ID to bind the chat to.', required: false, type: 'integer', example: 2)]
     #[Response(
         200,
         'Created chat envelope.',
@@ -108,6 +122,7 @@ class ChatController extends Controller
             Auth::user(),
             $request->getOrganizationId(),
             $request->getTeamId(),
+            false,
         );
 
         $chat = $this->chatService->create(

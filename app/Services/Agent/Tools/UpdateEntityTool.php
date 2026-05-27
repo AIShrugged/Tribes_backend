@@ -11,7 +11,9 @@ use App\Models\Issue;
 use App\Models\Profile;
 use App\Models\User;
 use App\Services\AgentTaskMutationService;
+use App\Services\TenantScopeValidator;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class UpdateEntityTool extends AbstractAgentTool
@@ -19,6 +21,7 @@ class UpdateEntityTool extends AbstractAgentTool
     public function __construct(
         private readonly User $user,
         private readonly AgentTaskMutationService $taskMutationService,
+        private readonly TenantScopeValidator $tenantScopeValidator,
         private readonly string $channel = 'web',
         private readonly ?int $organizationId = null,
         private readonly ?int $teamId = null,
@@ -40,7 +43,7 @@ class UpdateEntityTool extends AbstractAgentTool
         $validStatuses = implode(', ', array_map(fn ($s) => $s->value, MeetingTaskStatus::cases()));
 
         return 'Update an existing entity. '
-            ."Use entity=\"issue\" to change an issue status ({$validStatuses}), "
+            ."Use entity=\"issue\" to change issue fields such as status ({$validStatuses}), team_id, organization_id, assignee_id, due_date, priority, name, description, type, or epic_id. "
             .'entity="agent_task" to modify agent task parameters, '
             ."entity=\"memory\" to save notes about the user (context_type: {$contextTypes}).";
     }
@@ -72,6 +75,13 @@ class UpdateEntityTool extends AbstractAgentTool
                             'enum' => $validStatuses,
                             'description' => 'New status (issue only).',
                         ],
+                        'description' => ['type' => ['string', 'null']],
+                        'type' => ['type' => 'string', 'enum' => Issue::TYPES],
+                        'assignee_id' => ['type' => ['integer', 'null']],
+                        'author_id' => ['type' => ['integer', 'null']],
+                        'due_date' => ['type' => ['string', 'null']],
+                        'priority' => ['type' => ['integer', 'null']],
+                        'epic_id' => ['type' => ['integer', 'null']],
                         // agent_task
                         'name' => ['type' => 'string'],
                         'prompt' => ['type' => 'string'],
@@ -132,30 +142,76 @@ class UpdateEntityTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'id is required for issue'];
         }
 
-        $status = $data['status'] ?? null;
-        if (! $status) {
-            return ['success' => false, 'error' => 'data.status is required for issue'];
-        }
-
-        $issue = Issue::find($id);
+        $issue = Issue::query()->visibleTo($this->user)->find($id);
         if (! $issue) {
-            return ['success' => false, 'error' => "Issue #{$id} not found"];
+            return ['success' => false, 'error' => 'Issue not found or access denied'];
         }
 
-        $validStatuses = array_map(fn ($s) => $s->value, MeetingTaskStatus::cases());
-        if (! in_array($status, $validStatuses, true)) {
-            return ['success' => false, 'error' => 'data.status must be one of: '.implode(', ', $validStatuses)];
+        $updateData = $this->extractIssueUpdateData($data);
+        if ($updateData === []) {
+            return ['success' => false, 'error' => 'No updatable fields were provided for issue'];
         }
 
-        $oldStatus = $issue->status;
-        $issue->update(['status' => $status]);
+        if (array_key_exists('type', $updateData)) {
+            $updateData['type'] = Issue::normalizeType($updateData['type']) ?? $updateData['type'];
+        }
+
+        if (array_key_exists('author_id', $updateData)) {
+            $updateData['user_id'] = $updateData['author_id'];
+            unset($updateData['author_id']);
+        }
+
+        try {
+            $this->validateIssueUpdateData($updateData, $issue);
+            $this->assertIssueMatchesScope($issue);
+
+            $effectiveOrganizationId = array_key_exists('organization_id', $updateData)
+                ? (int) $updateData['organization_id']
+                : (int) $issue->organization_id;
+            $effectiveTeamId = array_key_exists('team_id', $updateData)
+                ? ($updateData['team_id'] !== null ? (int) $updateData['team_id'] : null)
+                : $issue->team_id;
+
+            $this->tenantScopeValidator->assertScopeIsValid($this->user, $effectiveOrganizationId, $effectiveTeamId, allowUnbound: false);
+            $this->assertIssueTargetMatchesScope($effectiveOrganizationId, $effectiveTeamId);
+        } catch (ValidationException $exception) {
+            return [
+                'success' => false,
+                'error' => 'Issue validation failed.',
+                'details' => $exception->errors(),
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'success' => false,
+                'error' => $exception->getMessage(),
+            ];
+        }
+
+        $oldValues = $issue->only(array_keys($updateData));
+        $issue->update($updateData);
+        $issue->refresh();
 
         return [
             'success' => true,
             'task_id' => $issue->id,
             'name' => $issue->name,
-            'old_status' => $oldStatus,
+            'old_status' => $oldValues['status'] ?? null,
             'new_status' => $issue->status,
+            'issue' => [
+                'id' => $issue->id,
+                'name' => $issue->name,
+                'description' => $issue->description,
+                'type' => $issue->type,
+                'status' => $issue->status,
+                'organization_id' => $issue->organization_id,
+                'team_id' => $issue->team_id,
+                'assignee_id' => $issue->assignee_id,
+                'author_id' => $issue->user_id,
+                'due_date' => $issue->due_date?->toDateString(),
+                'priority' => $issue->priority,
+                'epic_id' => $issue->epic_id,
+            ],
+            'old_values' => $oldValues,
         ];
     }
 
@@ -288,6 +344,57 @@ class UpdateEntityTool extends AbstractAgentTool
         return $result;
     }
 
+    private function extractIssueUpdateData(array $data): array
+    {
+        $fields = [
+            'name', 'description', 'type', 'status', 'organization_id', 'team_id',
+            'assignee_id', 'author_id', 'due_date', 'priority', 'epic_id',
+        ];
+
+        $result = [];
+        foreach ($fields as $field) {
+            if (array_key_exists($field, $data)) {
+                $result[$field] = $data[$field];
+            }
+        }
+
+        return $result;
+    }
+
+    private function validateIssueUpdateData(array $data, Issue $issue): void
+    {
+        $validStatuses = array_map(fn ($s) => $s->value, MeetingTaskStatus::cases());
+
+        $validator = Validator::make($data, [
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string'],
+            'type' => ['sometimes', 'required', 'in:'.implode(',', Issue::TYPES)],
+            'status' => ['sometimes', 'required', 'in:'.implode(',', $validStatuses)],
+            'organization_id' => ['sometimes', 'required', 'integer', 'exists:organizations,id'],
+            'team_id' => ['sometimes', 'nullable', 'integer', 'exists:teams,id'],
+            'assignee_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+            'user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+            'due_date' => ['sometimes', 'nullable', 'date'],
+            'priority' => ['sometimes', 'nullable', 'integer', 'min:-1000000', 'max:1000000'],
+            'epic_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                Rule::exists('issues', 'id')->where('type', Issue::TYPE_EPIC),
+                function (string $attribute, mixed $value, \Closure $fail) use ($data, $issue): void {
+                    $type = $data['type'] ?? $issue->type;
+                    if ($value !== null && Issue::normalizeType((string) $type) === Issue::TYPE_EPIC) {
+                        $fail('Epic issues cannot be assigned to another epic.');
+                    }
+                },
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+
     private function validateAgentTaskUpdateData(array $data): void
     {
         $validator = Validator::make($data, [
@@ -329,6 +436,36 @@ class UpdateEntityTool extends AbstractAgentTool
         if ($this->teamId !== null && $teamId !== $this->teamId) {
             throw ValidationException::withMessages([
                 'team_id' => ['Agent task updates are restricted to the current team scope.'],
+            ]);
+        }
+    }
+
+    private function assertIssueMatchesScope(Issue $issue): void
+    {
+        if ($this->organizationId !== null && (int) $issue->organization_id !== $this->organizationId) {
+            throw ValidationException::withMessages([
+                'organization_id' => ['Issue updates are restricted to the current organization scope.'],
+            ]);
+        }
+
+        if ($this->teamId !== null && $issue->team_id !== null && (int) $issue->team_id !== $this->teamId) {
+            throw ValidationException::withMessages([
+                'team_id' => ['Issue updates are restricted to the current team scope.'],
+            ]);
+        }
+    }
+
+    private function assertIssueTargetMatchesScope(int $organizationId, ?int $teamId): void
+    {
+        if ($this->organizationId !== null && $organizationId !== $this->organizationId) {
+            throw ValidationException::withMessages([
+                'organization_id' => ['Issue updates are restricted to the current organization scope.'],
+            ]);
+        }
+
+        if ($this->teamId !== null && $teamId !== $this->teamId) {
+            throw ValidationException::withMessages([
+                'team_id' => ['Issue updates are restricted to the current team scope.'],
             ]);
         }
     }
