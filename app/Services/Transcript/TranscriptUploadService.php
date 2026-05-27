@@ -33,6 +33,7 @@ class TranscriptUploadService
 
     public function __construct(
         private readonly UploadEventResolver $eventResolver,
+        private readonly TranscriptArchiveExtractor $archiveExtractor,
         private readonly TranscriptContentNormalizer $normalizer,
         private readonly TranscriptFormatResolver $formatResolver,
         private readonly TranscriptPatternDetector $patternDetector,
@@ -45,8 +46,12 @@ class TranscriptUploadService
      */
     public function handle(UploadTranscriptRequest $request, User $uploader): array
     {
-        $event   = $this->eventResolver->resolve($request, $uploader);
-        $content = $this->normalizer->normalize($request->file('file')->get());
+        $event = $this->eventResolver->resolve($request, $uploader);
+
+        // Archive-transparent: if file is ZIP/GZ, extract the text content first.
+        // Non-archives pass through unchanged.
+        $rawContent = $this->archiveExtractor->extract($request->file('file'));
+        $content = $this->normalizer->normalize($rawContent);
 
         $resolved = $this->formatResolver->resolve($content);
         $parsed   = $resolved->parser->parse($content);

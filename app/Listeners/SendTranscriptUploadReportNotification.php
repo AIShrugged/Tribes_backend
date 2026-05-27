@@ -113,7 +113,7 @@ class SendTranscriptUploadReportNotification implements ShouldQueueAfterCommit
             $lines[] = "\xF0\x9F\x92\xAC Followup: sent";
         }
 
-        $frontendUrl = config('app.frontend_url', env('FRONTEND_URL', ''));
+        $frontendUrl = config('app.frontend_url', '');
         if ($frontendUrl) {
             $lines[] = '';
             $lines[] = "<a href=\"{$frontendUrl}/dashboard/meetings/{$calendarEvent->id}/overview\">View meeting</a>";
