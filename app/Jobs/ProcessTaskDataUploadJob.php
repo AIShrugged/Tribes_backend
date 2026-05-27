@@ -7,13 +7,11 @@ use App\Models\TaskDataUpload;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Issue\IssueAutoPipelineDispatcher;
-use Telegram\Bot\Api;
 use App\Services\TaskData\TaskDataIssueExtractionService;
-use App\Services\Transcript\TranscriptArchiveExtractor;
-use App\Services\Transcript\TranscriptContentNormalizer;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Telegram\Bot\Api;
 
 class ProcessTaskDataUploadJob implements ShouldQueue
 {
@@ -22,15 +20,19 @@ class ProcessTaskDataUploadJob implements ShouldQueue
     public int $tries = 1;
     public int $timeout = 120;
 
+    /**
+     * @param  int     $uploadId
+     * @param  string  $content  Already-extracted and normalized text content.
+     *                           Read in the HTTP-serving container so the queue
+     *                           worker doesn't need filesystem access to the upload.
+     */
     public function __construct(
         private readonly int $uploadId,
-        private readonly string $filePath,
+        private readonly string $content,
     ) {
     }
 
     public function handle(
-        TranscriptArchiveExtractor $archiveExtractor,
-        TranscriptContentNormalizer $normalizer,
         TaskDataIssueExtractionService $extractionService,
     ): void {
         $upload = TaskDataUpload::findOrFail($this->uploadId);
@@ -40,13 +42,12 @@ class ProcessTaskDataUploadJob implements ShouldQueue
         try {
             $upload->update(['status' => 'extracting']);
 
-            $file = new \Illuminate\Http\UploadedFile($this->filePath, $upload->original_filename);
-            $rawContent = $archiveExtractor->extract($file);
-            $content = $normalizer->normalize($rawContent);
+            // Content already extracted + normalized by the service before dispatch.
+            // 'extracting' status is brief but honest — we're preparing the text.
 
             $upload->update(['status' => 'analyzing']);
 
-            $items = $extractionService->extractItems($content, $upload, $team);
+            $items = $extractionService->extractItems($this->content, $upload, $team);
 
             $upload->update(['status' => 'deduplicating']);
 
@@ -75,9 +76,6 @@ class ProcessTaskDataUploadJob implements ShouldQueue
                 'issues_updated' => $result['updated']->count(),
             ]);
 
-            // Notify uploader about incomplete issues (missing assignee/due_date).
-            // In transcript flow this is done by VerifyMeetingArtifactsJob → IncompleteIssuesNotifier,
-            // but that job requires CalendarEvent. We inline a lightweight check here.
             $this->notifyIncompleteIssues($upload, $user, $result['created']);
 
             SendTaskDataUploadReportJob::dispatch(
@@ -94,8 +92,6 @@ class ProcessTaskDataUploadJob implements ShouldQueue
             ]);
 
             throw $e;
-        } finally {
-            @unlink($this->filePath);
         }
     }
 
