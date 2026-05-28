@@ -11,6 +11,7 @@ class TelegramWorkspaceChatCreateRequest extends ApiResourceRequest
         return [
             'name' => ['nullable', 'string', 'max:255'],
             'telegram_chat_id' => ['required', 'integer'],
+            'message_thread_id' => ['nullable', 'integer'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'team_id' => ['nullable', 'integer', 'exists:teams,id'],
         ];
@@ -24,6 +25,11 @@ class TelegramWorkspaceChatCreateRequest extends ApiResourceRequest
     public function getTelegramChatId(): int
     {
         return (int) $this->input('telegram_chat_id');
+    }
+
+    public function getMessageThreadId(): ?int
+    {
+        return $this->filled('message_thread_id') ? (int) $this->input('message_thread_id') : null;
     }
 
     public function getOrganizationId(): int

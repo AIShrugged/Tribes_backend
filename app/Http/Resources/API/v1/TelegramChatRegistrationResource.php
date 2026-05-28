@@ -9,12 +9,18 @@ class TelegramChatRegistrationResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $topicTitle = $this->message_thread_id !== null
+            ? ($this->conversation?->title ?: 'Topic #'.$this->message_thread_id)
+            : null;
+
         return [
             'id' => $this->id,
             'channel_conversation_id' => $this->channel_conversation_id,
             'user_id' => $this->conversation?->user_id,
             'telegram_chat_id' => $this->telegram_chat_id,
             'message_thread_id' => $this->message_thread_id,
+            'topic_title' => $topicTitle,
+            'topic_label' => $topicTitle,
             'chat_type' => $this->chat_type,
             'chat_title' => $this->chat_title,
             'organization_id' => $this->organization_id,

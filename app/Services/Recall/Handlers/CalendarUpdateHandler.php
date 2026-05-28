@@ -4,6 +4,7 @@ namespace App\Services\Recall\Handlers;
 
 use App\Exceptions\AppException;
 use App\Models\Source;
+use App\Services\Recall\BotSchedulingService;
 use App\Services\Recall\CalendarEventSyncService;
 use App\Services\RecallEventService;
 use App\Services\Recall\Payloads\CalendarUpdatePayload;
@@ -15,6 +16,7 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
 {
     public function __construct(
         private readonly CalendarEventSyncService $calendarEventSyncService,
+        private readonly BotSchedulingService $botSchedulingService,
     ) {
     }
 
@@ -28,6 +30,9 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
 
         if (!RecallCalendarService::isConnected($source->external_id)) {
             $source->disconnect();
+            $this->botSchedulingService->deactivateUpcomingBotsForSource($source);
+
+            return;
         }
 
         $eventService = new RecallEventService($source);

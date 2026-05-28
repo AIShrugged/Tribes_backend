@@ -55,7 +55,7 @@ class TelegramChatRegistrationServiceTest extends TestCase
         [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
 
         $service = $this->app->make(TelegramChatRegistrationService::class);
-        $registration = $service->createWorkspaceChat('Dev Chat', 555123, $organization->id, $team->id, $manager);
+        $registration = $service->createWorkspaceChat('Dev Chat', 555123, null, $organization->id, $team->id, $manager);
 
         $this->assertNull($registration->channel_conversation_id);
         $this->assertNull($registration->bound_at);
@@ -83,7 +83,7 @@ class TelegramChatRegistrationServiceTest extends TestCase
         ]);
 
         $service = $this->app->make(TelegramChatRegistrationService::class);
-        $registration = $service->createWorkspaceChat('My Chat Name', 555124, $organization->id, $team->id, $manager);
+        $registration = $service->createWorkspaceChat('My Chat Name', 555124, null, $organization->id, $team->id, $manager);
 
         $this->assertNotNull($registration->bound_at);
         $this->assertSame($conversation->id, $registration->channel_conversation_id);
@@ -98,10 +98,57 @@ class TelegramChatRegistrationServiceTest extends TestCase
         [$organization] = $this->createTenantContextFor($manager, 'manager');
 
         $service = $this->app->make(TelegramChatRegistrationService::class);
-        $service->createWorkspaceChat('First', 555125, $organization->id, null, $manager);
+        $service->createWorkspaceChat('First', 555125, null, $organization->id, null, $manager);
 
         $this->expectException(ValidationException::class);
-        $service->createWorkspaceChat('Duplicate', 555125, $organization->id, null, $manager);
+        $service->createWorkspaceChat('Duplicate', 555125, null, $organization->id, null, $manager);
+    }
+
+    #[Test]
+    public function create_workspace_chat_can_pre_register_a_topic(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
+
+        $service = $this->app->make(TelegramChatRegistrationService::class);
+        $registration = $service->createWorkspaceChat('Dev Topic', 555129, 336, $organization->id, $team->id, $manager);
+
+        $this->assertNull($registration->channel_conversation_id);
+        $this->assertNull($registration->bound_at);
+        $this->assertSame(336, $registration->message_thread_id);
+        $this->assertSame($organization->id, $registration->organization_id);
+        $this->assertSame($team->id, $registration->team_id);
+    }
+
+    #[Test]
+    public function create_workspace_chat_binds_discovered_topic_immediately(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
+
+        $conversation = ChannelConversation::create([
+            'channel_type' => ConversationChannelType::TELEGRAM->value,
+            'conversation_key' => ChannelConversation::keyForTelegram(555130, 441),
+            'telegram_chat_id' => 555130,
+            'message_thread_id' => 441,
+        ]);
+
+        TelegramChatRegistration::create([
+            'channel_conversation_id' => $conversation->id,
+            'telegram_chat_id' => 555130,
+            'message_thread_id' => 441,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'Auto title from TG',
+        ]);
+
+        $service = $this->app->make(TelegramChatRegistrationService::class);
+        $registration = $service->createWorkspaceChat('My Topic', 555130, 441, $organization->id, $team->id, $manager);
+
+        $this->assertNotNull($registration->bound_at);
+        $this->assertSame($conversation->id, $registration->channel_conversation_id);
+        $this->assertSame(441, $registration->message_thread_id);
+        $this->assertSame($organization->id, $registration->organization_id);
+        $this->assertSame('My Topic', $registration->chat_title);
     }
 
     #[Test]

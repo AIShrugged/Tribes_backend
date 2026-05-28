@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Domain\DTO\EventDTO;
 use App\Exceptions\AppException;
 use App\Models\Source;
-use Carbon\Carbon;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -27,7 +26,6 @@ class RecallEventService implements SourceEventServiceInterface
         $response = Http::withHeader('Authorization', config('services.recall.api_token'))
             ->get(static::API_EVENTS_URL, [
                 'calendar_id' => $this->source->external_id,
-                'updated_at__gte' => Carbon::now()->toIso8601String()
             ]);
 
         $result = [];
@@ -39,6 +37,10 @@ class RecallEventService implements SourceEventServiceInterface
         Log::info('Event data', $response->json());
 
         foreach ($response->json()['results'] ?? [] as $event) {
+            if (!$event['meeting_platform'] || !$event['meeting_url']) {
+                continue;
+            }
+
             $result[] = new EventDTO(
                 $event['id'],
                 $event['meeting_platform'],

@@ -309,6 +309,65 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
+    public function calendar_update_event_deactivates_upcoming_bots_when_calendar_is_disconnected(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/api/v2/calendars/')) {
+                return Http::response(['status' => 'disconnected'], 200);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $source = Source::create([
+            'user_id' => $this->user->id,
+            'type' => 'google_calendar',
+            'external_id' => 'disconnected-calendar-id',
+            'identity' => 'disconnected@example.com',
+            'is_connected' => true,
+        ]);
+
+        $event = CalendarEvent::create([
+            'source_id' => $source->id,
+            'external_id' => 'disconnected-event-id',
+            'platform' => 'google_meet',
+            'title' => 'Disconnected meeting',
+            'url' => 'https://meet.google.com/disconnected-test',
+            'description' => '',
+            'starts_at' => now()->addHour(),
+            'ends_at' => now()->addHours(2),
+        ]);
+
+        $event->sources()->attach($source->id, [
+            'external_id' => 'disconnected-event-id',
+            'required_bot' => true,
+        ]);
+
+        $bot = Bot::create([
+            'external_id' => 'bot-disconnected-1',
+            'deduplication_key' => 'bot-disconnected-key',
+            'meeting_url' => $event->url,
+            'is_active' => true,
+        ]);
+        $event->update(['bot_id' => $bot->id]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.update',
+            'data' => [
+                'calendar_id' => $source->external_id,
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertFalse((bool) $source->fresh()->is_connected);
+        $this->assertFalse((bool) $bot->fresh()->is_active);
+        $this->assertTrue($event->fresh()->isRequiredBot());
+
+        Http::assertNotSent(fn ($request) => $request->method() === 'POST');
+    }
+
+    #[Test]
     public function calendar_sync_event_updates_existing_future_event_when_meeting_is_rescheduled(): void
     {
         $oldStartsAt = now()->addHours(2)->startOfSecond();
@@ -594,7 +653,10 @@ class RecallWebhookTest extends TestCase
             'https://example.com/transcript.json'
         );
 
-        $job->handle(app(\App\Services\RecallTranscriptParser::class));
+        $job->handle(
+            app(\App\Services\RecallTranscriptParser::class),
+            app(\App\Services\Transcript\TranscriptPersistenceService::class),
+        );
 
         // Проверяем, что участники созданы
         $this->assertDatabaseHas('participants', [
@@ -676,7 +738,10 @@ class RecallWebhookTest extends TestCase
 
         // Шаг 3: Выполняем ParseTranscriptJob
         $parseJob = Queue::pushedJobs()[ParseTranscriptJob::class][0]['job'];
-        $parseJob->handle(app(\App\Services\RecallTranscriptParser::class));
+        $parseJob->handle(
+            app(\App\Services\RecallTranscriptParser::class),
+            app(\App\Services\Transcript\TranscriptPersistenceService::class),
+        );
 
         // Проверяем, что TranscriptParsed событие было dispatched
         Event::assertDispatched(TranscriptParsed::class);

@@ -46,18 +46,23 @@ class TelegramChatRegistrationService
     public function createWorkspaceChat(
         ?string $name,
         int $telegramChatId,
+        ?int $messageThreadId,
         int $organizationId,
         ?int $teamId,
         User $createdBy,
     ): TelegramChatRegistration {
         $existing = TelegramChatRegistration::query()
             ->where('telegram_chat_id', $telegramChatId)
-            ->whereNull('message_thread_id')
+            ->when(
+                $messageThreadId === null,
+                fn ($query) => $query->whereNull('message_thread_id'),
+                fn ($query) => $query->where('message_thread_id', $messageThreadId),
+            )
             ->first();
 
         if ($existing?->organization_id !== null) {
             throw ValidationException::withMessages([
-                'telegram_chat_id' => ['A workspace chat with this Telegram chat ID is already registered.'],
+                'telegram_chat_id' => ['A workspace chat with this Telegram chat ID and topic is already registered.'],
             ]);
         }
 
@@ -78,7 +83,7 @@ class TelegramChatRegistrationService
             return TelegramChatRegistration::query()->create([
                 'channel_conversation_id' => null,
                 'telegram_chat_id' => $telegramChatId,
-                'message_thread_id' => null,
+                'message_thread_id' => $messageThreadId,
                 'chat_title' => $name,
                 'chat_type' => 'group',
                 'organization_id' => $organizationId,
@@ -88,7 +93,7 @@ class TelegramChatRegistrationService
         } catch (QueryException $exception) {
             if ($this->isUniqueConstraintViolation($exception)) {
                 throw ValidationException::withMessages([
-                    'telegram_chat_id' => ['A workspace chat with this Telegram chat ID is already registered.'],
+                    'telegram_chat_id' => ['A workspace chat with this Telegram chat ID and topic is already registered.'],
                 ]);
             }
 
