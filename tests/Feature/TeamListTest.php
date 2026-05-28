@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Enums\UserRole;
 use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\OrganizationMembershipService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\Test;
@@ -16,8 +18,11 @@ class TeamListTest extends TestCase
     use RefreshDatabase;
 
     protected User $manager;
+
     protected User $employee;
+
     protected Organization $organization;
+
     protected Methodology $methodology;
 
     protected function setUp(): void
@@ -40,8 +45,12 @@ class TeamListTest extends TestCase
         $this->manager = User::factory()->create();
         $this->employee = User::factory()->create();
 
-        $this->organization->users()->attach($this->manager, ['role' => 'manager']);
-        $this->organization->users()->attach($this->employee, ['role' => 'employee']);
+        // Route through OrganizationMembershipService so test fixtures mirror prod:
+        // both users land in org_user AND default team_user. Direct attach would
+        // skip the default-team invariant.
+        $svc = app(OrganizationMembershipService::class);
+        $svc->add($this->organization, $this->manager, UserRole::MANAGER);
+        $svc->add($this->organization, $this->employee, UserRole::EMPLOYEE);
     }
 
     private function createTeam(string $name, string $slug): Team
@@ -66,7 +75,7 @@ class TeamListTest extends TestCase
 
         $response = $this->postJson('/api/v1/teams', [
             'organization_id' => $this->organization->id,
-            'name'            => 'Brand New Team',
+            'name' => 'Brand New Team',
         ]);
 
         $response->assertOk()->assertJson(['success' => true]);
@@ -87,7 +96,7 @@ class TeamListTest extends TestCase
 
         $first = $this->postJson('/api/v1/teams', [
             'organization_id' => $this->organization->id,
-            'name'            => 'Idempotent Test',
+            'name' => 'Idempotent Test',
         ]);
         $first->assertOk();
         $teamId = $first->json('data.id');
@@ -114,17 +123,19 @@ class TeamListTest extends TestCase
 
         $response = $this->getJson("/api/v1/organizations/{$this->organization->id}/teams");
 
+        // Manager sees all teams: 2 created + auto-provisioned default team = 3.
         $response->assertOk()
             ->assertJson(['success' => true])
-            ->assertJsonCount(2, 'data');
+            ->assertJsonCount(3, 'data');
 
         $ids = collect($response->json('data'))->pluck('id')->toArray();
         $this->assertContains($teamA->id, $ids);
         $this->assertContains($teamB->id, $ids);
+        $this->assertContains($this->organization->refresh()->defaultTeam->id, $ids);
     }
 
     #[Test]
-    public function employee_sees_only_teams_they_belong_to()
+    public function employee_sees_default_team_and_explicit_teams_they_belong_to()
     {
         $teamA = $this->createTeam('Team A', 'team-a');
         $this->createTeam('Team B', 'team-b');
@@ -135,15 +146,18 @@ class TeamListTest extends TestCase
 
         $response = $this->getJson("/api/v1/organizations/{$this->organization->id}/teams");
 
+        // Employee belongs to default team (auto, via service) AND team-a (explicit).
         $response->assertOk()
             ->assertJson(['success' => true])
-            ->assertJsonCount(1, 'data');
+            ->assertJsonCount(2, 'data');
 
-        $this->assertEquals($teamA->id, $response->json('data.0.id'));
+        $ids = collect($response->json('data'))->pluck('id')->toArray();
+        $this->assertContains($teamA->id, $ids);
+        $this->assertContains($this->organization->refresh()->defaultTeam->id, $ids);
     }
 
     #[Test]
-    public function employee_not_in_any_team_sees_empty_list()
+    public function employee_only_sees_default_team_when_not_in_real_teams()
     {
         $this->createTeam('Team A', 'team-a');
         $this->createTeam('Team B', 'team-b');
@@ -152,9 +166,16 @@ class TeamListTest extends TestCase
 
         $response = $this->getJson("/api/v1/organizations/{$this->organization->id}/teams");
 
+        // Even without explicit team membership, every org member belongs to the
+        // default team — that's the invariant the feature exists to enforce.
         $response->assertOk()
             ->assertJson(['success' => true])
-            ->assertJsonCount(0, 'data');
+            ->assertJsonCount(1, 'data');
+
+        $this->assertEquals(
+            $this->organization->refresh()->defaultTeam->id,
+            $response->json('data.0.id')
+        );
     }
 
     #[Test]

@@ -46,6 +46,7 @@ class TestIssueExtractionPipeline extends Command
 
         if ($issues->isEmpty()) {
             $this->warn('No issues extracted. Check LLM connection / logs.');
+
             return self::FAILURE;
         }
 
@@ -57,6 +58,7 @@ class TestIssueExtractionPipeline extends Command
         // 4. Dispatch agent tasks
         if ($this->option('skip-agent-tasks')) {
             $this->info('Skipping agent task dispatch (--skip-agent-tasks)');
+
             return self::SUCCESS;
         }
 
@@ -97,6 +99,7 @@ class TestIssueExtractionPipeline extends Command
             if (! $team->users()->where('users.id', $user->id)->exists()) {
                 $team->users()->attach($user);
             }
+
             return $team;
         }
 
@@ -106,6 +109,8 @@ class TestIssueExtractionPipeline extends Command
         );
 
         if (! $org->users()->where('users.id', $user->id)->exists()) {
+            // @membership-allow direct attach — dev-only debug command, bypasses
+            // OrganizationMembershipService to keep this seeder dependency-free.
             $org->users()->attach($user, ['role' => 'manager']);
         }
 
@@ -137,7 +142,7 @@ class TestIssueExtractionPipeline extends Command
 
         return CalendarEvent::create([
             'source_id' => $source->id,
-            'external_id' => 'pipeline-test-' . now()->timestamp,
+            'external_id' => 'pipeline-test-'.now()->timestamp,
             'platform' => 'google_meet',
             'title' => 'Sprint Review — Pipeline Test',
             'url' => 'https://meet.google.com/pipeline-test',

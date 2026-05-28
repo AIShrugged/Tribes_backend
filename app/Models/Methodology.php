@@ -80,12 +80,16 @@ class Methodology extends Model
             throw new AppException('Some teams do not belong to this organization.', 'METHODOLOGY_ORG_MISMATCH');
         }
 
-        // Reset teams that were assigned to this methodology but are not in the new list
-        $this->teams()->whereNotIn('id', $teamIds)
+        // Reset teams that were assigned to this methodology but are not in the new list.
+        // Skip default teams — they're invariant infrastructure and must keep the
+        // default methodology; touching them here can clobber that intent.
+        $this->teams()
+            ->where('is_default', false)
+            ->whereNotIn('id', $teamIds)
             ->update(['methodology_id' => self::getDefault()->id]);
 
         // Assign the new teams
-        if (!empty($teamIds)) {
+        if (! empty($teamIds)) {
             Team::whereIn('id', $teamIds)
                 ->update(['methodology_id' => $this->id]);
         }

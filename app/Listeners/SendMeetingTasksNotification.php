@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\MeetingTasksExtracted;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use App\Services\UserTeamsResolver;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\Api;
 
@@ -20,9 +21,7 @@ class SendMeetingTasksNotification
 
         $user = $calendarEvent->source->user;
         $orgId = $calendarEvent->source?->organization_id;
-        $teams = $orgId
-            ? $user->teams()->where('organization_id', $orgId)->get()
-            : $user->teams;
+        $teams = app(UserTeamsResolver::class)->forOutboundNotification($user, $orgId);
 
         if ($teams->isEmpty()) {
             return;
@@ -57,9 +56,9 @@ class SendMeetingTasksNotification
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
-                'chat_id'                  => $registration->telegram_chat_id,
-                'text'                     => $text,
-                'parse_mode'               => 'HTML',
+                'chat_id' => $registration->telegram_chat_id,
+                'text' => $text,
+                'parse_mode' => 'HTML',
                 'disable_web_page_preview' => true,
             ];
 
@@ -81,7 +80,7 @@ class SendMeetingTasksNotification
     {
         $lines = [];
 
-        $lines[] = '📋 <b>Meeting Tasks — ' . e($calendarEvent->title ?? 'Meeting') . '</b>';
+        $lines[] = '📋 <b>Meeting Tasks — '.e($calendarEvent->title ?? 'Meeting').'</b>';
         $lines[] = '';
 
         $frontendUrl = rtrim(config('app.frontend_url'), '/');
@@ -89,9 +88,9 @@ class SendMeetingTasksNotification
         foreach ($issues as $i => $issue) {
             $num = $i + 1;
             $title = e($issue->name);
-            $assignee = $issue->assignee_name ? ' → ' . e($issue->assignee_name) : '';
-            $due = $issue->due_date ? ' <i>(' . $issue->due_date->format('d.m.Y') . ')</i>' : '';
-            $url = $frontendUrl . '/dashboard/issues/' . $issue->id;
+            $assignee = $issue->assignee_name ? ' → '.e($issue->assignee_name) : '';
+            $due = $issue->due_date ? ' <i>('.$issue->due_date->format('d.m.Y').')</i>' : '';
+            $url = $frontendUrl.'/dashboard/issues/'.$issue->id;
             $lines[] = "{$num}. <a href=\"{$url}\">{$title}</a>{$assignee}{$due}";
         }
 

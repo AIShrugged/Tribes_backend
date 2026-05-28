@@ -2,10 +2,9 @@
 
 namespace App\Policies;
 
-use App\Models\Team;
 use App\Models\Organization;
+use App\Models\Team;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class TeamPolicy
 {
@@ -31,6 +30,13 @@ class TeamPolicy
 
     public function destroy(User $user, Team $team): bool
     {
+        // Default team is invariant infrastructure (auto-provisioned, holds the
+        // org-wide membership fallback). It cannot be deleted via API. See plan
+        // docs/plans/2026-05-28-feat-default-team-per-organization-plan.md.
+        if ($team->isDefault()) {
+            return false;
+        }
+
         return $user->isOrganizationMember($team->organization);
     }
 }

@@ -9,6 +9,7 @@ use App\Http\Resources\API\v1\OrganizationResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
+use App\Services\OrganizationMembershipService;
 use App\Services\Workspace\WorkspaceBootstrapService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
@@ -20,8 +21,8 @@ class OrganizationController extends Controller
 
     public function __construct(
         private readonly WorkspaceBootstrapService $workspaceBootstrapService,
-    )
-    {
+        private readonly OrganizationMembershipService $membershipService,
+    ) {
         $this->authorizeResource(Organization::class, 'organization');
     }
 
@@ -31,7 +32,6 @@ class OrganizationController extends Controller
      * @group Organizations
      *
      * Returns a paginated list of organizations that belong to the authenticated user.
-     *
      *
      * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Acme Inc"}],"meta":{"count":1}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
@@ -77,12 +77,10 @@ class OrganizationController extends Controller
      *
      * Creates a new organization and assigns the authenticated user a manager role in it.
      *
-     *
      * @response 200 scenario="Created" {"success":true,"data":{"id":10,"name":"Acme Inc"}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      */
-
     public function store(OrganizationRequest $request): ApiResponse
     {
         try {
@@ -90,9 +88,12 @@ class OrganizationController extends Controller
 
             $organization = Organization::create($request->getStoreData());
 
-            $organization->users()->attach(Auth::id(), ['role' => UserRole::MANAGER->value]);
-            $this->workspaceBootstrapService->ensureOrganizationDefaults($organization);
+            // OrganizationObserver::created already ran ensureOrganizationDefaults
+            // and ensureDefaultTeam at this point. Membership service attaches the
+            // creator to both org and default team.
+            $this->membershipService->add($organization, Auth::user(), UserRole::MANAGER);
             DB::commit();
+
             return ApiResponse::success(data: OrganizationResource::make($organization));
         } catch (\Exception $e) {
             DB::rollBack();
@@ -115,7 +116,6 @@ class OrganizationController extends Controller
      * @response 403 scenario="Forbidden" {"success":false,"message":"This action is unauthorized."}
      * @response 404 scenario="Not Found" {"message":"No query results for model [Organization] 999"}
      */
-
     public function update(OrganizationRequest $request, Organization $organization): ApiResponse
     {
         $data = $request->getUpdateData();
@@ -154,7 +154,7 @@ class OrganizationController extends Controller
     }
 
     /**
-     * @param array<int, array<string, mixed>> $issueTypes
+     * @param  array<int, array<string, mixed>>  $issueTypes
      */
     private function syncIssueTypes(Organization $organization, array $issueTypes): void
     {

@@ -14,6 +14,21 @@ class Team extends Model
 {
     protected $guarded = [];
 
+    protected $casts = [
+        'is_default' => 'boolean',
+    ];
+
+    /**
+     * Default team is auto-created per organization (one row, is_default=true).
+     * It contains every organization member and serves as a fallback for
+     * team-scoped features when no real team exists yet. See plan
+     * docs/plans/2026-05-28-feat-default-team-per-organization-plan.md.
+     */
+    public function isDefault(): bool
+    {
+        return (bool) $this->is_default;
+    }
+
     /**
      * Per US-12.6 spec:
      *   - manager sees all teams in their organization

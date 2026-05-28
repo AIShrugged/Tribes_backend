@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API\v1;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\AcceptOrganizationStructureRequest;
 use App\Http\Requests\API\v1\GenerateOrganizationStructureRequest;
@@ -9,13 +10,14 @@ use App\Http\Responses\ApiResponse;
 use App\Jobs\GenerateOrganizationStructureJob;
 use App\Jobs\IndexOrganizationAttachmentJob;
 use App\Jobs\IndexOrganizationLinkJob;
-use App\Models\IssueAttachment;
 use App\Models\Issue;
+use App\Models\IssueAttachment;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
 use App\Models\OrganizationLink;
 use App\Models\OrganizationOnboardingDraft;
 use App\Models\User;
+use App\Services\OrganizationMembershipService;
 use App\Support\IssueDescriptionFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,9 +38,9 @@ class OnboardingController extends Controller
 
         $draft = OrganizationOnboardingDraft::create([
             'organization_id' => $organization->id,
-            'user_id'         => $request->user()->id,
-            'status'          => 'pending',
-            'payload'         => $request->only(['description', 'upload_token', 'links', 'template']),
+            'user_id' => $request->user()->id,
+            'status' => 'pending',
+            'payload' => $request->only(['description', 'upload_token', 'links', 'template']),
         ]);
 
         GenerateOrganizationStructureJob::dispatch($draft->id);
@@ -55,10 +57,10 @@ class OnboardingController extends Controller
             ->firstOrFail();
 
         return ApiResponse::success('Success', [
-            'id'     => $draft->id,
+            'id' => $draft->id,
             'status' => $draft->status,
             'result' => $draft->result,
-            'error'  => $draft->error,
+            'error' => $draft->error,
         ]);
     }
 
@@ -73,19 +75,19 @@ class OnboardingController extends Controller
         }
 
         $epicType = OrganizationIssueType::where('base_type', 'epic')
-            ->where(fn($q) => $q->where('organization_id', $organization->id)->orWhereNull('organization_id'))
+            ->where(fn ($q) => $q->where('organization_id', $organization->id)->orWhereNull('organization_id'))
             ->orderByRaw('CASE WHEN organization_id = ? THEN 0 ELSE 1 END', [$organization->id])
             ->where('is_active', true)
             ->first();
 
-        if (!$epicType) {
+        if (! $epicType) {
             return ApiResponse::error('Тип эпика не настроен в системе', null, 422);
         }
 
-        $userId   = $request->user()->id;
-        $orgData  = $request->input('organization');
-        $goals    = $request->input('goals');
-        $team     = $this->normalizeOnboardingTeam($request->input('team', []));
+        $userId = $request->user()->id;
+        $orgData = $request->input('organization');
+        $goals = $request->input('goals');
+        $team = $this->normalizeOnboardingTeam($request->input('team', []));
         $template = $request->input('template');
 
         $draft = OrganizationOnboardingDraft::where('organization_id', $organization->id)
@@ -93,7 +95,7 @@ class OnboardingController extends Controller
             ->latest()
             ->first();
 
-        $draftLinks       = array_filter((array) ($draft?->payload['links'] ?? []));
+        $draftLinks = array_filter((array) ($draft?->payload['links'] ?? []));
         $draftUploadToken = $draft?->payload['upload_token'] ?? null;
 
         $draftAttachments = $draftUploadToken
@@ -107,17 +109,17 @@ class OnboardingController extends Controller
             $team = $this->ensureTeamUsers($organization, $team);
 
             $organization->update([
-                'name'         => $orgData['name'],
-                'context'      => $orgData['description'],
-                'team_map'     => $team ?: null,
-                'template'     => $template,
+                'name' => $orgData['name'],
+                'context' => $orgData['description'],
+                'team_map' => $team ?: null,
+                'template' => $template,
                 'onboarded_at' => now(),
             ]);
 
             foreach ($draftLinks as $url) {
                 $link = OrganizationLink::firstOrCreate([
                     'organization_id' => $organization->id,
-                    'url'             => $url,
+                    'url' => $url,
                 ]);
                 IndexOrganizationLinkJob::dispatch($link->id);
             }
@@ -128,31 +130,31 @@ class OnboardingController extends Controller
 
             foreach ($goals as $goal) {
                 $epic = Issue::create([
-                    'user_id'         => $userId,
+                    'user_id' => $userId,
                     'organization_id' => $organization->id,
-                    'team_id'         => null,
-                    'issue_type_id'   => $epicType->id,
-                    'type'            => Issue::TYPE_EPIC,
-                    'name'            => $goal['title'],
-                    'description'     => $goal['description'] ?? null,
-                    'status'          => 'open',
+                    'team_id' => null,
+                    'issue_type_id' => $epicType->id,
+                    'type' => Issue::TYPE_EPIC,
+                    'name' => $goal['title'],
+                    'description' => $goal['description'] ?? null,
+                    'status' => 'open',
                 ]);
 
                 foreach ($goal['tasks'] ?? [] as $task) {
                     Issue::create([
-                        'user_id'         => $userId,
+                        'user_id' => $userId,
                         'organization_id' => $organization->id,
-                        'team_id'         => null,
-                        'epic_id'         => $epic->id,
-                        'name'            => $task['title'],
-                        'description'     => IssueDescriptionFormatter::onboardingTask(
+                        'team_id' => null,
+                        'epic_id' => $epic->id,
+                        'name' => $task['title'],
+                        'description' => IssueDescriptionFormatter::onboardingTask(
                             $task['description'] ?? null,
                             $goal['title'],
                             $goal['description'] ?? null,
                         ),
-                        'type'            => $task['type'] ?? Issue::TYPE_DEVELOPMENT,
-                        'priority'        => $task['priority'] ?? Issue::PRIORITY_NORMAL,
-                        'status'          => 'open',
+                        'type' => $task['type'] ?? Issue::TYPE_DEVELOPMENT,
+                        'priority' => $task['priority'] ?? Issue::PRIORITY_NORMAL,
+                        'status' => 'open',
                     ]);
                 }
             }
@@ -169,43 +171,49 @@ class OnboardingController extends Controller
                 ?? $this->fallbackEmailForName($name);
 
             return array_merge($member, [
-                'name'  => $name,
+                'name' => $name,
                 'email' => $email,
-                'role'  => in_array($member['role'] ?? '', ['manager', 'employee'], true)
+                'role' => in_array($member['role'] ?? '', ['manager', 'employee'], true)
                     ? $member['role']
                     : 'employee',
             ]);
-        }, $team), fn(array $member): bool => $member['name'] !== ''));
+        }, $team), fn (array $member): bool => $member['name'] !== ''));
     }
 
     private function ensureTeamUsers(Organization $organization, array $team): array
     {
-        return array_map(function (array $member) use ($organization): array {
+        // Two passes: first resolve/create User models without touching pivots,
+        // then bulk-attach in one transaction via OrganizationMembershipService::addMany.
+        // This keeps the org_user → default_team_user invariant intact AND avoids
+        // N transactions for large onboarding payloads.
+        $members = [];
+        $result = array_map(function (array $member) use (&$members): array {
             $email = (string) ($member['email'] ?? '');
-
             if ($email === '') {
                 return $member;
             }
 
             $user = User::firstOrNew(['email' => $email]);
-
-            if (!$user->exists) {
+            if (! $user->exists) {
                 $user->forceFill([
-                    'name'              => $member['name'],
-                    'password'          => Str::random(32),
+                    'name' => $member['name'],
+                    'password' => Str::random(32),
                     'email_verified_at' => now(),
                 ])->save();
             }
 
-            $organization->users()->syncWithoutDetaching([
-                $user->id => ['role' => $member['role'] ?? 'employee'],
-            ]);
+            $role = UserRole::tryFrom($member['role'] ?? '') ?? UserRole::EMPLOYEE;
+            $members[] = ['user' => $user, 'role' => $role];
 
             return array_merge($member, [
                 'already_in_system' => true,
-                'system_user_id'    => $user->id,
+                'system_user_id' => $user->id,
             ]);
         }, $team);
+
+        app(OrganizationMembershipService::class)->addMany($organization, $members);
+
+        return $result;
     }
 
     private function normalizeEmail(mixed $value): ?string
@@ -216,7 +224,7 @@ class OnboardingController extends Controller
 
         $email = strtolower(trim((string) $value));
 
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return null;
         }
 

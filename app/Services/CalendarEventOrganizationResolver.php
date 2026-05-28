@@ -28,22 +28,37 @@ class CalendarEventOrganizationResolver
         $organizationId = $event->source?->organization_id;
 
         if (! $organizationId) {
-            $team = $user->teams()->first();
+            // Prefer a real team; fall back to default only if owner has none.
+            $team = $user->teams()->where('is_default', false)->first()
+                ?? $user->teams()->first();
 
             return $team ? ['team' => $team, 'user' => $user] : null;
         }
 
         $participantUserIds = $this->getParticipantUserIds($event);
 
+        // Default team contains every org member, so it would always win
+        // withCount-based selection. Exclude it from the participant-match
+        // candidate set and keep it strictly as a final fallback.
         $team = $participantUserIds->isNotEmpty()
             ? Team::where('organization_id', $organizationId)
+                ->where('is_default', false)
                 ->whereHas('users', fn ($q) => $q->whereIn('users.id', $participantUserIds))
                 ->withCount(['users' => fn ($q) => $q->whereIn('users.id', $participantUserIds)])
                 ->orderByDesc('users_count')
                 ->first()
             : null;
 
-        $team ??= $user->teams()->where('organization_id', $organizationId)->first();
+        // Owner's real team in this org.
+        $team ??= $user->teams()
+            ->where('organization_id', $organizationId)
+            ->where('teams.is_default', false)
+            ->first();
+
+        // Last resort: default team (owner has no real team in this org).
+        $team ??= $user->teams()
+            ->where('organization_id', $organizationId)
+            ->first();
 
         return $team ? ['team' => $team, 'user' => $user] : null;
     }
