@@ -45,7 +45,13 @@ class IssueMergeService
         // and the saving hook would silently overwrite type to 'development' on update —
         // demoting epics among others.
         $existingIssues = Issue::query()
-            ->where('team_id', $team->id)
+            ->where(function ($q) use ($team) {
+                $q->where('team_id', $team->id)
+                    ->orWhere(function ($q2) use ($team) {
+                        $q2->whereNull('team_id')
+                            ->where('organization_id', $team->organization_id);
+                    });
+            })
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
             ->get();
 
@@ -79,7 +85,13 @@ class IssueMergeService
         }
 
         $existingIssues = Issue::query()
-            ->where('team_id', $team->id)
+            ->where(function ($q) use ($team) {
+                $q->where('team_id', $team->id)
+                    ->orWhere(function ($q2) use ($team) {
+                        $q2->whereNull('team_id')
+                            ->where('organization_id', $team->organization_id);
+                    });
+            })
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
             ->get();
 
