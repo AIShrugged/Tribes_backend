@@ -20,16 +20,18 @@ class IssueAttachmentController extends Controller
     {
         $task = $this->findVisibleIssue($request->user(), $issue);
         $disk = $this->attachmentDisk();
+        $file = $request->file('file');
 
-        $path = $request->file('file')->store("issues/{$task->id}", $disk);
+        $path = $file->store("issues/{$task->id}", $disk);
 
         if ($path === false) {
             return ApiResponse::error('Failed to store attachment', 500);
         }
 
         $attachment = $task->attachments()->create([
-            'file_path' => $path,
-            'uploaded_at' => now(),
+            'file_path'     => $path,
+            'original_name' => $file->getClientOriginalName(),
+            'uploaded_at'   => now(),
         ]);
 
         return ApiResponse::success(data: IssueAttachmentResource::make($attachment), status: 201);
@@ -67,11 +69,9 @@ class IssueAttachmentController extends Controller
             abort(404, 'Attachment file not found');
         }
 
-        return Storage::disk($disk)->response(
-            $record->file_path,
-            basename($record->file_path),
-            ['Content-Disposition' => 'inline; filename="'.basename($record->file_path).'"']
-        );
+        $downloadName = $record->original_name ?: basename($record->file_path);
+
+        return Storage::disk($disk)->response($record->file_path, $downloadName);
     }
 
     public function storePending(StoreOrphanAttachmentRequest $request): ApiResponse
@@ -93,6 +93,7 @@ class IssueAttachmentController extends Controller
 
         $attachment = IssueAttachment::create([
             'file_path'           => $path,
+            'original_name'       => $file->getClientOriginalName(),
             'issue_id'            => null,
             'organization_id'     => $request->input('organization_id'),
             'upload_token'        => $token,
