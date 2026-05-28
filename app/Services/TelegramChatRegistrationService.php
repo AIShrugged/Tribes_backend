@@ -105,7 +105,12 @@ class TelegramChatRegistrationService
         ChannelConversation $conversation,
         string $chatType,
         ?string $chatTitle,
+        ?string $topicTitle = null,
     ): TelegramChatRegistration {
+        if ($conversation->message_thread_id !== null && $topicTitle !== null && trim($topicTitle) !== '') {
+            $conversation->forceFill(['title' => trim($topicTitle)])->save();
+        }
+
         $registration = TelegramChatRegistration::query()->updateOrCreate(
             [
                 'telegram_chat_id' => $conversation->telegram_chat_id,

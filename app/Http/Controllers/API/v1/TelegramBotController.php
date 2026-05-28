@@ -89,12 +89,22 @@ class TelegramBotController extends Controller
                 $telegramUserId = $message->getFrom()?->getId();
                 $username = $message->getFrom()?->getUsername();
                 $messageThreadId = $message->get('message_thread_id');
+                $topicTitle = $this->extractTopicTitle($message);
 
                 if ($this->isBotAddedEvent($message)) {
                     $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
-                    $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle);
+                    $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle, $topicTitle);
 
                     return response()->json(['ok' => true]);
+                }
+
+                if ($messageThreadId !== null && $topicTitle !== null && in_array($chatType, ['group', 'supergroup'], true)) {
+                    $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
+                    $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle, $topicTitle);
+
+                    if ($text === null || trim($text) === '') {
+                        return response()->json(['ok' => true]);
+                    }
                 }
 
                 // Skip other system messages (left_chat_member, etc.) without text
@@ -146,7 +156,7 @@ class TelegramBotController extends Controller
                 $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
 
                 if (in_array($chatType, ['group', 'supergroup'], true)) {
-                    $registration = $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle);
+                    $registration = $this->telegramChatRegistrationService->discoverGroupConversation($conversation, $chatType, $chatTitle, $topicTitle);
 
                     if ($registration->bound_at === null) {
                         return response()->json(['ok' => true]);
@@ -360,6 +370,35 @@ class TelegramBotController extends Controller
     private function removeMention(string $text, string $botUsername): string
     {
         return preg_replace('/@'.preg_quote($botUsername, '/').'/i', '', $text);
+    }
+
+    private function extractTopicTitle($message): ?string
+    {
+        foreach (['forum_topic_created', 'forum_topic_edited'] as $field) {
+            $title = $this->extractTopicTitleFromPayload($message->get($field));
+            if ($title !== null) {
+                return $title;
+            }
+        }
+
+        $replyToMessage = $message->getReplyToMessage();
+        if ($replyToMessage) {
+            return $this->extractTopicTitle($replyToMessage);
+        }
+
+        return null;
+    }
+
+    private function extractTopicTitleFromPayload(mixed $payload): ?string
+    {
+        $name = match (true) {
+            is_array($payload) => $payload['name'] ?? null,
+            is_object($payload) && method_exists($payload, 'get') => $payload->get('name'),
+            is_object($payload) && isset($payload->name) => $payload->name,
+            default => null,
+        };
+
+        return is_string($name) && trim($name) !== '' ? trim($name) : null;
     }
 
     private function isBotMembershipActive(?string $status): bool

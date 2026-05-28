@@ -133,6 +133,28 @@ class TelegramBotWebhookTest extends TestCase
     }
 
     #[Test]
+    public function forum_topic_created_message_saves_topic_title(): void
+    {
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('getWebhookUpdate')
+            ->once()
+            ->andReturn(new Update($this->forumTopicCreatedPayload()));
+        $telegramApi->shouldNotReceive('sendMessage');
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $registration = TelegramChatRegistration::query()
+            ->where('telegram_chat_id', 555123)
+            ->where('message_thread_id', 336)
+            ->firstOrFail();
+
+        $this->assertSame('Backend Focus', $registration->conversation->title);
+        $this->assertSame('supergroup', $registration->chat_type);
+    }
+
+    #[Test]
     public function bot_removed_from_group_unbinds_the_chat(): void
     {
         $manager = User::factory()->create();
@@ -243,6 +265,33 @@ class TelegramBotWebhookTest extends TestCase
                         'username' => 'wanda_test_bot',
                         'first_name' => 'Tribes',
                     ],
+                ],
+            ],
+        ];
+    }
+
+    private function forumTopicCreatedPayload(): array
+    {
+        return [
+            'update_id' => 1004,
+            'message' => [
+                'message_id' => 3,
+                'message_thread_id' => 336,
+                'date' => now()->timestamp,
+                'chat' => [
+                    'id' => 555123,
+                    'type' => 'supergroup',
+                    'title' => 'Engineering Room',
+                ],
+                'from' => [
+                    'id' => 900001,
+                    'is_bot' => false,
+                    'username' => 'manager_user',
+                    'first_name' => 'Manager',
+                ],
+                'forum_topic_created' => [
+                    'name' => 'Backend Focus',
+                    'icon_color' => 7322096,
                 ],
             ],
         ];

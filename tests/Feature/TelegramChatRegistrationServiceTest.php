@@ -200,6 +200,24 @@ class TelegramChatRegistrationServiceTest extends TestCase
     }
 
     #[Test]
+    public function discover_group_conversation_saves_topic_title_on_conversation(): void
+    {
+        $conversation = ChannelConversation::create([
+            'channel_type' => ConversationChannelType::TELEGRAM->value,
+            'conversation_key' => ChannelConversation::keyForTelegram(555131, 777),
+            'telegram_chat_id' => 555131,
+            'message_thread_id' => 777,
+        ]);
+
+        $service = $this->app->make(TelegramChatRegistrationService::class);
+        $registration = $service->discoverGroupConversation($conversation, 'supergroup', 'Engineering Room', 'Backend Focus');
+
+        $this->assertSame('Backend Focus', $conversation->refresh()->title);
+        $this->assertSame($conversation->id, $registration->channel_conversation_id);
+        $this->assertSame(777, $registration->message_thread_id);
+    }
+
+    #[Test]
     public function discover_group_conversation_does_not_bind_unregistered_chat(): void
     {
         $conversation = ChannelConversation::create([
