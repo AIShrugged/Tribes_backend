@@ -19,14 +19,34 @@ class TelegramChatRegistrationController extends Controller
         private readonly TenantScopeValidator $tenantScopeValidator,
     ) {}
 
-    public function index(): ApiResponse
+    public function index(Request $request): ApiResponse
     {
+        $validated = $request->validate([
+            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
+        ]);
+        $organizationId = isset($validated['organization_id']) ? (int) $validated['organization_id'] : null;
+
+        if ($organizationId !== null) {
+            $this->tenantScopeValidator->assertScopeIsValid(
+                $request->user(),
+                $organizationId,
+                null,
+                allowUnbound: false,
+            );
+        }
+
         $registrations = TelegramChatRegistration::query()
+            ->with('conversation')
             ->where(function (Builder $builder): void {
                 $builder->where('chat_type', '!=', 'private')
                     ->orWhereHas('conversation', function (Builder $conversation): void {
                         $conversation->where('user_id', auth()->id());
                     });
+            })
+            ->when($organizationId !== null, function (Builder $builder) use ($organizationId): void {
+                $builder
+                    ->where('organization_id', $organizationId)
+                    ->where('chat_type', '!=', 'private');
             })
             ->latest('id')
             ->get();
@@ -50,6 +70,7 @@ class TelegramChatRegistrationController extends Controller
         $registration = $this->registrationService->createWorkspaceChat(
             $request->getName(),
             $request->getTelegramChatId(),
+            $request->getMessageThreadId(),
             $request->getOrganizationId(),
             $request->getTeamId(),
             $request->user(),

@@ -5,6 +5,7 @@ namespace App\Services\Recall;
 use App\Enums\BotEventType;
 use App\Models\Bot;
 use App\Models\CalendarEvent;
+use App\Models\Source;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -163,6 +164,33 @@ class BotSchedulingService
             $this->recallBotService->removeBot($lockedEvent);
             $activeBot->deactivate();
         });
+    }
+
+    public function deactivateUpcomingBotsForSource(Source $source): int
+    {
+        $deactivated = 0;
+
+        $source->calendarEvents()
+            ->where('starts_at', '>', now())
+            ->with('bot')
+            ->get()
+            ->each(function (CalendarEvent $calendarEvent) use (&$deactivated, $source) {
+                if (!$calendarEvent->bot?->is_active) {
+                    return;
+                }
+
+                Log::info('BotSchedulingService: deactivating bot for disconnected source', [
+                    'source_id' => $source->id,
+                    'calendar_event_id' => $calendarEvent->id,
+                    'bot_id' => $calendarEvent->bot->id,
+                    'meeting_url' => $calendarEvent->url,
+                ]);
+
+                $calendarEvent->bot->deactivate();
+                $deactivated++;
+            });
+
+        return $deactivated;
     }
 
     /**

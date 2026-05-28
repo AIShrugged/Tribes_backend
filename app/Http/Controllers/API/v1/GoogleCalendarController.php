@@ -14,7 +14,9 @@ use App\Models\Organization;
 use App\Models\Source;
 use App\Models\SourceOauth;
 use App\Services\GoogleOAuthService;
+use App\Services\Recall\CalendarEventSyncService;
 use App\Services\RecallCalendarService;
+use App\Services\RecallEventService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -66,12 +68,13 @@ class GoogleCalendarController extends Controller
         try {
             $oauthDTO = app(GoogleOAuthService::class)->callback($oauthState, $request->getCode());
 
-            DB::transaction(function () use ($oauthDTO, $oauthState): void {
+            [$source, $shouldSyncUpcomingMeetings] = DB::transaction(function () use ($oauthDTO, $oauthState): array {
                 $source = Source::withTrashed()->firstWhere([
                     'user_id'  => $oauthState->user_id,
                     'identity' => $oauthDTO->email,
                     'type'     => SourceType::GOOGLE_CALENDAR->value,
                 ]);
+                $shouldSyncUpcomingMeetings = (bool) $source && !$source->trashed();
 
                 if ($source) {
                     if ($source->trashed()) {
@@ -117,13 +120,29 @@ class GoogleCalendarController extends Controller
                     'expires_at'    => Carbon::now()->addSeconds($oauthDTO->expiresIn),
                     'email'         => $oauthDTO->email,
                 ]);
+
+                return [$source, $shouldSyncUpcomingMeetings];
             });
+
+            if ($shouldSyncUpcomingMeetings) {
+                $this->syncUpcomingMeetings($source);
+            }
 
             return redirect(config('app.frontend_url') . '/dashboard/calendar?attached=1');
         } catch (\Exception $exception) {
             throw $exception;
         } finally {
             $oauthState->delete();
+        }
+    }
+
+    private function syncUpcomingMeetings(Source $source): void
+    {
+        $eventService = new RecallEventService($source);
+        $syncService = app(CalendarEventSyncService::class);
+
+        foreach ($eventService->getAllByCalendar() as $eventDTO) {
+            $syncService->sync($source, $eventDTO, []);
         }
     }
 }

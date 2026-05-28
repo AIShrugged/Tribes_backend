@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Domain\DTO\OauthDTO;
 use App\Enums\SourceAuthType;
 use App\Enums\SourceType;
+use App\Models\Bot;
+use App\Models\CalendarEvent;
 use App\Models\OAuthState;
 use App\Models\Source;
 use App\Models\SourceOauth;
@@ -133,6 +135,105 @@ class GoogleCalendarControllerTest extends TestCase
             return $request->method() === 'POST'
                 && $request->url() === 'https://us-west-2.recall.ai/api/v2/calendars/';
         });
+    }
+
+    #[Test]
+    public function it_schedules_upcoming_meeting_bots_after_reconnecting_an_existing_calendar(): void
+    {
+        config(['app.frontend_url' => 'http://frontend.test']);
+
+        $user = User::factory()->create();
+        $state = OAuthState::create([
+            'user_id' => $user->id,
+            'state' => 'state-reconnect-existing',
+        ]);
+
+        $source = Source::create([
+            'user_id' => $user->id,
+            'external_id' => 'existing-recall-calendar-id',
+            'identity' => $user->email,
+            'auth_type' => SourceAuthType::OAUTH2->value,
+            'type' => SourceType::GOOGLE_CALENDAR->value,
+            'is_connected' => false,
+        ]);
+
+        $startsAt = now()->addHours(2)->startOfSecond();
+        $endsAt = $startsAt->copy()->addHour();
+        $meetingUrl = 'https://meet.google.com/reconnect-test';
+
+        $event = CalendarEvent::create([
+            'source_id' => $source->id,
+            'external_id' => 'reconnect-event-1',
+            'platform' => 'google_meet',
+            'title' => 'Reconnect meeting',
+            'url' => $meetingUrl,
+            'description' => '',
+            'starts_at' => $startsAt,
+            'ends_at' => $endsAt,
+        ]);
+        $event->sources()->attach($source->id, [
+            'external_id' => 'reconnect-event-1',
+            'required_bot' => true,
+        ]);
+
+        $oldBot = Bot::create([
+            'external_id' => 'old-reconnect-bot',
+            'deduplication_key' => 'old-reconnect-key',
+            'meeting_url' => $meetingUrl,
+            'is_active' => false,
+        ]);
+        $event->update(['bot_id' => $oldBot->id]);
+
+        $this->mockGoogleOAuthCallback(
+            new OauthDTO('reconnected-access-token', 'reconnected-refresh-token', 3600, $user->email)
+        );
+
+        Http::fake(function ($request) use ($startsAt, $endsAt, $meetingUrl) {
+            if ($request->method() === 'PATCH' && str_contains($request->url(), '/api/v2/calendars/existing-recall-calendar-id')) {
+                return Http::response([
+                    'id' => 'existing-recall-calendar-id',
+                ], 200);
+            }
+
+            if ($request->method() === 'GET' && str_contains($request->url(), '/api/v2/calendar-events/')) {
+                return Http::response([
+                    'results' => [[
+                        'id' => 'reconnect-event-1',
+                        'meeting_platform' => 'google_meet',
+                        'meeting_url' => $meetingUrl,
+                        'start_time' => $startsAt->toIso8601String(),
+                        'end_time' => $endsAt->toIso8601String(),
+                        'raw' => [
+                            'summary' => 'Reconnect meeting',
+                            'description' => '',
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            if ($request->method() === 'POST' && str_contains($request->url(), '/api/v2/calendar-events/reconnect-event-1/bot/')) {
+                return Http::response([
+                    'bots' => [[
+                        'bot_id' => 'new-reconnect-bot',
+                        'deduplication_key' => md5('reconnect-event-1'),
+                    ]],
+                ], 200);
+            }
+
+            return Http::response([], 500);
+        });
+
+        $response = $this->get('/api/v1/google/oauth/callback?state='.$state->state.'&code=test-code');
+
+        $response->assertRedirect('http://frontend.test/dashboard/calendar?attached=1');
+
+        $this->assertTrue((bool) $source->fresh()->is_connected);
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'new-reconnect-bot',
+            'meeting_url' => $meetingUrl,
+            'is_active' => true,
+        ]);
+        $this->assertSame('new-reconnect-bot', $event->fresh('bot')->bot?->external_id);
     }
 
     private function mockGoogleOAuthCallback(OauthDTO $oauthDTO): void

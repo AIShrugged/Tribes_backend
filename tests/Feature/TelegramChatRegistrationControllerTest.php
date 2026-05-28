@@ -49,6 +49,97 @@ class TelegramChatRegistrationControllerTest extends TestCase
     }
 
     #[Test]
+    public function manager_can_list_organization_chats_with_topics_without_unbound_or_foreign_chats(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
+
+        $foreignOrganization = Organization::create([
+            'name' => 'Foreign Telegram Admin',
+            'slug' => 'foreign-telegram-admin',
+        ]);
+        $foreignOrganization->users()->attach($manager->id, ['role' => 'manager']);
+
+        $firstTopic = ChannelConversation::create([
+            'channel_type' => ConversationChannelType::TELEGRAM->value,
+            'conversation_key' => ChannelConversation::keyForTelegram(-1003705371486, 336),
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 336,
+        ]);
+
+        $secondTopic = ChannelConversation::create([
+            'channel_type' => ConversationChannelType::TELEGRAM->value,
+            'conversation_key' => ChannelConversation::keyForTelegram(-1003705371486, 441),
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 441,
+        ]);
+
+        $unboundTopic = ChannelConversation::create([
+            'channel_type' => ConversationChannelType::TELEGRAM->value,
+            'conversation_key' => ChannelConversation::keyForTelegram(-1003705371486, 409),
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 409,
+        ]);
+
+        TelegramChatRegistration::create([
+            'channel_conversation_id' => $firstTopic->id,
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 336,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'AI shrugged',
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'bound_at' => now(),
+        ]);
+
+        TelegramChatRegistration::create([
+            'channel_conversation_id' => $secondTopic->id,
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 441,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'AI shrugged',
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'bound_at' => now(),
+        ]);
+
+        TelegramChatRegistration::create([
+            'channel_conversation_id' => $unboundTopic->id,
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 409,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'AI shrugged',
+        ]);
+
+        TelegramChatRegistration::create([
+            'telegram_chat_id' => -1003705371499,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'Foreign',
+            'organization_id' => $foreignOrganization->id,
+            'bound_at' => now(),
+        ]);
+
+        $this->actingAs($manager)
+            ->getJson('/api/v1/telegram/chats?organization_id='.$organization->id)
+            ->assertStatus(200)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonFragment([
+                'message_thread_id' => 336,
+                'topic_label' => 'Topic #336',
+            ])
+            ->assertJsonFragment([
+                'message_thread_id' => 441,
+                'topic_label' => 'Topic #441',
+            ])
+            ->assertJsonMissing([
+                'message_thread_id' => 409,
+            ])
+            ->assertJsonMissing([
+                'chat_title' => 'Foreign',
+            ]);
+    }
+
+    #[Test]
     public function manager_can_create_workspace_chat(): void
     {
         $manager = User::factory()->create();
@@ -68,6 +159,35 @@ class TelegramChatRegistrationControllerTest extends TestCase
 
         $this->assertDatabaseHas('telegram_chat_registrations', [
             'telegram_chat_id' => 987654321,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+        ]);
+    }
+
+    #[Test]
+    public function manager_can_create_workspace_topic(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
+
+        $this->actingAs($manager)
+            ->postJson('/api/v1/telegram/chats', [
+                'name' => 'Product Topic',
+                'telegram_chat_id' => -1003705371486,
+                'message_thread_id' => 336,
+                'organization_id' => $organization->id,
+                'team_id' => $team->id,
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.telegram_chat_id', -1003705371486)
+            ->assertJsonPath('data.message_thread_id', 336)
+            ->assertJsonPath('data.topic_label', 'Topic #336')
+            ->assertJsonPath('data.chat_title', 'Product Topic')
+            ->assertJsonPath('data.is_bound', false);
+
+        $this->assertDatabaseHas('telegram_chat_registrations', [
+            'telegram_chat_id' => -1003705371486,
+            'message_thread_id' => 336,
             'organization_id' => $organization->id,
             'team_id' => $team->id,
         ]);
