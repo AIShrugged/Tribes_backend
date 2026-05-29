@@ -22,6 +22,8 @@ class CalendarEventSyncService
     {
         $startTime = Carbon::parse($eventDTO->startsAt)->setTimezone(config('app.timezone'));
         $endTime = Carbon::parse($eventDTO->endsAt)->setTimezone(config('app.timezone'));
+        $isHostSource = !$eventDTO->creatorEmail
+            || strcasecmp($source->identity, $eventDTO->creatorEmail) === 0;
 
         if ($startTime->lte(Carbon::now())) {
             return null;
@@ -33,12 +35,22 @@ class CalendarEventSyncService
             ->first();
 
         if ($calendarEvent) {
-            $calendarEvent->update([
+            $updates = [
                 'platform'    => $eventDTO->platform,
                 'title'       => $eventDTO->title,
                 'description' => $eventDTO->description,
                 'ends_at'     => $endTime,
-            ]);
+            ];
+
+            if ($isHostSource) {
+                $updates['external_id'] = $eventDTO->externalId;
+                if ($eventDTO->creatorEmail) {
+                    $updates['creator_user_id'] = $this->creatorResolver->resolve($eventDTO->creatorEmail)
+                        ?? $source->user_id;
+                }
+            }
+
+            $calendarEvent->update($updates);
         } else {
             // Check if this is a moved event: same external_id in pivot but different starts_at.
             // Google Calendar keeps the same event ID when a meeting is rescheduled, so we can
@@ -56,21 +68,34 @@ class CalendarEventSyncService
                 : null;
 
             if ($movedEvent) {
-                $movedEvent->update([
+                $updates = [
                     'platform'    => $eventDTO->platform,
                     'title'       => $eventDTO->title,
                     'description' => $eventDTO->description,
                     'starts_at'   => $startTime,
                     'ends_at'     => $endTime,
-                ]);
+                ];
+
+                if ($isHostSource) {
+                    $updates['external_id'] = $eventDTO->externalId;
+                    if ($eventDTO->creatorEmail) {
+                        $updates['creator_user_id'] = $this->creatorResolver->resolve($eventDTO->creatorEmail)
+                            ?? $source->user_id;
+                    }
+                }
+
+                $movedEvent->update($updates);
                 $calendarEvent = $movedEvent;
             } else {
                 $creatorUserId = $this->creatorResolver->resolve($eventDTO->creatorEmail);
+                if ($isHostSource && $eventDTO->creatorEmail) {
+                    $creatorUserId ??= $source->user_id;
+                }
 
                 $calendarEvent = CalendarEvent::create([
                     'source_id'       => $source->id,
                     'creator_user_id' => $creatorUserId,
-                    'external_id'     => $eventDTO->externalId,
+                    'external_id'     => $isHostSource ? $eventDTO->externalId : null,
                     'platform'        => $eventDTO->platform,
                     'url'             => $eventDTO->url,
                     'title'           => $eventDTO->title,
@@ -95,7 +120,9 @@ class CalendarEventSyncService
 
         $this->syncAttendees($calendarEvent, $attendees);
 
-        CalendarEventChanged::dispatch($calendarEvent, false);
+        if ($isHostSource) {
+            CalendarEventChanged::dispatch($calendarEvent, false);
+        }
 
         return $calendarEvent;
     }

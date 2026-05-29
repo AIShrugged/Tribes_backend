@@ -6,6 +6,7 @@ use App\Models\AgentTask;
 use App\Models\Issue;
 use App\Models\Methodology;
 use App\Models\Organization;
+use App\Models\OrganizationContext;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Agent\AgentToolRegistrar;
@@ -19,7 +20,7 @@ class AgentDelegationToolsTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
-    public function default_agent_tools_expose_create_issue_and_create_agent_task(): void
+    public function default_agent_tools_expose_create_entity_for_issue_and_agent_task(): void
     {
         $user = User::factory()->create();
         [$organization, $team] = $this->createTenantContextFor($user);
@@ -34,14 +35,22 @@ class AgentDelegationToolsTest extends TestCase
         );
 
         $this->assertNull($registry->get('create_task'));
-        $this->assertNotNull($registry->get('create_issue'));
-        $this->assertNotNull($registry->get('create_agent_task'));
-        $this->assertNotNull($registry->get('regenerate_followup'));
+        $this->assertNotNull($registry->get('create_entity'));
 
-        $issueResult = $registry->get('create_issue')?->execute([
-            'name' => 'Prepare release notes',
-            'type' => 'organization',
-            'description' => 'Summarize backend changes for release.',
+        $createEntitySchema = collect($registry->getToolsForLLM())
+            ->firstWhere('function.name', 'create_entity')['function']['parameters'] ?? null;
+
+        $this->assertContains('issue', data_get($createEntitySchema, 'properties.entity.enum'));
+        $this->assertContains('agent_task', data_get($createEntitySchema, 'properties.entity.enum'));
+        $this->assertContains('followup', data_get($createEntitySchema, 'properties.entity.enum'));
+
+        $issueResult = $registry->get('create_entity')?->execute([
+            'entity' => 'issue',
+            'data' => [
+                'name' => 'Prepare release notes',
+                'type' => 'organization',
+                'description' => 'Summarize backend changes for release.',
+            ],
         ]);
 
         $this->assertTrue((bool) data_get($issueResult, 'success'));
@@ -53,10 +62,13 @@ class AgentDelegationToolsTest extends TestCase
         $this->assertSame('organization', $issue->type);
         $this->assertSame('open', $issue->status);
 
-        $agentTaskResult = $registry->get('create_agent_task')?->execute([
-            'name' => 'Scan repository for regressions',
-            'prompt' => 'Inspect the repository and report any risky changes from the last release.',
-            'allowed_tools' => ['list_workspaces'],
+        $agentTaskResult = $registry->get('create_entity')?->execute([
+            'entity' => 'agent_task',
+            'data' => [
+                'name' => 'Scan repository for regressions',
+                'prompt' => 'Inspect the repository and report any risky changes from the last release.',
+                'allowed_tools' => ['list_workspaces'],
+            ],
         ]);
 
         $this->assertTrue((bool) data_get($agentTaskResult, 'success'));
@@ -68,15 +80,12 @@ class AgentDelegationToolsTest extends TestCase
         $this->assertSame('one_off', $agentTask->schedule_type->value);
         $this->assertSame(['list_workspaces'], $agentTask->allowed_tools);
 
-        $createAgentTaskSchema = collect($registry->getToolsForLLM())
-            ->firstWhere('function.name', 'create_agent_task')['function']['parameters'] ?? null;
-
-        $this->assertSame('string', data_get($createAgentTaskSchema, 'properties.allowed_tools.items.type'));
-        $this->assertSame('string', data_get($createAgentTaskSchema, 'properties.allowed_outbound_hosts.items.type'));
+        $this->assertSame('string', data_get($createEntitySchema, 'properties.data.properties.allowed_tools.items.type'));
+        $this->assertSame('string', data_get($createEntitySchema, 'properties.data.properties.allowed_outbound_hosts.items.type'));
     }
 
     #[Test]
-    public function create_agent_task_tool_rejects_missing_tenant_scope_without_context_defaults(): void
+    public function create_entity_tool_rejects_agent_task_missing_tenant_scope_without_context_defaults(): void
     {
         $user = User::factory()->create();
         $registry = new ToolRegistry;
@@ -87,9 +96,12 @@ class AgentDelegationToolsTest extends TestCase
             'web',
         );
 
-        $result = $registry->get('create_agent_task')?->execute([
-            'name' => 'Detached task',
-            'prompt' => 'Try to run without tenant scope.',
+        $result = $registry->get('create_entity')?->execute([
+            'entity' => 'agent_task',
+            'data' => [
+                'name' => 'Detached task',
+                'prompt' => 'Try to run without tenant scope.',
+            ],
         ]);
 
         $this->assertFalse((bool) data_get($result, 'success'));
@@ -134,6 +146,53 @@ class AgentDelegationToolsTest extends TestCase
         $this->assertDatabaseHas('issues', [
             'id' => $issue->id,
             'team_id' => $team->id,
+        ]);
+    }
+
+    #[Test]
+    public function update_entity_tool_can_update_indexed_organization_context_chunk(): void
+    {
+        $user = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($user);
+
+        $context = OrganizationContext::create([
+            'organization_id' => $organization->id,
+            'source_type' => Organization::class,
+            'source_id' => $organization->id,
+            'text' => 'Old indexed context.',
+            'indexed_at' => now()->subDay(),
+        ]);
+
+        $registry = new ToolRegistry;
+        $this->app->make(AgentToolRegistrar::class)->registerDefaults(
+            $registry,
+            $user,
+            'web',
+            organizationId: $organization->id,
+            teamId: $team->id,
+        );
+
+        $schema = collect($registry->getToolsForLLM())
+            ->firstWhere('function.name', 'update_entity')['function']['parameters'] ?? [];
+
+        $this->assertContains('organization_context', data_get($schema, 'properties.entity.enum'));
+
+        $result = $registry->get('update_entity')?->execute([
+            'entity' => 'organization_context',
+            'id' => $context->id,
+            'data' => [
+                'text' => 'Updated indexed context with current product positioning.',
+            ],
+        ]);
+
+        $this->assertTrue((bool) data_get($result, 'success'), json_encode($result));
+        $this->assertSame(
+            'Updated indexed context with current product positioning.',
+            data_get($result, 'organization_context.text'),
+        );
+        $this->assertDatabaseHas('organization_contexts', [
+            'id' => $context->id,
+            'text' => 'Updated indexed context with current product positioning.',
         ]);
     }
 

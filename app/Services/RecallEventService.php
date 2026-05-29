@@ -49,6 +49,7 @@ class RecallEventService implements SourceEventServiceInterface
                 $event['meeting_url'],
                 $event['raw']['summary'],
                 $event['raw']['description'] ?? '',
+                $event['raw']['creator']['email'] ?? null,
             );
         }
 

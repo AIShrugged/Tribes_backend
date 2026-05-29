@@ -137,31 +137,39 @@ class CalendarEvent extends Model
 
     public function isRequiredBot(): bool
     {
-        return DB::table('calendar_event_source')
+        $query = DB::table('calendar_event_source')
             ->where('calendar_event_id', $this->id)
-            ->where('required_bot', true)
-            ->exists();
+            ->where('required_bot', true);
+
+        if ($this->creator_user_id) {
+            $query
+                ->join('sources', 'sources.id', '=', 'calendar_event_source.source_id')
+                ->where('sources.user_id', $this->creator_user_id)
+                ->whereNull('sources.deleted_at');
+        }
+
+        return $query->exists();
     }
 
     /**
      * Get the Recall external_id for API calls.
      *
-     * Prefers the model's own external_id field. Falls back to the pivot
-     * record for a source that has required_bot=true, so that when multiple
-     * sources share the same meeting we use the one that actually triggered
-     * the bot requirement rather than an arbitrary pivot row.
+     * Bot scheduling must use the host's Recall calendar-event id, which is
+     * stored on the host source pivot row.
      */
     public function getRecallExternalId(): ?string
     {
-        if (!empty($this->external_id)) {
+        if (!$this->creator_user_id) {
             return $this->external_id;
         }
 
         return DB::table('calendar_event_source')
-            ->where('calendar_event_id', $this->id)
-            ->where('required_bot', true)
-            ->whereNotNull('external_id')
-            ->orderBy('id')
-            ->value('external_id');
+            ->join('sources', 'sources.id', '=', 'calendar_event_source.source_id')
+            ->where('calendar_event_source.calendar_event_id', $this->id)
+            ->where('sources.user_id', $this->creator_user_id)
+            ->whereNull('sources.deleted_at')
+            ->whereNotNull('calendar_event_source.external_id')
+            ->orderBy('calendar_event_source.id')
+            ->value('calendar_event_source.external_id') ?: $this->external_id;
     }
 }

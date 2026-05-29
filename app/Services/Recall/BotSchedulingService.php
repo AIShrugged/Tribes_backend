@@ -41,6 +41,15 @@ class BotSchedulingService
                 ->lockForUpdate()
                 ->findOrFail($calendarEvent->id);
 
+            if (!$calendarEvent->getRecallExternalId()) {
+                Log::info('BotSchedulingService: host Recall event id is not known yet, skipping schedule', [
+                    'calendar_event_id' => $calendarEvent->id,
+                    'meeting_url' => $calendarEvent->url,
+                ]);
+
+                return;
+            }
+
             if ($calendarEvent->bot?->is_active && !$forceRecreate) {
                 Log::info('BotSchedulingService: active bot already exists, skipping schedule', [
                     'calendar_event_id' => $calendarEvent->id,

@@ -8,6 +8,7 @@ use App\Models\AgentTask;
 use App\Models\Channel;
 use App\Models\InsightShortTerm;
 use App\Models\Issue;
+use App\Models\OrganizationContext;
 use App\Models\Profile;
 use App\Models\User;
 use App\Services\AgentTaskMutationService;
@@ -45,6 +46,7 @@ class UpdateEntityTool extends AbstractAgentTool
         return 'Update an existing entity. '
             ."Use entity=\"issue\" to change issue fields such as status ({$validStatuses}), team_id, organization_id, assignee_id, due_date, priority, name, description, type, or epic_id. "
             .'entity="agent_task" to modify agent task parameters, '
+            .'entity="organization_context" to update an indexed organization context chunk, '
             ."entity=\"memory\" to save notes about the user (context_type: {$contextTypes}).";
     }
 
@@ -58,12 +60,12 @@ class UpdateEntityTool extends AbstractAgentTool
             'properties' => [
                 'entity' => [
                     'type' => 'string',
-                    'enum' => ['issue', 'agent_task', 'memory'],
+                    'enum' => ['issue', 'agent_task', 'organization_context', 'memory'],
                     'description' => 'Type of entity to update.',
                 ],
                 'id' => [
                     'type' => 'integer',
-                    'description' => 'ID of the entity to update. Required for issue and agent_task.',
+                    'description' => 'ID of the entity to update. Required for issue, agent_task, and organization_context.',
                 ],
                 'data' => [
                     'type' => 'object',
@@ -101,6 +103,11 @@ class UpdateEntityTool extends AbstractAgentTool
                         'enabled' => ['type' => ['boolean', 'null']],
                         'max_attempts' => ['type' => ['integer', 'null']],
                         'metadata' => ['type' => ['object', 'null'], 'additionalProperties' => true],
+                        // organization_context
+                        'text' => [
+                            'type' => 'string',
+                            'description' => 'Full replacement text for the indexed organization context chunk.',
+                        ],
                         // memory
                         'context_type' => [
                             'type' => 'string',
@@ -131,8 +138,9 @@ class UpdateEntityTool extends AbstractAgentTool
         return match ($entity) {
             'issue' => $this->updateIssue($id, $data),
             'agent_task' => $this->updateAgentTask($id, $data),
+            'organization_context' => $this->updateOrganizationContext($id, $data),
             'memory' => $this->updateMemory($data),
-            default => ['success' => false, 'error' => "Unknown entity: {$entity}. Must be one of: issue, agent_task, memory"],
+            default => ['success' => false, 'error' => "Unknown entity: {$entity}. Must be one of: issue, agent_task, organization_context, memory"],
         };
     }
 
@@ -280,6 +288,56 @@ class UpdateEntityTool extends AbstractAgentTool
                 'next_run_at' => $task->next_run_at?->toIso8601String(),
                 'enabled' => (bool) $task->enabled,
                 'max_attempts' => (int) $task->max_attempts,
+            ],
+        ];
+    }
+
+    private function updateOrganizationContext(?int $id, array $data): array
+    {
+        if (! $id) {
+            return ['success' => false, 'error' => 'id is required for organization_context'];
+        }
+
+        $context = OrganizationContext::query()->find($id);
+        if (! $context) {
+            return ['success' => false, 'error' => 'Organization context not found or access denied'];
+        }
+
+        $text = array_key_exists('text', $data) ? trim((string) $data['text']) : '';
+        if ($text === '') {
+            return ['success' => false, 'error' => 'data.text is required for organization_context'];
+        }
+
+        try {
+            $this->assertOrganizationContextMatchesScope($context);
+
+            if (! $this->user->isOrganizationMember((int) $context->organization_id)) {
+                return ['success' => false, 'error' => 'Organization context not found or access denied'];
+            }
+        } catch (ValidationException $exception) {
+            return [
+                'success' => false,
+                'error' => 'Organization context validation failed.',
+                'details' => $exception->errors(),
+            ];
+        }
+
+        $oldText = $context->text;
+        $context->update(['text' => $text, 'indexed_at' => now()]);
+        $context->refresh();
+
+        return [
+            'success' => true,
+            'organization_context' => [
+                'id' => $context->id,
+                'organization_id' => $context->organization_id,
+                'source_type' => $context->source_type,
+                'source_id' => $context->source_id,
+                'text' => $context->text,
+                'indexed_at' => $context->indexed_at?->toIso8601String(),
+            ],
+            'old_values' => [
+                'text' => $oldText,
             ],
         ];
     }
@@ -466,6 +524,15 @@ class UpdateEntityTool extends AbstractAgentTool
         if ($this->teamId !== null && $teamId !== $this->teamId) {
             throw ValidationException::withMessages([
                 'team_id' => ['Issue updates are restricted to the current team scope.'],
+            ]);
+        }
+    }
+
+    private function assertOrganizationContextMatchesScope(OrganizationContext $context): void
+    {
+        if ($this->organizationId !== null && (int) $context->organization_id !== $this->organizationId) {
+            throw ValidationException::withMessages([
+                'organization_id' => ['Organization context updates are restricted to the current organization scope.'],
             ]);
         }
     }
