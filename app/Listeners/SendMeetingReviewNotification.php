@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\MeetingReviewGenerated;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use App\Services\UserTeamsResolver;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +16,7 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
     use Queueable;
 
     public int $tries = 1;
+
     public function handle(MeetingReviewGenerated $event): void
     {
         $review = $event->review;
@@ -26,9 +28,7 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
 
         $user = $calendarEvent->source->user;
         $orgId = $calendarEvent->source?->organization_id;
-        $teams = $orgId
-            ? $user->teams()->where('organization_id', $orgId)->get()
-            : $user->teams;
+        $teams = app(UserTeamsResolver::class)->forOutboundNotification($user, $orgId);
 
         if ($teams->isEmpty()) {
             return;
@@ -63,8 +63,8 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
-                'chat_id'    => $registration->telegram_chat_id,
-                'text'       => $text,
+                'chat_id' => $registration->telegram_chat_id,
+                'text' => $text,
                 'parse_mode' => 'HTML',
             ];
 
@@ -91,7 +91,7 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
         $scoreEmoji = $this->scoreEmoji($review->score);
         $lines[] = "{$scoreEmoji} <b>Meeting Review — {$review->score}/10</b>";
         $lines[] = '';
-        $lines[] = '<b>' . e($calendarEvent?->title ?? 'Meeting') . '</b>';
+        $lines[] = '<b>'.e($calendarEvent?->title ?? 'Meeting').'</b>';
 
         // Score breakdown
         if ($review->score_breakdown) {
@@ -115,7 +115,7 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
         if (! empty($review->suggestions)) {
             $detailLines[] = '<b>Suggestions:</b>';
             foreach ($review->suggestions as $i => $suggestion) {
-                $detailLines[] = ($i + 1) . '. ' . e($suggestion);
+                $detailLines[] = ($i + 1).'. '.e($suggestion);
             }
         }
 
@@ -132,15 +132,15 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
                 $status = strtoupper($check['status'] ?? '?');
                 $emoji = match ($status) {
                     'IMPLEMENTED' => '✅',
-                    'PARTIALLY'   => '🔶',
-                    'IGNORED'     => '❌',
-                    default       => '❓',
+                    'PARTIALLY' => '🔶',
+                    'IGNORED' => '❌',
+                    default => '❓',
                 };
                 $suggestion = $check['suggestion'] ?? '';
                 $comment = $check['comment'] ?? '';
-                $detailLines[] = "{$emoji} <b>[{$status}]</b> " . e(mb_substr($suggestion, 0, 100)) . (mb_strlen($suggestion) > 100 ? '...' : '');
+                $detailLines[] = "{$emoji} <b>[{$status}]</b> ".e(mb_substr($suggestion, 0, 100)).(mb_strlen($suggestion) > 100 ? '...' : '');
                 if ($comment) {
-                    $detailLines[] = '  → ' . e($comment);
+                    $detailLines[] = '  → '.e($comment);
                 }
             }
         }
@@ -149,7 +149,7 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
             $detailBlock = implode("\n", $detailLines);
             $lines[] = '';
             if ($channelType === 'telegram') {
-                $lines[] = '<blockquote expandable>' . $detailBlock . '</blockquote>';
+                $lines[] = '<blockquote expandable>'.$detailBlock.'</blockquote>';
             } else {
                 $lines[] = $detailBlock;
             }
@@ -163,19 +163,19 @@ class SendMeetingReviewNotification implements ShouldQueueAfterCommit
         return match (true) {
             $score >= 8 => '🟢',
             $score >= 5 => '🟡',
-            default     => '🔴',
+            default => '🔴',
         };
     }
 
     private function criterionLabel(string $criterion): string
     {
         return match ($criterion) {
-            'goal_clarity'         => '🎯 Goal clarity',
+            'goal_clarity' => '🎯 Goal clarity',
             'participation_balance' => '👥 Participation',
-            'decisions_made'       => '✅ Decisions',
-            'time_efficiency'      => '⏱ Time efficiency',
+            'decisions_made' => '✅ Decisions',
+            'time_efficiency' => '⏱ Time efficiency',
             'action_items_clarity' => '📋 Action items',
-            default                => $criterion,
+            default => $criterion,
         };
     }
 }

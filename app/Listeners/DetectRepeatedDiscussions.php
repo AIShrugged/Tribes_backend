@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\MeetingSummaryGenerated;
 use App\Services\Meeting\DetectRepeatedDiscussionsService;
+use App\Services\UserTeamsResolver;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,7 @@ class DetectRepeatedDiscussions implements ShouldQueueAfterCommit
     use Queueable;
 
     public int $tries = 3;
+
     public int $backoff = 60;
 
     public function __construct(
@@ -30,9 +32,8 @@ class DetectRepeatedDiscussions implements ShouldQueueAfterCommit
 
         $user = $calendarEvent->source->user;
         $orgId = $calendarEvent->source?->organization_id;
-        $teams = $orgId
-            ? $user->teams()->where('organization_id', $orgId)->get()
-            : $user->teams;
+        // Data-processing pipeline: prefer real teams, fall back to default.
+        $teams = app(UserTeamsResolver::class)->forPipelineTrigger($user, $orgId);
 
         if ($teams->isEmpty()) {
             Log::info('DetectRepeatedDiscussions: no teams found', [

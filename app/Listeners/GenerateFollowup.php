@@ -6,6 +6,7 @@ use App\Events\TranscriptParsed;
 use App\Jobs\ExtractIssuesFromTranscriptJob;
 use App\Jobs\GenerateFollowupJob;
 use App\Services\CalendarEventOrganizationResolver;
+use App\Services\UserTeamsResolver;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +16,7 @@ class GenerateFollowup implements ShouldQueueAfterCommit
     use Queueable;
 
     public int $tries = 3;
+
     public int $backoff = 30;
 
     public function handle(TranscriptParsed $event): void
@@ -23,12 +25,11 @@ class GenerateFollowup implements ShouldQueueAfterCommit
         $user = $calendarEvent->source->user;
 
         $orgId = $calendarEvent->source?->organization_id;
-        $teams = $orgId
-            ? $user->teams()->where('organization_id', $orgId)->get()
-            : $user->teams;
+        $teams = app(UserTeamsResolver::class)->forPipelineTrigger($user, $orgId);
 
         if ($teams->isEmpty()) {
             Log::info("User {$user->id} has no teams, skipping followup generation");
+
             return;
         }
 

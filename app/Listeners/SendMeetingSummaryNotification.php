@@ -8,6 +8,7 @@ use App\Models\MeetingSummary;
 use App\Models\MeetingSummaryTemplate;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
+use App\Services\UserTeamsResolver;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Queue\Queueable;
@@ -36,9 +37,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
 
         $user = $calendarEvent->source->user;
         $orgId = $calendarEvent->source?->organization_id;
-        $teams = $orgId
-            ? $user->teams()->where('organization_id', $orgId)->get()
-            : $user->teams;
+        $teams = app(UserTeamsResolver::class)->forOutboundNotification($user, $orgId);
 
         if ($teams->isEmpty()) {
             return;
@@ -48,8 +47,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
 
         $newTasks = Issue::forMeeting($calendarEvent->id)->with('assignee')->get();
 
-        $updatedTasks = Issue::whereHas('comments', fn ($q) =>
-            $q->where('calendar_event_id', $calendarEvent->id)->whereNull('user_id')
+        $updatedTasks = Issue::whereHas('comments', fn ($q) => $q->where('calendar_event_id', $calendarEvent->id)->whereNull('user_id')
         )
             ->whereNotIn('id', $newTasks->pluck('id'))
             ->with('assignee')
@@ -133,12 +131,12 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         $sections = $template?->sections ?? MeetingSummaryTemplate::DEFAULT_SECTIONS;
 
         $renderers = [
-            'key_points'           => fn () => $this->renderKeyPoints($summary),
-            'decisions'            => fn () => $this->renderDecisions($summary),
-            'tasks'                => fn () => $this->renderTasks($newTasks, $updatedTasks),
-            'commitments'          => fn () => $this->renderCommitments($summary),
+            'key_points' => fn () => $this->renderKeyPoints($summary),
+            'decisions' => fn () => $this->renderDecisions($summary),
+            'tasks' => fn () => $this->renderTasks($newTasks, $updatedTasks),
+            'commitments' => fn () => $this->renderCommitments($summary),
             'repeated_discussions' => fn () => $this->renderRepeatedDiscussions($summary),
-            'conflicts'            => fn () => $this->renderConflicts($summary),
+            'conflicts' => fn () => $this->renderConflicts($summary),
         ];
 
         $configuredVisible = $template?->visible_sections;
@@ -181,6 +179,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             if (! $summary->summary) {
                 return null;
             }
+
             return $this->markdownToTelegramHtml($summary->summary);
         }
 
@@ -303,8 +302,8 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         $frontend = rtrim((string) config('app.frontend_url'), '/');
         $fieldLabels = [
             'requirements' => 'требования',
-            'due_date'     => 'дедлайн',
-            'assignee'     => 'исполнитель',
+            'due_date' => 'дедлайн',
+            'assignee' => 'исполнитель',
         ];
 
         $lines = ['⚠️ <b>Найденные конфликты:</b>'];
@@ -329,7 +328,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
                     continue;
                 }
                 $name = $issues->get($id)?->name ?? "Issue #{$id}";
-                $url  = "{$frontend}/dashboard/issues/{$id}";
+                $url = "{$frontend}/dashboard/issues/{$id}";
                 $links[] = '<a href="'.e($url).'">'.e($name).'</a>';
             }
 

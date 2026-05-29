@@ -81,16 +81,22 @@ class TeamInvitationService
      */
     public function acceptInvite(Invite $invite, User $user): void
     {
-        // Add user to organization if not already a member
-        if (!$user->isOrganizationMember($invite->organization_id)) {
-            $invite->organization->users()->attach($user->id, ['role' => UserRole::EMPLOYEE->value]);
+        // Add user to organization if not already a member.
+        // Membership service also attaches to default team + personal_shared workspace.
+        if (! $user->isOrganizationMember($invite->organization_id)) {
+            app(\App\Services\OrganizationMembershipService::class)
+                ->add($invite->organization, $user, UserRole::EMPLOYEE);
         }
 
-        // Add user to team if not already a member
-        if (!$user->belongsToTeam($invite->team_id)) {
+        // Add user to the explicit invite-target team (real team, separate from default).
+        if (! $user->belongsToTeam($invite->team_id)) {
             $invite->team->users()->attach($user->id);
         }
 
+        // Defensive: org-shared workspace bootstrap is normally done by
+        // OrganizationObserver on org creation, but legacy orgs created before
+        // that path was active may still lack one. firstOrCreate is idempotent
+        // and cheap, so we re-assert it here on every invite-accept.
         $this->workspaceBootstrapService->ensureOrganizationDefaults($invite->organization);
         $this->workspaceBootstrapService->ensureTeamDefaults($invite->team);
         $this->workspaceBootstrapService->ensureUserTeamWorkspace($user, $invite->team);

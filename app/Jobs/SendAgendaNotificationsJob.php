@@ -49,11 +49,12 @@ class SendAgendaNotificationsJob implements ShouldQueue
     private function sendGeneralToTelegram(MeetingAgenda $agenda): void
     {
         $user = $this->calendarEvent->source?->user;
-        if (!$user) {
+        if (! $user) {
             return;
         }
 
-        $teams = $user->teams;
+        $orgId = $this->calendarEvent->source?->organization_id;
+        $teams = app(\App\Services\UserTeamsResolver::class)->forOutboundNotification($user, $orgId);
 
         foreach ($teams as $team) {
             $settings = TeamNotificationSetting::query()
@@ -66,7 +67,7 @@ class SendAgendaNotificationsJob implements ShouldQueue
 
             foreach ($settings as $setting) {
                 $registration = $setting->notifiable;
-                if (!$registration?->telegram_chat_id) {
+                if (! $registration?->telegram_chat_id) {
                     continue;
                 }
 
@@ -82,7 +83,7 @@ class SendAgendaNotificationsJob implements ShouldQueue
     private function sendPersonalToTelegram(MeetingAgenda $agenda): void
     {
         $telegramUser = $agenda->user?->telegramUser;
-        if (!$telegramUser?->telegram_user_id) {
+        if (! $telegramUser?->telegram_user_id) {
             return;
         }
 
@@ -181,6 +182,7 @@ class SendAgendaNotificationsJob implements ShouldQueue
     private function utf16Length(string $text): int
     {
         $utf16 = mb_convert_encoding($text, 'UTF-16LE', 'UTF-8');
+
         return is_string($utf16) ? (int) (strlen($utf16) / 2) : mb_strlen($text);
     }
 
@@ -200,6 +202,7 @@ class SendAgendaNotificationsJob implements ShouldQueue
             }
             $units += $cu;
         }
+
         return $cpCount;
     }
 
@@ -214,6 +217,7 @@ class SendAgendaNotificationsJob implements ShouldQueue
                 return $pos + mb_strlen($sep);
             }
         }
+
         return 0;
     }
 
@@ -223,13 +227,14 @@ class SendAgendaNotificationsJob implements ShouldQueue
 
         if ($agenda->isGeneral() && ! empty($rawJson)) {
             $template = $this->resolveTemplate($event);
+
             return app(AgendaRenderer::class)->renderForTelegram($rawJson, $event, $template);
         }
 
         // Personal agenda — plain text fallback
-        $lines   = [];
-        $lines[] = '<b>' . e($event->title) . '</b>';
-        $lines[] = '🕐 ' . $event->starts_at->format('d.m.Y H:i');
+        $lines = [];
+        $lines[] = '<b>'.e($event->title).'</b>';
+        $lines[] = '🕐 '.$event->starts_at->format('d.m.Y H:i');
         $lines[] = '';
         $lines[] = e($agenda->content);
 

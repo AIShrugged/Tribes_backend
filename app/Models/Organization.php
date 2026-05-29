@@ -6,6 +6,7 @@ use App\Exceptions\AppException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -19,7 +20,7 @@ class Organization extends Model
     {
         return [
             'onboarded_at' => 'datetime',
-            'team_map'     => 'array',
+            'team_map' => 'array',
         ];
     }
 
@@ -33,6 +34,17 @@ class Organization extends Model
     public function teams(): HasMany
     {
         return $this->hasMany(Team::class);
+    }
+
+    /**
+     * The auto-provisioned default team for this organization. One row,
+     * is_default=true, contains every org member. Created by OrganizationObserver
+     * on Organization::created and enforced unique-per-org at the DB level via
+     * partial index `teams_default_per_org_unique`.
+     */
+    public function defaultTeam(): HasOne
+    {
+        return $this->hasOne(Team::class)->where('is_default', true);
     }
 
     public function methodologies(): HasMany

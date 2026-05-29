@@ -22,8 +22,11 @@ class PreMeetingBriefService
     public function __construct(
         private readonly MeetingContextService $meetingContext,
     ) {}
+
     private const MAX_TASKS_SHOWN = 10;
+
     private const MAX_DESCRIPTION_LENGTH = 300;
+
     private const TELEGRAM_MAX_LENGTH = 4096;
 
     public function sendBriefs(): int
@@ -33,16 +36,17 @@ class PreMeetingBriefService
 
         $events = CalendarEvent::query()
             ->whereBetween('starts_at', [$from, $to])
-            ->with(['sources' => fn($q) => $q->withTrashed(), 'sources.user.teams', 'profiles.user'])
+            ->with(['sources' => fn ($q) => $q->withTrashed(), 'sources.user.teams', 'profiles.user'])
             ->get();
 
         $sent = 0;
 
+        $resolver = app(\App\Services\UserTeamsResolver::class);
         foreach ($events as $event) {
             $teams = $event->sources
-                ->map(fn($source) => $source->user)
+                ->map(fn ($source) => $source->user)
                 ->filter()
-                ->flatMap(fn($user) => $user->teams)
+                ->flatMap(fn ($user) => $resolver->forOutboundNotification($user, null))
                 ->unique('id');
 
             foreach ($teams as $team) {
@@ -101,8 +105,8 @@ class PreMeetingBriefService
 
             $telegram = new Api(config('telegram.bot_token'));
             $params = [
-                'chat_id'    => $registration->telegram_chat_id,
-                'text'       => $text,
+                'chat_id' => $registration->telegram_chat_id,
+                'text' => $text,
                 'parse_mode' => 'HTML',
             ];
 
@@ -126,40 +130,40 @@ class PreMeetingBriefService
         $lines = [];
         $lines[] = '📅 <b>Upcoming meeting in 15 minutes</b>';
         $lines[] = '';
-        $lines[] = '<b>' . e($event->title) . '</b>';
+        $lines[] = '<b>'.e($event->title).'</b>';
 
         // Duration
         $start = Carbon::parse($event->starts_at);
         $end = $event->ends_at ? Carbon::parse($event->ends_at) : null;
         if ($end) {
             $duration = $start->diffInMinutes($end);
-            $lines[] = '🕐 ' . $start->format('H:i') . ' — ' . $end->format('H:i') . ' (' . $duration . ' min)';
+            $lines[] = '🕐 '.$start->format('H:i').' — '.$end->format('H:i').' ('.$duration.' min)';
         } else {
-            $lines[] = '🕐 ' . $start->format('H:i');
+            $lines[] = '🕐 '.$start->format('H:i');
         }
 
         // Meeting link
         if ($event->url) {
-            $lines[] = '🔗 <a href="' . e($event->url) . '">Join meeting</a>';
+            $lines[] = '🔗 <a href="'.e($event->url).'">Join meeting</a>';
         }
 
         // Attendees
         $attendees = $this->getAttendeeNames($event);
         if ($attendees->isNotEmpty()) {
-            $lines[] = '👥 ' . $attendees->join(', ');
+            $lines[] = '👥 '.$attendees->join(', ');
         }
 
         // Absent team members
         $absent = $this->getAbsentMembers($event, $team);
         if ($absent->isNotEmpty()) {
-            $lines[] = '⚠️ <b>Not attending:</b> ' . $absent->join(', ');
+            $lines[] = '⚠️ <b>Not attending:</b> '.$absent->join(', ');
         }
 
         // Agenda (truncated)
         if ($event->description) {
             $desc = strip_tags($event->description);
             if (mb_strlen($desc) > self::MAX_DESCRIPTION_LENGTH) {
-                $desc = mb_substr($desc, 0, self::MAX_DESCRIPTION_LENGTH) . '…';
+                $desc = mb_substr($desc, 0, self::MAX_DESCRIPTION_LENGTH).'…';
             }
             $lines[] = '';
             $lines[] = '<b>Agenda:</b>';
@@ -171,10 +175,10 @@ class PreMeetingBriefService
         $previousSummary = $previousEvent?->meetingSummary;
         if ($previousSummary) {
             $daysSince = (int) Carbon::parse($previousEvent->starts_at)->diffInDays(Carbon::parse($event->starts_at));
-            $daysLabel = $daysSince === 1 ? '1 day ago' : $daysSince . ' days ago';
+            $daysLabel = $daysSince === 1 ? '1 day ago' : $daysSince.' days ago';
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '📋 <b>Previous meeting</b> <i>(' . $daysLabel . ')</i>';
+            $lines[] = '📋 <b>Previous meeting</b> <i>('.$daysLabel.')</i>';
 
             $summaryLines = [];
             $summaryLines[] = e($previousSummary->summary);
@@ -183,7 +187,7 @@ class PreMeetingBriefService
                 $summaryLines[] = '';
                 $summaryLines[] = '<b>Key points:</b>';
                 foreach ($previousSummary->key_points as $point) {
-                    $summaryLines[] = '• ' . e($point);
+                    $summaryLines[] = '• '.e($point);
                 }
             }
 
@@ -191,7 +195,7 @@ class PreMeetingBriefService
 
             $summaryBlock = implode("\n", $summaryLines);
             if ($channelType === 'telegram') {
-                $lines[] = '<blockquote expandable>' . $summaryBlock . '</blockquote>';
+                $lines[] = '<blockquote expandable>'.$summaryBlock.'</blockquote>';
             } else {
                 $lines[] = '';
                 $lines[] = $summaryBlock;
@@ -204,7 +208,7 @@ class PreMeetingBriefService
             if ($completedTasks->isNotEmpty()) {
                 $lines[] = '';
                 $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-                $lines[] = '✅ <b>Completed since last meeting:</b> ' . $completedTasks->count();
+                $lines[] = '✅ <b>Completed since last meeting:</b> '.$completedTasks->count();
                 $this->appendTaskLines($lines, $completedTasks, '  ✓ ');
             }
         }
@@ -217,25 +221,25 @@ class PreMeetingBriefService
                 $lines[] = '━━━━━━━━━━━━━━━━━━━━';
                 $lines[] = '🔄 <b>Topics to revisit:</b>';
                 foreach ($unresolvedDecisions as $decision) {
-                    $lines[] = '• ' . e($decision);
+                    $lines[] = '• '.e($decision);
                 }
             }
         }
 
         // All open tasks (accumulated backlog), excluding cancelled
         $allOpenTasks = $this->findAllOpenTasks($event, $teamId);
-        $overdue = $allOpenTasks->filter(fn($i) => $i->due_date && Carbon::parse($i->due_date)->lt(Carbon::now()));
+        $overdue = $allOpenTasks->filter(fn ($i) => $i->due_date && Carbon::parse($i->due_date)->lt(Carbon::now()));
 
         if ($overdue->isNotEmpty()) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '🔴 <b>Overdue tasks:</b> ' . $overdue->count();
+            $lines[] = '🔴 <b>Overdue tasks:</b> '.$overdue->count();
             $this->appendTaskLines($lines, $overdue, '• ', showDueDate: true);
         }
 
         $frontendUrl = rtrim(config('app.frontend_url'), '/');
-        $allTasksUrl = $frontendUrl . '/dashboard/issues';
-        $suffix = "\n\n<a href=\"" . e($allTasksUrl) . "\">show all</a>";
+        $allTasksUrl = $frontendUrl.'/dashboard/issues';
+        $suffix = "\n\n<a href=\"".e($allTasksUrl).'">show all</a>';
 
         $text = implode("\n", $lines);
 
@@ -249,7 +253,7 @@ class PreMeetingBriefService
             $text = $cut;
         }
 
-        return $text . $suffix;
+        return $text.$suffix;
     }
 
     private function formatFromAgenda(MeetingAgenda $agenda, CalendarEvent $event, Team $team, string $channelType): string
@@ -258,90 +262,90 @@ class PreMeetingBriefService
         $lines = [];
         $lines[] = '📅 <b>Upcoming meeting in 15 minutes</b>';
         $lines[] = '';
-        $lines[] = '<b>' . e($event->title) . '</b>';
+        $lines[] = '<b>'.e($event->title).'</b>';
 
         $start = Carbon::parse($event->starts_at);
         $end = $event->ends_at ? Carbon::parse($event->ends_at) : null;
         if ($end) {
             $duration = $start->diffInMinutes($end);
-            $lines[] = '🕐 ' . $start->format('H:i') . ' — ' . $end->format('H:i') . ' (' . $duration . ' min)';
+            $lines[] = '🕐 '.$start->format('H:i').' — '.$end->format('H:i').' ('.$duration.' min)';
         } else {
-            $lines[] = '🕐 ' . $start->format('H:i');
+            $lines[] = '🕐 '.$start->format('H:i');
         }
 
         if ($event->url) {
-            $lines[] = '🔗 <a href="' . e($event->url) . '">Join meeting</a>';
+            $lines[] = '🔗 <a href="'.e($event->url).'">Join meeting</a>';
         }
 
         $attendees = $raw['attendees'] ?? [];
-        if (!empty($attendees)) {
-            $lines[] = '👥 ' . implode(', ', array_map('e', $attendees));
+        if (! empty($attendees)) {
+            $lines[] = '👥 '.implode(', ', array_map('e', $attendees));
         }
 
         $attendeeEmails = $raw['attendee_emails'] ?? [];
-        if (!empty($attendeeEmails)) {
+        if (! empty($attendeeEmails)) {
             $team->loadMissing('users');
             $absent = $team->users
-                ->filter(fn($u) => !in_array($u->email, $attendeeEmails))
-                ->map(fn($u) => $u->name)
+                ->filter(fn ($u) => ! in_array($u->email, $attendeeEmails))
+                ->map(fn ($u) => $u->name)
                 ->filter()
                 ->values();
             if ($absent->isNotEmpty()) {
-                $lines[] = '⚠️ <b>Not attending:</b> ' . $absent->join(', ');
+                $lines[] = '⚠️ <b>Not attending:</b> '.$absent->join(', ');
             }
         }
 
         // Agenda: meeting goal + discussion topics (from new agenda format)
-        $meetingGoal      = $raw['meeting_goal'] ?? null;
+        $meetingGoal = $raw['meeting_goal'] ?? null;
         $discussionTopics = $raw['discussion_topics'] ?? [];
-        $mainProblem      = $raw['main_problem'] ?? null;
+        $mainProblem = $raw['main_problem'] ?? null;
 
-        if ($meetingGoal || !empty($discussionTopics) || $mainProblem) {
+        if ($meetingGoal || ! empty($discussionTopics) || $mainProblem) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
             $lines[] = '📋 <b>Agenda</b>';
 
             if ($meetingGoal) {
                 $lines[] = '';
-                $lines[] = '<b>Цель:</b> ' . e($meetingGoal);
+                $lines[] = '<b>Цель:</b> '.e($meetingGoal);
             }
 
-            if (!empty($discussionTopics)) {
+            if (! empty($discussionTopics)) {
                 $lines[] = '';
                 foreach ($discussionTopics as $i => $topic) {
                     $title = is_array($topic) ? ($topic['title'] ?? '') : $topic;
-                    $desc  = is_array($topic) ? ($topic['description'] ?? '') : '';
-                    $lines[] = ($i + 1) . '. <b>' . e($title) . '</b>';
+                    $desc = is_array($topic) ? ($topic['description'] ?? '') : '';
+                    $lines[] = ($i + 1).'. <b>'.e($title).'</b>';
                     if ($desc) {
-                        $lines[] = '   <i>' . e($desc) . '</i>';
+                        $lines[] = '   <i>'.e($desc).'</i>';
                     }
                 }
             }
 
             if ($mainProblem) {
                 $lines[] = '';
-                $lines[] = '⚠️ ' . e($mainProblem);
+                $lines[] = '⚠️ '.e($mainProblem);
             }
         }
 
         $prevSummary = $raw['previous_summary'] ?? null;
         if ($prevSummary) {
             $daysAgo = $prevSummary['days_ago'] ?? 0;
-            $daysLabel = $daysAgo === 1 ? '1 day ago' : $daysAgo . ' days ago';
+            $daysLabel = $daysAgo === 1 ? '1 day ago' : $daysAgo.' days ago';
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '📋 <b>Previous meeting</b> <i>(' . $daysLabel . ')</i>';
+            $lines[] = '📋 <b>Previous meeting</b> <i>('.$daysLabel.')</i>';
 
             // Show only key points (concise); avoid long summary text to prevent blockquote truncation
             $keyPoints = array_slice((array) ($prevSummary['key_points'] ?? []), 0, 5);
-            if (!empty($keyPoints)) {
+            if (! empty($keyPoints)) {
                 $summaryLines = [];
                 foreach ($keyPoints as $point) {
-                    $summaryLines[] = '• ' . e($point);
+                    $summaryLines[] = '• '.e($point);
                 }
                 $summaryBlock = implode("\n", $summaryLines);
                 if ($channelType === 'telegram') {
-                    $lines[] = '<blockquote>' . $summaryBlock . '</blockquote>';
+                    $lines[] = '<blockquote>'.$summaryBlock.'</blockquote>';
                 } else {
                     $lines[] = '';
                     $lines[] = $summaryBlock;
@@ -350,49 +354,49 @@ class PreMeetingBriefService
         }
 
         $completedTasks = $raw['completed_tasks'] ?? [];
-        if (!empty($completedTasks)) {
+        if (! empty($completedTasks)) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '✅ <b>Completed since last meeting:</b> ' . count($completedTasks);
+            $lines[] = '✅ <b>Completed since last meeting:</b> '.count($completedTasks);
             $this->appendTaskArrayLines($lines, $completedTasks, '  ✓ ');
         }
 
         $unresolvedDecisions = $raw['unresolved_decisions'] ?? [];
-        if (!empty($unresolvedDecisions)) {
+        if (! empty($unresolvedDecisions)) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
             $lines[] = '🔄 <b>Topics to revisit:</b>';
             foreach ($unresolvedDecisions as $decision) {
-                $lines[] = '• ' . e($decision);
+                $lines[] = '• '.e($decision);
             }
         }
 
         // Tasks: fetch live from DB so they reflect current state
         $allOpenTasks = $this->findAllOpenTasks($event, $team->id);
         $now = Carbon::now();
-        $overdue = $allOpenTasks->filter(fn($i) => $i->due_date && Carbon::parse($i->due_date)->lt($now));
+        $overdue = $allOpenTasks->filter(fn ($i) => $i->due_date && Carbon::parse($i->due_date)->lt($now));
 
         if ($overdue->isNotEmpty()) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
-            $lines[] = '🔴 <b>Overdue tasks:</b> ' . $overdue->count();
+            $lines[] = '🔴 <b>Overdue tasks:</b> '.$overdue->count();
             $this->appendTaskLines($lines, $overdue, '• ', showDueDate: true);
         }
 
         // Fallback: old format topics_to_discuss
         $topicsToDiscuss = $raw['topics_to_discuss'] ?? [];
-        if (empty($discussionTopics) && !empty($topicsToDiscuss)) {
+        if (empty($discussionTopics) && ! empty($topicsToDiscuss)) {
             $lines[] = '';
             $lines[] = '━━━━━━━━━━━━━━━━━━━━';
             $lines[] = '📝 <b>Topics to discuss:</b>';
             foreach ($topicsToDiscuss as $i => $topic) {
-                $lines[] = ($i + 1) . '. ' . e($topic);
+                $lines[] = ($i + 1).'. '.e($topic);
             }
         }
 
         $frontendUrl = rtrim(config('app.frontend_url'), '/');
-        $allTasksUrl = $frontendUrl . '/dashboard/issues';
-        $suffix = "\n\n<a href=\"" . e($allTasksUrl) . "\">show all</a>";
+        $allTasksUrl = $frontendUrl.'/dashboard/issues';
+        $suffix = "\n\n<a href=\"".e($allTasksUrl).'">show all</a>';
 
         $text = implode("\n", $lines);
 
@@ -405,7 +409,7 @@ class PreMeetingBriefService
             $text = $cut;
         }
 
-        return $text . $suffix;
+        return $text.$suffix;
     }
 
     private function appendTaskArrayLines(array &$lines, array $tasks, string $prefix, bool $showDueDate = false): void
@@ -414,18 +418,18 @@ class PreMeetingBriefService
         $remaining = count($tasks) - count($shown);
 
         foreach ($shown as $task) {
-            $line = $prefix . e($task['name'] ?? '');
-            if ($showDueDate && !empty($task['due_date'])) {
-                $line .= ' <i>(due ' . $task['due_date'] . ')</i>';
+            $line = $prefix.e($task['name'] ?? '');
+            if ($showDueDate && ! empty($task['due_date'])) {
+                $line .= ' <i>(due '.$task['due_date'].')</i>';
             }
-            if (!empty($task['assignee'])) {
-                $line .= ' — ' . e($task['assignee']);
+            if (! empty($task['assignee'])) {
+                $line .= ' — '.e($task['assignee']);
             }
             $lines[] = $line;
         }
 
         if ($remaining > 0) {
-            $lines[] = $prefix . '<i>…and ' . $remaining . ' more</i>';
+            $lines[] = $prefix.'<i>…and '.$remaining.' more</i>';
         }
     }
 
@@ -437,26 +441,26 @@ class PreMeetingBriefService
 
         foreach ($shown as $issue) {
             $assignee = $issue->assignee?->name ?? $issue->assignee_name;
-            $issueUrl = $frontendUrl . '/dashboard/issues/' . $issue->id;
-            $line = $prefix . '<a href="' . e($issueUrl) . '">' . e($issue->name) . '</a>';
+            $issueUrl = $frontendUrl.'/dashboard/issues/'.$issue->id;
+            $line = $prefix.'<a href="'.e($issueUrl).'">'.e($issue->name).'</a>';
             if ($showDueDate && $issue->due_date) {
-                $line .= ' <i>(due ' . Carbon::parse($issue->due_date)->format('d.m') . ')</i>';
+                $line .= ' <i>(due '.Carbon::parse($issue->due_date)->format('d.m').')</i>';
             }
             if ($assignee) {
-                $line .= ' — ' . e($assignee);
+                $line .= ' — '.e($assignee);
             }
             $lines[] = $line;
         }
 
         if ($remaining > 0) {
-            $lines[] = $prefix . '<i>…and ' . $remaining . ' more</i>';
+            $lines[] = $prefix.'<i>…and '.$remaining.' more</i>';
         }
     }
 
     private function getAttendeeNames(CalendarEvent $event): Collection
     {
         return $event->profiles
-            ->map(fn($p) => $p->user?->name)
+            ->map(fn ($p) => $p->user?->name)
             ->filter()
             ->values();
     }
@@ -465,7 +469,7 @@ class PreMeetingBriefService
     {
         $team->loadMissing('users');
         $attendeeEmails = $event->profiles
-            ->map(fn($p) => $p->user?->email)
+            ->map(fn ($p) => $p->user?->email)
             ->filter()
             ->values();
 
@@ -475,8 +479,8 @@ class PreMeetingBriefService
         }
 
         return $team->users
-            ->filter(fn($u) => ! $attendeeEmails->contains($u->email))
-            ->map(fn($u) => $u->name)
+            ->filter(fn ($u) => ! $attendeeEmails->contains($u->email))
+            ->map(fn ($u) => $u->name)
             ->filter()
             ->values();
     }
@@ -487,7 +491,7 @@ class PreMeetingBriefService
             ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->where('sourceable_id', $previousEvent->id)
-            ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
+            ->where(fn ($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
             ->whereNotIn('status', ['done', 'cancelled'])
             ->count();
 
@@ -495,7 +499,7 @@ class PreMeetingBriefService
             ->withoutTrashed()
             ->where('sourceable_type', CalendarEvent::class)
             ->where('sourceable_id', $previousEvent->id)
-            ->where(fn($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
+            ->where(fn ($q) => $q->where('team_id', $teamId)->orWhereNull('team_id'))
             ->count();
 
         // All tasks resolved (done or cancelled) — nothing to revisit
