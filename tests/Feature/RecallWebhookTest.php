@@ -918,4 +918,122 @@ class RecallWebhookTest extends TestCase
             'is_active'   => true,
         ]);
     }
+
+    #[Test]
+    public function calendar_sync_schedules_bot_with_host_external_id_for_shared_meeting(): void
+    {
+        $secondUser = User::factory()->create(['email' => 'test2@gmail.com']);
+        $organization = Organization::query()->firstOrFail();
+        $organization->users()->attach($secondUser, ['role' => 'employee']);
+
+        $sourceA = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'calendar-a',
+            'identity'    => 'test1@gmail.com',
+        ]);
+
+        $sourceB = Source::create([
+            'user_id'     => $secondUser->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'calendar-b',
+            'identity'    => 'test2@gmail.com',
+        ]);
+
+        $meetingStart = now()->addHours(3)->startOfSecond();
+        $meetingEnd   = $meetingStart->copy()->addHour();
+        $meetingUrl   = 'https://meet.google.com/shared-required-source-test';
+        $scheduledCalendarEventIds = [];
+
+        $event = CalendarEvent::create([
+            'source_id'       => $sourceA->id,
+            'creator_user_id' => $secondUser->id,
+            'external_id'     => 'some_external_id1',
+            'platform'        => 'google_meet',
+            'title'           => 'Shared meeting',
+            'url'             => $meetingUrl,
+            'description'     => '',
+            'starts_at'       => $meetingStart,
+            'ends_at'         => $meetingEnd,
+        ]);
+
+        $event->sources()->attach($sourceA->id, [
+            'external_id'  => 'some_external_id1',
+            'required_bot' => false,
+        ]);
+
+        Http::fake(function ($request) use ($meetingStart, $meetingEnd, $meetingUrl, &$scheduledCalendarEventIds) {
+            $url = $request->url();
+
+            if ($request->method() === 'GET' && str_starts_with($url, 'https://us-west-2.recall.ai/api/v2/calendar-events/')) {
+                $calendarId = $request->data()['calendar_id'] ?? null;
+                $externalId = $calendarId === 'calendar-b' ? 'some_external_id2' : 'some_external_id1';
+
+                return Http::response([
+                    'results' => [[
+                        'id'               => $externalId,
+                        'meeting_platform' => 'google_meet',
+                        'meeting_url'      => $meetingUrl,
+                        'start_time'       => $meetingStart->toIso8601String(),
+                        'end_time'         => $meetingEnd->toIso8601String(),
+                        'raw'              => [
+                            'summary'     => 'Shared meeting',
+                            'description' => '',
+                            'creator'     => ['email' => 'test2@gmail.com'],
+                            'attendees'   => [],
+                        ],
+                    ]],
+                ], 200);
+            }
+
+            if ($request->method() === 'POST' && preg_match('#/api/v2/calendar-events/([^/]+)/bot/#', $url, $matches) === 1) {
+                $scheduledCalendarEventIds[] = $matches[1];
+
+                return Http::response([
+                    'bots' => [[
+                        'bot_id'            => 'bot-shared-required-source',
+                        'deduplication_key' => md5('some_external_id2'),
+                    ]],
+                ], 200);
+            }
+
+            return Http::response([], 200);
+        });
+
+        $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data'  => [
+                'calendar_id'     => $sourceA->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ])->assertSuccessful();
+
+        $this->assertSame([], $scheduledCalendarEventIds);
+        $this->assertSame('some_external_id1', $event->fresh()->external_id);
+        $this->assertFalse($event->fresh()->isRequiredBot());
+
+        $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data'  => [
+                'calendar_id'     => $sourceB->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ])->assertSuccessful();
+
+        $this->assertSame(['some_external_id2'], $scheduledCalendarEventIds);
+        $this->assertSame('some_external_id2', $event->fresh()->external_id);
+        $this->assertTrue($event->fresh()->isRequiredBot());
+        $this->assertSame('some_external_id2', $event->fresh()->getRecallExternalId());
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $event->id,
+            'source_id'         => $sourceB->id,
+            'external_id'       => 'some_external_id2',
+            'required_bot'      => true,
+        ]);
+        $this->assertDatabaseHas('bots', [
+            'external_id' => 'bot-shared-required-source',
+            'meeting_url' => $meetingUrl,
+            'is_active'   => true,
+        ]);
+    }
 }
