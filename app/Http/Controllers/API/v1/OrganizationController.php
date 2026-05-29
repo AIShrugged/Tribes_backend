@@ -10,7 +10,6 @@ use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
 use App\Services\OrganizationMembershipService;
-use App\Services\Workspace\WorkspaceBootstrapService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +19,6 @@ class OrganizationController extends Controller
     use AuthorizesRequests;
 
     public function __construct(
-        private readonly WorkspaceBootstrapService $workspaceBootstrapService,
         private readonly OrganizationMembershipService $membershipService,
     ) {
         $this->authorizeResource(Organization::class, 'organization');

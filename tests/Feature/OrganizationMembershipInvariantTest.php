@@ -177,5 +177,14 @@ class OrganizationMembershipInvariantTest extends TestCase
 
         $this->assertNotNull($org->id);
         $this->assertNull($org->refresh()->defaultTeam);
+
+        // Org-shared workspace is methodology-independent and must still exist —
+        // regression guard for the bug where ensureOrganizationDefaults was gated
+        // by the methodology check.
+        $this->assertDatabaseHas('workspaces', [
+            'organization_id' => $org->id,
+            'team_id' => null,
+            'scope_type' => 'org_shared',
+        ]);
     }
 }

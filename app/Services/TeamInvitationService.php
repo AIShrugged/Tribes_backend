@@ -93,6 +93,11 @@ class TeamInvitationService
             $invite->team->users()->attach($user->id);
         }
 
+        // Defensive: org-shared workspace bootstrap is normally done by
+        // OrganizationObserver on org creation, but legacy orgs created before
+        // that path was active may still lack one. firstOrCreate is idempotent
+        // and cheap, so we re-assert it here on every invite-accept.
+        $this->workspaceBootstrapService->ensureOrganizationDefaults($invite->organization);
         $this->workspaceBootstrapService->ensureTeamDefaults($invite->team);
         $this->workspaceBootstrapService->ensureUserTeamWorkspace($user, $invite->team);
         $this->workspaceBootstrapService->ensureUserPersonalSharedWorkspace($user, $invite->team);

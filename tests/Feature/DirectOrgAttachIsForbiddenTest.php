@@ -62,13 +62,20 @@ class DirectOrgAttachIsForbiddenTest extends TestCase
                 continue;
             }
 
-            // Look for direct pivot writes on $org->users() or
-            // $organization->users(). These are the typical bypass shapes.
-            $pattern = '/\$\w*(?:organization|org)\w*->users\(\)->(attach|syncWithoutDetaching|sync|detach)\b/i';
+            // Catch the two realistic bypass shapes:
+            //   1. Variable named org/organization:  $org->users()->attach(...)
+            //   2. Chained relation access:           $invite->organization->users()->attach(...)
+            // Both must route through OrganizationMembershipService.
+            $patterns = [
+                '/\$\w*(?:organization|org)\w*->users\(\)->(attach|syncWithoutDetaching|sync|detach)\b/i',
+                '/->organization->users\(\)->(attach|syncWithoutDetaching|sync|detach)\b/i',
+            ];
 
-            if (preg_match_all($pattern, $contents, $matches, PREG_OFFSET_CAPTURE)) {
-                foreach ($matches[0] as $match) {
-                    $offenders[] = $path.': '.$match[0];
+            foreach ($patterns as $pattern) {
+                if (preg_match_all($pattern, $contents, $matches, PREG_OFFSET_CAPTURE)) {
+                    foreach ($matches[0] as $match) {
+                        $offenders[] = $path.': '.$match[0];
+                    }
                 }
             }
         }
