@@ -23,20 +23,15 @@ class RecallEventService implements SourceEventServiceInterface
      */
     public function getAllByCalendar(): array
     {
-        $response = Http::withHeader('Authorization', config('services.recall.api_token'))
-            ->get(static::API_EVENTS_URL, [
-                'calendar_id' => $this->source->external_id,
-            ]);
+        $events = $this->getRawCalendarEvents();
 
         $result = [];
 
-        if (!$response->successful()) {
-            throw new AppException($response->json('message'), 'RECALL_GENERIC_ERROR');
-        }
+        foreach ($events as $event) {
+            if ($event['is_deleted'] ?? false) {
+                continue;
+            }
 
-        Log::info('Event data', $response->json());
-
-        foreach ($response->json()['results'] ?? [] as $event) {
             if (!$event['meeting_platform'] || !$event['meeting_url']) {
                 continue;
             }
@@ -54,5 +49,21 @@ class RecallEventService implements SourceEventServiceInterface
         }
 
         return $result;
+    }
+
+    public function getRawCalendarEvents(): array
+    {
+        $response = Http::withHeader('Authorization', config('services.recall.api_token'))
+            ->get(static::API_EVENTS_URL, [
+                'calendar_id' => $this->source->external_id,
+            ]);
+
+        if (!$response->successful()) {
+            throw new AppException($response->json('message'), 'RECALL_GENERIC_ERROR');
+        }
+
+        Log::info('Event data', $response->json());
+
+        return $response->json()['results'] ?? [];
     }
 }

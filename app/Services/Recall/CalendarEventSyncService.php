@@ -10,6 +10,7 @@ use App\Models\Profile;
 use App\Models\Source;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CalendarEventSyncService
 {
@@ -125,6 +126,70 @@ class CalendarEventSyncService
         }
 
         return $calendarEvent;
+    }
+
+    public function deleteForSource(Source $source, string $externalId): int
+    {
+        return DB::transaction(function () use ($source, $externalId): int {
+            $eventIds = DB::table('calendar_event_source')
+                ->where('source_id', $source->id)
+                ->where('external_id', $externalId)
+                ->pluck('calendar_event_id');
+
+            $deleted = 0;
+
+            foreach ($eventIds as $eventId) {
+                /** @var CalendarEvent|null $calendarEvent */
+                $calendarEvent = CalendarEvent::query()
+                    ->with('bot')
+                    ->lockForUpdate()
+                    ->find($eventId);
+
+                if (!$calendarEvent) {
+                    continue;
+                }
+
+                $calendarEvent->sources()->detach($source->id);
+
+                if ($calendarEvent->sources()->exists()) {
+                    if ((int) $calendarEvent->source_id === (int) $source->id) {
+                        $calendarEvent->forceFill([
+                            'source_id' => $calendarEvent->sources()->value('sources.id'),
+                        ])->save();
+                    }
+
+                    if (!$calendarEvent->isRequiredBot() && $calendarEvent->bot?->is_active) {
+                        $calendarEvent->bot->deactivate();
+                    }
+
+                    continue;
+                }
+
+                if ($calendarEvent->bot?->is_active) {
+                    $calendarEvent->bot->deactivate();
+                }
+
+                $this->deleteLocalArtifacts($calendarEvent);
+                $calendarEvent->delete();
+                $deleted++;
+
+                Log::info('Deleted local calendar event after Recall marked it as deleted', [
+                    'source_id' => $source->id,
+                    'external_id' => $externalId,
+                    'calendar_event_id' => $eventId,
+                ]);
+            }
+
+            return $deleted;
+        });
+    }
+
+    private function deleteLocalArtifacts(CalendarEvent $calendarEvent): void
+    {
+        $calendarEvent->profiles()->detach();
+        $calendarEvent->participants()->delete();
+        $calendarEvent->transcriptEntries()->delete();
+        $calendarEvent->followups()->delete();
     }
 
     protected function syncAttendees(CalendarEvent $calendarEvent, array $attendees): void

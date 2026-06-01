@@ -2,6 +2,7 @@
 
 namespace App\Services\Recall\Handlers;
 
+use App\Domain\DTO\EventDTO;
 use App\Exceptions\AppException;
 use App\Models\Source;
 use App\Services\Recall\BotSchedulingService;
@@ -37,7 +38,19 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
 
         $eventService = new RecallEventService($source);
 
-        foreach ($eventService->getAllByCalendar() as $eventDTO) {
+        foreach ($eventService->getRawCalendarEvents() as $event) {
+            if ($event['is_deleted'] ?? false) {
+                $this->calendarEventSyncService->deleteForSource($source, $event['id']);
+
+                continue;
+            }
+
+            if (!$event['meeting_platform'] || !$event['meeting_url']) {
+                continue;
+            }
+
+            $eventDTO = EventDTO::fromArray($event);
+
             $this->calendarEventSyncService->sync($source, $eventDTO, []);
         }
     }
