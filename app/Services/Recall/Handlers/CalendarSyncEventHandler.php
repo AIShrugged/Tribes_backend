@@ -34,7 +34,15 @@ class CalendarSyncEventHandler implements RecallEventHandlerInterface
             throw new AppException('Source not found', 'SOURCE_NOT_FOUND');
         }
 
+        $syncService = app(CalendarEventSyncService::class);
+
         foreach ($response['results'] as $event) {
+            if ($event['is_deleted'] ?? false) {
+                $syncService->deleteForSource($source, $event['id']);
+
+                continue;
+            }
+
             if (!$event['meeting_platform'] || !$event['meeting_url']) {
                 continue;
             }
@@ -46,7 +54,7 @@ class CalendarSyncEventHandler implements RecallEventHandlerInterface
                 $profiles[] = ProfileDTO::fromArray($attendee);
             }
 
-            app(CalendarEventSyncService::class)->sync($source, $eventDTO, $profiles);
+            $syncService->sync($source, $eventDTO, $profiles);
         }
     }
 }
