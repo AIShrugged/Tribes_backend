@@ -68,10 +68,6 @@ class OnboardingController extends Controller
     ): ApiResponse {
         Gate::authorize('onboard', $organization);
 
-        if ($organization->onboarded_at !== null) {
-            return ApiResponse::error('Онбординг для этой организации уже был проведён', null, 422);
-        }
-
         $epicType = OrganizationIssueType::where('base_type', 'epic')
             ->where(fn($q) => $q->where('organization_id', $organization->id)->orWhereNull('organization_id'))
             ->orderByRaw('CASE WHEN organization_id = ? THEN 0 ELSE 1 END', [$organization->id])

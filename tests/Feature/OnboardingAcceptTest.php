@@ -16,6 +16,58 @@ class OnboardingAcceptTest extends TestCase
     use RefreshDatabase;
 
     #[Test]
+    public function accept_can_run_multiple_times_and_updates_onboarded_at(): void
+    {
+        $manager = User::factory()->create();
+
+        $organization = Organization::create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'onboarded_at' => now()->subDay(),
+        ]);
+        $organization->users()->attach($manager->id, ['role' => 'manager']);
+
+        OrganizationIssueType::firstOrCreate(
+            ['organization_id' => null, 'key' => 'epic'],
+            [
+                'name' => 'Epic',
+                'base_type' => 'epic',
+                'is_active' => true,
+            ],
+        );
+
+        Sanctum::actingAs($manager);
+
+        $secondOnboardingTime = now()->startOfSecond();
+        $this->travelTo($secondOnboardingTime);
+
+        $this->postJson("/api/v1/organizations/{$organization->id}/accept-structure", [
+            'organization' => [
+                'name' => 'Acme Reboarded',
+                'description' => 'Updated team context',
+            ],
+            'goals' => [
+                [
+                    'title' => 'Refresh onboarding',
+                    'description' => 'Run onboarding again',
+                    'tasks' => [],
+                ],
+            ],
+            'team' => [],
+        ])->assertOk();
+
+        $organization->refresh();
+
+        $this->assertSame('Acme Reboarded', $organization->name);
+        $this->assertTrue($organization->onboarded_at->equalTo($secondOnboardingTime));
+        $this->assertDatabaseHas('issues', [
+            'organization_id' => $organization->id,
+            'name' => 'Refresh onboarding',
+            'type' => Issue::TYPE_EPIC,
+        ]);
+    }
+
+    #[Test]
     public function accept_creates_missing_team_users_and_attaches_them_to_organization(): void
     {
         $manager = User::factory()->create();
