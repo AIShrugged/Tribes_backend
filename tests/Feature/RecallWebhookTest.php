@@ -453,6 +453,218 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
+    public function calendar_sync_event_deletes_local_meeting_when_recall_marks_it_deleted(): void
+    {
+        $source = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'deleted-calendar-id',
+            'identity'    => 'deleted@example.com',
+        ]);
+
+        $event = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'deleted-recall-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Deleted meeting',
+            'url'         => 'https://meet.google.com/deleted-test',
+            'description' => 'This meeting was deleted in the source calendar.',
+            'starts_at'   => now()->addHours(2),
+            'ends_at'     => now()->addHours(3),
+        ]);
+
+        $event->sources()->attach($source->id, [
+            'external_id'  => 'deleted-recall-event-id',
+            'required_bot' => true,
+        ]);
+
+        $bot = Bot::create([
+            'external_id'       => 'bot-deleted-1',
+            'deduplication_key' => 'bot-deleted-key',
+            'meeting_url'       => $event->url,
+            'is_active'         => true,
+        ]);
+        $event->update(['bot_id' => $bot->id]);
+
+        Http::fake([
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+                'results' => [
+                    [
+                        'id' => 'deleted-recall-event-id',
+                        'is_deleted' => true,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data' => [
+                'calendar_id'     => $source->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseMissing('calendar_events', [
+            'id' => $event->id,
+        ]);
+        $this->assertDatabaseMissing('calendar_event_source', [
+            'calendar_event_id' => $event->id,
+            'source_id' => $source->id,
+        ]);
+        $this->assertFalse((bool) $bot->fresh()->is_active);
+
+        Http::assertNotSent(fn ($request) => $request->method() === 'POST');
+    }
+
+    #[Test]
+    public function calendar_update_event_deletes_future_local_meetings_missing_from_recall_but_keeps_past_meetings(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/api/v2/calendars/')) {
+                return Http::response(['status' => 'connected'], 200);
+            }
+
+            return Http::response([
+                'results' => [],
+            ], 200);
+        });
+
+        $source = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'missing-calendar-id',
+            'identity'    => 'missing@example.com',
+        ]);
+
+        $futureEvent = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'missing-future-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Future missing meeting',
+            'url'         => 'https://meet.google.com/missing-future-test',
+            'description' => 'This future meeting is no longer returned by Recall.',
+            'starts_at'   => now()->addHours(2),
+            'ends_at'     => now()->addHours(3),
+        ]);
+
+        $futureEvent->sources()->attach($source->id, [
+            'external_id'  => 'missing-future-event-id',
+            'required_bot' => true,
+        ]);
+
+        $pastEvent = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'missing-past-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Past missing meeting',
+            'url'         => 'https://meet.google.com/missing-past-test',
+            'description' => 'Past meetings stay as history.',
+            'starts_at'   => now()->subHours(3),
+            'ends_at'     => now()->subHours(2),
+        ]);
+
+        $pastEvent->sources()->attach($source->id, [
+            'external_id'  => 'missing-past-event-id',
+            'required_bot' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.update',
+            'data' => [
+                'calendar_id' => $source->external_id,
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseMissing('calendar_events', [
+            'id' => $futureEvent->id,
+        ]);
+        $this->assertDatabaseHas('calendar_events', [
+            'id' => $pastEvent->id,
+        ]);
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $pastEvent->id,
+            'source_id' => $source->id,
+            'external_id' => 'missing-past-event-id',
+        ]);
+    }
+
+    #[Test]
+    public function calendar_sync_event_deletes_future_local_meetings_missing_from_recall_but_keeps_past_meetings(): void
+    {
+        Http::fake([
+            'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
+                'results' => [],
+            ], 200),
+        ]);
+
+        $source = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'sync-missing-calendar-id',
+            'identity'    => 'sync-missing@example.com',
+        ]);
+
+        $futureEvent = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'sync-missing-future-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Sync future missing meeting',
+            'url'         => 'https://meet.google.com/sync-missing-future-test',
+            'description' => 'This future meeting is no longer returned by Recall sync.',
+            'starts_at'   => now()->addHours(2),
+            'ends_at'     => now()->addHours(3),
+        ]);
+
+        $futureEvent->sources()->attach($source->id, [
+            'external_id'  => 'sync-missing-future-event-id',
+            'required_bot' => true,
+        ]);
+
+        $pastEvent = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'sync-missing-past-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Sync past missing meeting',
+            'url'         => 'https://meet.google.com/sync-missing-past-test',
+            'description' => 'Past meetings stay as history.',
+            'starts_at'   => now()->subHours(3),
+            'ends_at'     => now()->subHours(2),
+        ]);
+
+        $pastEvent->sources()->attach($source->id, [
+            'external_id'  => 'sync-missing-past-event-id',
+            'required_bot' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.sync_events',
+            'data' => [
+                'calendar_id'     => $source->external_id,
+                'last_updated_ts' => now()->subMinute()->toIso8601String(),
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseMissing('calendar_events', [
+            'id' => $futureEvent->id,
+        ]);
+        $this->assertDatabaseHas('calendar_events', [
+            'id' => $pastEvent->id,
+        ]);
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $pastEvent->id,
+            'source_id' => $source->id,
+            'external_id' => 'sync-missing-past-event-id',
+        ]);
+    }
+
+    #[Test]
     public function bot_require_recreates_active_recall_bot_when_required_bot_is_true(): void
     {
         Http::fake(function ($request) {

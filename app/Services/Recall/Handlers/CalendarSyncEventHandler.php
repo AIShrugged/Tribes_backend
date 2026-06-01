@@ -35,8 +35,13 @@ class CalendarSyncEventHandler implements RecallEventHandlerInterface
         }
 
         $syncService = app(CalendarEventSyncService::class);
+        $presentExternalIds = [];
 
         foreach ($response['results'] as $event) {
+            if (!empty($event['id'])) {
+                $presentExternalIds[] = $event['id'];
+            }
+
             if ($event['is_deleted'] ?? false) {
                 $syncService->deleteForSource($source, $event['id']);
 
@@ -56,5 +61,7 @@ class CalendarSyncEventHandler implements RecallEventHandlerInterface
 
             $syncService->sync($source, $eventDTO, $profiles);
         }
+
+        $syncService->deleteMissingFutureForSource($source, $presentExternalIds);
     }
 }

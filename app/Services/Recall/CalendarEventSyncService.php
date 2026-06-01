@@ -184,6 +184,35 @@ class CalendarEventSyncService
         });
     }
 
+    public function deleteMissingFutureForSource(Source $source, array $presentExternalIds): int
+    {
+        $presentExternalIds = array_values(array_filter(array_unique($presentExternalIds)));
+
+        return DB::transaction(function () use ($source, $presentExternalIds): int {
+            $query = DB::table('calendar_event_source')
+                ->join('calendar_events', 'calendar_events.id', '=', 'calendar_event_source.calendar_event_id')
+                ->where('calendar_event_source.source_id', $source->id)
+                ->where('calendar_events.starts_at', '>', Carbon::now())
+                ->whereNotNull('calendar_event_source.external_id');
+
+            if ($presentExternalIds !== []) {
+                $query->whereNotIn('calendar_event_source.external_id', $presentExternalIds);
+            }
+
+            $externalIds = $query
+                ->distinct()
+                ->pluck('calendar_event_source.external_id');
+
+            $deleted = 0;
+
+            foreach ($externalIds as $externalId) {
+                $deleted += $this->deleteForSource($source, $externalId);
+            }
+
+            return $deleted;
+        });
+    }
+
     private function deleteLocalArtifacts(CalendarEvent $calendarEvent): void
     {
         $calendarEvent->profiles()->detach();
