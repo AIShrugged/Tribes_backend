@@ -3,16 +3,22 @@
 namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ChannelConversation;
+use App\Models\Team;
+use App\Models\TelegramChatRegistration;
 use App\Models\TelegramUser;
 use App\Services\Agent\AgentService;
 use App\Services\Channel\ChannelBus;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\TelegramTypingIndicator;
+use App\Services\TaskData\TaskDataUploadService;
 use App\Services\Issue\ValidationReplyHandler;
 use App\Services\TelegramChatRegistrationService;
 use App\Services\TelegramLinkService;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Telegram\Bot\Api;
 use Telegram\Bot\Exceptions\TelegramSDKException;
 
@@ -33,6 +39,7 @@ class TelegramBotController extends Controller
         private readonly TelegramChatRegistrationService $telegramChatRegistrationService,
         private readonly TelegramLinkService $telegramLinkService,
         private readonly ValidationReplyHandler $validationReplyHandler,
+        private readonly TaskDataUploadService $taskDataUploadService,
     ) {
         $this->telegram = new Api(config('telegram.bot_token'));
         $this->agentService = $agentService;
@@ -105,6 +112,19 @@ class TelegramBotController extends Controller
                     if ($text === null || trim($text) === '') {
                         return response()->json(['ok' => true]);
                     }
+                }
+
+                if ($message->getDocument()) {
+                    return $this->handleDocumentMessage(
+                        $message,
+                        $chatId,
+                        $chatType,
+                        $chatTitle,
+                        $telegramUserId,
+                        $username,
+                        $messageThreadId,
+                        $topicTitle,
+                    );
                 }
 
                 // Skip other system messages (left_chat_member, etc.) without text
@@ -435,6 +455,197 @@ class TelegramBotController extends Controller
         }
 
         $this->telegram->sendMessage($params);
+    }
+
+    private function handleDocumentMessage(
+        $message,
+        int $chatId,
+        string $chatType,
+        ?string $chatTitle,
+        ?int $telegramUserId,
+        ?string $username,
+        ?int $messageThreadId,
+        ?string $topicTitle,
+    ) {
+        if (! $telegramUserId) {
+            Log::info('Telegram document without user info', ['chat_id' => $chatId]);
+
+            return response()->json(['ok' => true]);
+        }
+
+        $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
+        $user = $telegramUser->user;
+
+        if (! $this->isUserAllowed($telegramUserId)) {
+            $this->sendTelegramMessage($chatId, 'Access denied for this Telegram account.', $messageThreadId);
+
+            return response()->json(['ok' => true]);
+        }
+
+        if (! $user) {
+            $this->sendTelegramMessage(
+                $chatId,
+                'Your Telegram account is not linked to an application user yet.',
+                $messageThreadId,
+            );
+
+            return response()->json(['ok' => true]);
+        }
+
+        $conversation = $this->channelBus->forTelegram($chatId, $messageThreadId);
+        $registration = null;
+
+        if (in_array($chatType, ['group', 'supergroup'], true)) {
+            $registration = $this->telegramChatRegistrationService
+                ->discoverGroupConversation($conversation, $chatType, $chatTitle, $topicTitle);
+
+            if ($registration->bound_at === null || $registration->organization_id === null) {
+                $this->sendTelegramMessage(
+                    $chatId,
+                    'This chat is not linked to an organization yet. Bind it in the backend before uploading files.',
+                    $messageThreadId,
+                );
+
+                return response()->json(['ok' => true]);
+            }
+        } elseif ($chatType === 'private') {
+            $registration = $this->telegramChatRegistrationService->bindPrivateConversation($conversation, $user);
+        }
+
+        $caption = trim((string) ($message->getCaption() ?? $message->get('caption') ?? ''));
+        $team = $this->resolveTelegramUploadTeam($user, $conversation, $registration, $caption);
+
+        if (! $team) {
+            $this->sendTelegramMessage(
+                $chatId,
+                $this->teamSelectionMessage($user),
+                $messageThreadId,
+            );
+
+            return response()->json(['ok' => true]);
+        }
+
+        $document = $message->getDocument();
+        $fileSize = (int) ($document->get('file_size') ?? 0);
+        if ($fileSize > 10 * 1024 * 1024) {
+            $this->sendTelegramMessage($chatId, 'Файл слишком большой. Максимальный размер: 10 MB.', $messageThreadId);
+
+            return response()->json(['ok' => true]);
+        }
+
+        $tmpPath = null;
+
+        try {
+            $tmpPath = tempnam(sys_get_temp_dir(), 'tg-task-upload-');
+            $downloadedPath = $this->telegram->downloadFile($document, $tmpPath);
+            $filename = $this->telegramDocumentFilename($document);
+            $mimeType = $document->get('mime_type') ?: null;
+
+            $upload = $this->taskDataUploadService->handleFile(
+                new UploadedFile($downloadedPath, $filename, $mimeType, null, true),
+                $user,
+                $team->id,
+                $chatId,
+                $messageThreadId,
+            );
+
+            $this->sendTelegramMessage(
+                $chatId,
+                'Файл принят в обработку. Пришлю протокол после генерации задач и целей.',
+                $messageThreadId,
+            );
+
+            Log::info('Telegram task-data upload queued', [
+                'upload_id' => $upload->id,
+                'chat_id' => $chatId,
+                'message_thread_id' => $messageThreadId,
+                'team_id' => $team->id,
+                'user_id' => $user->id,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Telegram document upload failed', [
+                'chat_id' => $chatId,
+                'message_thread_id' => $messageThreadId,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->sendTelegramMessage(
+                $chatId,
+                'Не удалось обработать файл. Проверьте формат и попробуйте ещё раз.',
+                $messageThreadId,
+            );
+        } finally {
+            if ($tmpPath && is_file($tmpPath)) {
+                @unlink($tmpPath);
+            }
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function resolveTelegramUploadTeam(
+        \App\Models\User $user,
+        ChannelConversation $conversation,
+        ?TelegramChatRegistration $registration,
+        string $caption,
+    ): ?Team {
+        $candidateTeamId = $registration?->team_id ?? $conversation->team_id;
+        if ($candidateTeamId) {
+            $team = Team::find($candidateTeamId);
+            if ($team && $user->isTeamMember($team)) {
+                return $team;
+            }
+        }
+
+        $teams = $user->teams()->with('organization')->get();
+        if ($teams->count() === 1) {
+            return $teams->first();
+        }
+
+        if ($caption !== '') {
+            $needle = Str::lower($caption);
+
+            $matched = $teams->first(function (Team $team) use ($needle): bool {
+                return str_contains($needle, Str::lower($team->name))
+                    || str_contains($needle, Str::lower($team->slug))
+                    || ($team->organization && (
+                        str_contains($needle, Str::lower($team->organization->name))
+                        || str_contains($needle, Str::lower($team->organization->slug))
+                    ));
+            });
+
+            if ($matched) {
+                return $matched;
+            }
+        }
+
+        return null;
+    }
+
+    private function teamSelectionMessage(\App\Models\User $user): string
+    {
+        $teams = $user->teams()->with('organization')->limit(10)->get();
+        $lines = ['Укажите команду в подписи к файлу, например: Команда: Platform'];
+
+        if ($teams->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = 'Доступные команды:';
+            foreach ($teams as $team) {
+                $org = $team->organization?->name;
+                $lines[] = '• '.($org ? "{$org} / " : '').$team->name;
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function telegramDocumentFilename($document): string
+    {
+        $name = trim((string) ($document->get('file_name') ?? 'upload.txt'));
+        $name = preg_replace('/[\x00-\x1F\/\\\\]/', '', $name) ?: 'upload.txt';
+
+        return Str::limit($name, 255, '');
     }
 
     /**

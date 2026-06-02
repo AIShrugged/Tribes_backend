@@ -3,12 +3,18 @@
 namespace Tests\Feature;
 
 use App\Models\Methodology;
+use App\Models\Issue;
 use App\Models\Organization;
+use App\Models\TaskDataUpload;
 use App\Models\Team;
+use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use App\Models\TelegramUser;
 use App\Models\User;
+use App\Jobs\ProcessTaskDataUploadJob;
+use App\Jobs\SendTaskDataUploadReportJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Telegram\Bot\Objects\Update;
@@ -192,6 +198,129 @@ class TelegramBotWebhookTest extends TestCase
         $this->assertSame($organization->id, $registration->organization_id);
     }
 
+    #[Test]
+    public function bound_group_document_is_queued_as_task_data_upload(): void
+    {
+        Queue::fake();
+
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager);
+
+        TelegramUser::query()->create([
+            'telegram_user_id' => 900001,
+            'telegram_username' => 'manager_user',
+            'user_id' => $manager->id,
+        ]);
+
+        $this->actingAs($manager)->postJson('/api/v1/telegram/chats', [
+            'name' => 'Engineering Room',
+            'telegram_chat_id' => 555123,
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+        ])->assertStatus(200);
+
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('getWebhookUpdate')
+            ->once()
+            ->andReturn(new Update($this->groupDocumentPayload()));
+        $telegramApi->shouldReceive('downloadFile')
+            ->once()
+            ->andReturnUsing(function ($document, string $filename): string {
+                file_put_contents($filename, "Task: prepare launch checklist\nOwner: Alice");
+
+                return $filename;
+            });
+        $telegramApi->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(fn (array $params) => $params['chat_id'] === 555123
+                && str_contains($params['text'], 'Файл принят'));
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseHas('task_data_uploads', [
+            'user_id' => $manager->id,
+            'team_id' => $team->id,
+            'organization_id' => $organization->id,
+            'original_filename' => 'tasks.txt',
+            'source_telegram_chat_id' => 555123,
+            'source_telegram_thread_id' => null,
+            'status' => 'queued',
+        ]);
+
+        Queue::assertPushed(ProcessTaskDataUploadJob::class);
+    }
+
+    #[Test]
+    public function task_data_upload_report_goes_to_source_chat_and_summary_chats(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager);
+
+        TelegramUser::query()->create([
+            'telegram_user_id' => 900001,
+            'telegram_username' => 'manager_user',
+            'user_id' => $manager->id,
+        ]);
+
+        $summaryRegistration = TelegramChatRegistration::query()->create([
+            'telegram_chat_id' => 777888,
+            'message_thread_id' => 42,
+            'chat_type' => 'supergroup',
+            'chat_title' => 'Protocols',
+            'organization_id' => $organization->id,
+            'team_id' => $team->id,
+            'bound_at' => now(),
+        ]);
+
+        TeamNotificationSetting::query()->create([
+            'team_id' => $team->id,
+            'event_type' => 'meeting_summary',
+            'channel_type' => 'telegram',
+            'notifiable_type' => TelegramChatRegistration::class,
+            'notifiable_id' => $summaryRegistration->id,
+            'enabled' => true,
+        ]);
+
+        $upload = TaskDataUpload::query()->create([
+            'user_id' => $manager->id,
+            'team_id' => $team->id,
+            'organization_id' => $organization->id,
+            'original_filename' => 'tasks.txt',
+            'status' => 'done',
+            'source_telegram_chat_id' => 555123,
+            'source_telegram_thread_id' => null,
+        ]);
+
+        $issue = Issue::query()->create([
+            'name' => 'Prepare launch checklist',
+            'status' => 'open',
+            'team_id' => $team->id,
+            'organization_id' => $organization->id,
+            'user_id' => $manager->id,
+            'sourceable_type' => TaskDataUpload::class,
+            'sourceable_id' => $upload->id,
+        ]);
+
+        $sent = [];
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('sendMessage')
+            ->times(3)
+            ->andReturnUsing(function (array $params) use (&$sent): array {
+                $sent[] = $params;
+
+                return ['ok' => true];
+            });
+
+        (new SendTaskDataUploadReportJob($upload, [$issue->id], []))->handle();
+
+        $this->assertSame([900001, 555123, 777888], array_column($sent, 'chat_id'));
+        $this->assertSame(42, $sent[2]['message_thread_id']);
+        $this->assertStringContainsString('Task data upload report', $sent[0]['text']);
+        $this->assertStringContainsString('Prepare launch checklist', $sent[0]['text']);
+    }
+
     private function botRemovedMyChatMemberPayload(): array
     {
         return [
@@ -315,6 +444,36 @@ class TelegramBotWebhookTest extends TestCase
                     'is_bot' => false,
                     'username' => 'manager_user',
                     'first_name' => 'Manager',
+                ],
+            ],
+        ];
+    }
+
+    private function groupDocumentPayload(): array
+    {
+        return [
+            'update_id' => 1005,
+            'message' => [
+                'message_id' => 5,
+                'date' => now()->timestamp,
+                'caption' => 'Команда: Platform',
+                'chat' => [
+                    'id' => 555123,
+                    'type' => 'supergroup',
+                    'title' => 'Engineering Room',
+                ],
+                'from' => [
+                    'id' => 900001,
+                    'is_bot' => false,
+                    'username' => 'manager_user',
+                    'first_name' => 'Manager',
+                ],
+                'document' => [
+                    'file_id' => 'telegram-file-1',
+                    'file_unique_id' => 'unique-file-1',
+                    'file_name' => 'tasks.txt',
+                    'mime_type' => 'text/plain',
+                    'file_size' => 128,
                 ],
             ],
         ];

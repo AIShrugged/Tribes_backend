@@ -16,6 +16,8 @@ class TaskDataUpload extends Model
         return [
             'issues_created' => 'integer',
             'issues_updated' => 'integer',
+            'source_telegram_chat_id' => 'integer',
+            'source_telegram_thread_id' => 'integer',
         ];
     }
 

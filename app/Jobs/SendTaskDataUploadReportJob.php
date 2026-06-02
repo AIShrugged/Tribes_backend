@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\Issue;
 use App\Models\TaskDataUpload;
+use App\Models\TeamNotificationSetting;
+use App\Models\TelegramChatRegistration;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -35,40 +37,80 @@ class SendTaskDataUploadReportJob implements ShouldQueue
     public function handle(): void
     {
         $uploader = $this->upload->user;
-        $telegramUserId = $uploader?->telegramUser?->telegram_user_id;
+        $createdIssues = $this->createdIds !== [] ? Issue::whereIn('id', $this->createdIds)->get() : collect();
+        $updatedIssues = $this->updatedIds !== [] ? Issue::whereIn('id', $this->updatedIds)->get() : collect();
 
-        if (!$telegramUserId) {
-            Log::info('SendTaskDataUploadReport: uploader has no Telegram linked', [
+        $text = $this->buildMessage($createdIssues, $updatedIssues);
+        $recipients = $this->recipients();
+
+        if ($recipients === []) {
+            Log::info('SendTaskDataUploadReport: no Telegram recipients', [
                 'upload_id' => $this->upload->id,
                 'user_id'   => $uploader?->id,
             ]);
             return;
         }
 
-        $createdIssues = $this->createdIds !== [] ? Issue::whereIn('id', $this->createdIds)->get() : collect();
-        $updatedIssues = $this->updatedIds !== [] ? Issue::whereIn('id', $this->updatedIds)->get() : collect();
-
-        $text = $this->buildMessage($createdIssues, $updatedIssues);
-
         try {
             $telegram = new Api(config('telegram.bot_token'));
-            $telegram->sendMessage([
-                'chat_id'    => $telegramUserId,
-                'text'       => $text,
-                'parse_mode' => 'HTML',
-            ]);
+            foreach ($recipients as $recipient) {
+                $params = [
+                    'chat_id'    => $recipient['chat_id'],
+                    'text'       => $text,
+                    'parse_mode' => 'HTML',
+                    'disable_web_page_preview' => true,
+                ];
+
+                if ($recipient['thread_id'] !== null) {
+                    $params['message_thread_id'] = $recipient['thread_id'];
+                }
+
+                $telegram->sendMessage($params);
+            }
 
             Log::info('SendTaskDataUploadReport: sent', [
                 'upload_id' => $this->upload->id,
-                'user_id'   => $uploader->id,
+                'user_id'   => $uploader?->id,
+                'recipients_count' => count($recipients),
             ]);
         } catch (\Throwable $e) {
             Log::warning('SendTaskDataUploadReport: failed to send', [
                 'upload_id' => $this->upload->id,
-                'user_id'   => $uploader->id,
+                'user_id'   => $uploader?->id,
                 'error'     => $e->getMessage(),
             ]);
         }
+    }
+
+    private function recipients(): array
+    {
+        $recipients = [];
+        $add = function (?int $chatId, ?int $threadId = null) use (&$recipients): void {
+            if (!$chatId) {
+                return;
+            }
+
+            $key = $chatId.':'.($threadId ?? 'root');
+            $recipients[$key] = ['chat_id' => $chatId, 'thread_id' => $threadId];
+        };
+
+        $add($this->upload->user?->telegramUser?->telegram_user_id);
+        $add($this->upload->source_telegram_chat_id, $this->upload->source_telegram_thread_id);
+
+        TeamNotificationSetting::query()
+            ->where('team_id', $this->upload->team_id)
+            ->where('event_type', 'meeting_summary')
+            ->where('enabled', true)
+            ->where('notifiable_type', TelegramChatRegistration::class)
+            ->with('notifiable')
+            ->get()
+            ->each(function (TeamNotificationSetting $setting) use ($add): void {
+                /** @var TelegramChatRegistration|null $registration */
+                $registration = $setting->notifiable;
+                $add($registration?->telegram_chat_id, $registration?->message_thread_id);
+            });
+
+        return array_values($recipients);
     }
 
     private function buildMessage($createdIssues, $updatedIssues): string
