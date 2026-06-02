@@ -26,6 +26,13 @@ use Telegram\Bot\Api;
  * created_at > last_movement_at. Daily reruns are safe (series-check skips
  * already-sent attempts).
  *
+ * Batching: within a single run, pending nudges are grouped per recipient and
+ * merged into ONE Telegram message per (assignee, stage) and ONE per manager —
+ * a recipient with many stuck issues no longer gets a wall of messages. The
+ * per-Issue cadence is unchanged: one IssueNudge row is still written per issue,
+ * so attempt tracking stays granular. A batch send that fails marks every issue
+ * in it as failed (the attempt is "burned" together).
+ *
  * NOT applicable to pipeline rules in CLAUDE.md (no event dispatch,
  * no LLM, not invoked from a queued listener).
  */
@@ -56,6 +63,14 @@ class StuckIssueNudgeService
 
         $nudgesByIssue = $this->batchPrefetchNudges($candidates);
 
+        // Phase 1 — bucket pending actions per recipient; nothing is sent yet.
+        //   $execBuckets:       [assignee_id][template_key] => ['assignee' => User, 'items' => [...]]
+        //   $escalationBuckets: [manager_id]                => ['manager'  => User, 'items' => [...]]
+        // Executor buckets are keyed by template too, so each stage (exec_1 / exec_2)
+        // becomes its own message — we merge only within a stage.
+        $execBuckets = [];
+        $escalationBuckets = [];
+
         foreach ($candidates as $issue) {
             $lastMovement = $this->computeLastMovement($issue);
             // Carbon 3: $past->diffInDays($now) is positive; reverse args returns negative.
@@ -73,11 +88,53 @@ class StuckIssueNudgeService
                 continue;
             }
 
-            $results = $action->kind === IssueNudge::KIND_MANAGER
-                ? $this->sendManagerEscalation($issue, $daysStuck, $testTelegramUserId)
-                : $this->sendExecutorNudge($issue, $action, $daysStuck, $testTelegramUserId);
+            $assignee = $issue->assignee;
+            if (! $assignee) {
+                continue; // can't nudge nobody, don't record
+            }
 
-            foreach ($results as $status) {
+            if ($action->kind === IssueNudge::KIND_MANAGER) {
+                $managers = $this->resolveManagers($issue);
+                if ($managers->isEmpty()) {
+                    Log::warning('StuckIssueNudgeService: escalation skipped — no managers in org', [
+                        'issue_id'        => $issue->id,
+                        'organization_id' => $issue->organization_id,
+                    ]);
+                    continue; // silent skip per spec — no row written
+                }
+
+                foreach ($managers as $manager) {
+                    $escalationBuckets[$manager->id] ??= ['manager' => $manager, 'items' => []];
+                    $escalationBuckets[$manager->id]['items'][] = [
+                        'issue'     => $issue,
+                        'assignee'  => $assignee,
+                        'daysStuck' => $daysStuck,
+                    ];
+                }
+
+                continue;
+            }
+
+            $execBuckets[$assignee->id][$action->templateKey] ??= ['assignee' => $assignee, 'items' => []];
+            $execBuckets[$assignee->id][$action->templateKey]['items'][] = [
+                'issue'     => $issue,
+                'action'    => $action,
+                'daysStuck' => $daysStuck,
+            ];
+        }
+
+        // Phase 2a — one message per (assignee, stage).
+        foreach ($execBuckets as $byTemplate) {
+            foreach ($byTemplate as $bucket) {
+                foreach ($this->sendExecutorBatch($bucket['assignee'], $bucket['items'], $testTelegramUserId) as $status) {
+                    $stats[$status] = ($stats[$status] ?? 0) + 1;
+                }
+            }
+        }
+
+        // Phase 2b — one message per manager (issues grouped by assignee inside).
+        foreach ($escalationBuckets as $bucket) {
+            foreach ($this->sendManagerBatch($bucket['manager'], $bucket['items'], $testTelegramUserId) as $status) {
                 $stats[$status] = ($stats[$status] ?? 0) + 1;
             }
         }
@@ -96,6 +153,7 @@ class StuckIssueNudgeService
             ->withMax('allComments as latest_comment_at', 'created_at')
             ->with(['assignee.telegramUser'])
             ->withoutTrashed()
+            ->orderBy('id') // deterministic candidate order → stable bullet/group order in batched messages
             ->get();
     }
 
@@ -153,153 +211,129 @@ class StuckIssueNudgeService
     }
 
     /**
-     * @return array<int, string>  array of status values for stats aggregation
+     * Send one batched executor message (all items share the same stage/template)
+     * and write one IssueNudge row per issue.
+     *
+     * @param  array<int, array{issue: Issue, action: NextNudgeAction, daysStuck: int}>  $items
+     * @return array<int, string>  one status value per issue, for stats aggregation
      */
-    private function sendExecutorNudge(Issue $issue, NextNudgeAction $action, int $daysStuck, ?string $testChatId): array
+    private function sendExecutorBatch(User $assignee, array $items, ?string $testChatId): array
     {
-        $assignee = $issue->assignee;
-        if (! $assignee) {
-            return []; // can't nudge nobody, don't record
-        }
+        $templateKey = $items[0]['action']->templateKey;
 
         $telegramId = $assignee->telegramUser?->telegram_user_id;
         if (! $telegramId) {
-            $this->recordNudge(
-                issue: $issue,
-                kind: IssueNudge::KIND_EXECUTOR,
-                recipient: $assignee,
-                attempt: $action->attempt,
-                templateKey: $action->templateKey,
-                daysStuck: $daysStuck,
-                status: IssueNudge::STATUS_SKIPPED,
-                payload: ['reason' => 'no_telegram_user'],
-            );
-            return [IssueNudge::STATUS_SKIPPED];
+            $this->recordExecutorRows($items, $assignee, IssueNudge::STATUS_SKIPPED, ['reason' => 'no_telegram_user']);
+
+            return array_fill(0, count($items), IssueNudge::STATUS_SKIPPED);
         }
 
-        $text = $action->templateKey === IssueNudge::TEMPLATE_EXEC_2
-            ? $this->formatExec2($issue, $daysStuck)
-            : $this->formatExec1($issue, $daysStuck);
+        $text = $templateKey === IssueNudge::TEMPLATE_EXEC_2
+            ? $this->formatExec2Batch($items)
+            : $this->formatExec1Batch($items);
 
         $chatId = $testChatId ?? (string) $telegramId;
+        $redirectPayload = $testChatId ? ['test_redirect' => true] : [];
 
         try {
             $this->sendTelegram($chatId, $text);
-
-            $this->recordNudge(
-                issue: $issue,
-                kind: IssueNudge::KIND_EXECUTOR,
-                recipient: $assignee,
-                attempt: $action->attempt,
-                templateKey: $action->templateKey,
-                daysStuck: $daysStuck,
-                status: IssueNudge::STATUS_SENT,
-                payload: $testChatId ? ['test_redirect' => true] : [],
-            );
-            return [IssueNudge::STATUS_SENT];
         } catch (\Throwable $e) {
             $sanitized = TelegramErrorSanitizer::sanitize($e->getMessage());
             Log::warning('StuckIssueNudgeService: executor nudge send failed', [
-                'issue_id'    => $issue->id,
                 'assignee_id' => $assignee->id,
-                'attempt'     => $action->attempt,
+                'issue_ids'   => array_map(fn ($i) => $i['issue']->id, $items),
+                'template'    => $templateKey,
                 'error'       => $sanitized,
             ]);
 
+            $this->recordExecutorRows($items, $assignee, IssueNudge::STATUS_FAILED, $redirectPayload, $sanitized);
+
+            return array_fill(0, count($items), IssueNudge::STATUS_FAILED);
+        }
+
+        $this->recordExecutorRows($items, $assignee, IssueNudge::STATUS_SENT, $redirectPayload);
+
+        return array_fill(0, count($items), IssueNudge::STATUS_SENT);
+    }
+
+    /**
+     * Send one batched escalation message to a manager (issues grouped by assignee)
+     * and write one IssueNudge row per issue.
+     *
+     * @param  array<int, array{issue: Issue, assignee: User, daysStuck: int}>  $items
+     * @return array<int, string>  one status value per issue, for stats aggregation
+     */
+    private function sendManagerBatch(User $manager, array $items, ?string $testChatId): array
+    {
+        $telegramId = $manager->telegramUser?->telegram_user_id;
+        if (! $telegramId) {
+            $this->recordManagerRows($items, $manager, IssueNudge::STATUS_SKIPPED, ['reason' => 'no_telegram_user']);
+
+            return array_fill(0, count($items), IssueNudge::STATUS_SKIPPED);
+        }
+
+        $text = $this->formatEscalationBatch($items);
+        $chatId = $testChatId ?? (string) $telegramId;
+        $redirectPayload = $testChatId ? ['test_redirect' => true] : [];
+
+        try {
+            $this->sendTelegram($chatId, $text);
+        } catch (\Throwable $e) {
+            $sanitized = TelegramErrorSanitizer::sanitize($e->getMessage());
+            Log::warning('StuckIssueNudgeService: manager escalation send failed', [
+                'manager_id' => $manager->id,
+                'issue_ids'  => array_map(fn ($i) => $i['issue']->id, $items),
+                'error'      => $sanitized,
+            ]);
+
+            $this->recordManagerRows($items, $manager, IssueNudge::STATUS_FAILED, $redirectPayload, $sanitized);
+
+            return array_fill(0, count($items), IssueNudge::STATUS_FAILED);
+        }
+
+        $this->recordManagerRows($items, $manager, IssueNudge::STATUS_SENT, $redirectPayload);
+
+        return array_fill(0, count($items), IssueNudge::STATUS_SENT);
+    }
+
+    /**
+     * @param  array<int, array{issue: Issue, action: NextNudgeAction, daysStuck: int}>  $items
+     */
+    private function recordExecutorRows(array $items, User $assignee, string $status, array $payload = [], ?string $error = null): void
+    {
+        foreach ($items as $item) {
             $this->recordNudge(
-                issue: $issue,
+                issue: $item['issue'],
                 kind: IssueNudge::KIND_EXECUTOR,
                 recipient: $assignee,
-                attempt: $action->attempt,
-                templateKey: $action->templateKey,
-                daysStuck: $daysStuck,
-                status: IssueNudge::STATUS_FAILED,
-                payload: $testChatId ? ['test_redirect' => true] : [],
-                error: $sanitized,
+                attempt: $item['action']->attempt,
+                templateKey: $item['action']->templateKey,
+                daysStuck: $item['daysStuck'],
+                status: $status,
+                payload: $payload,
+                error: $error,
             );
-            return [IssueNudge::STATUS_FAILED];
         }
     }
 
     /**
-     * @return array<int, string>  array of status values per manager attempt
+     * @param  array<int, array{issue: Issue, assignee: User, daysStuck: int}>  $items
      */
-    private function sendManagerEscalation(Issue $issue, int $daysStuck, ?string $testChatId): array
+    private function recordManagerRows(array $items, User $manager, string $status, array $payload = [], ?string $error = null): void
     {
-        $assignee = $issue->assignee;
-        if (! $assignee) {
-            return [];
+        foreach ($items as $item) {
+            $this->recordNudge(
+                issue: $item['issue'],
+                kind: IssueNudge::KIND_MANAGER,
+                recipient: $manager,
+                attempt: 1,
+                templateKey: IssueNudge::TEMPLATE_ESCALATION,
+                daysStuck: $item['daysStuck'],
+                status: $status,
+                payload: $payload,
+                error: $error,
+            );
         }
-
-        $managers = $this->resolveManagers($issue);
-        if ($managers->isEmpty()) {
-            Log::warning('StuckIssueNudgeService: escalation skipped — no managers in org', [
-                'issue_id'        => $issue->id,
-                'organization_id' => $issue->organization_id,
-            ]);
-            return []; // silent skip per spec — no row written
-        }
-
-        $text = $this->formatEscalation($issue, $daysStuck, $assignee);
-        $results = [];
-
-        foreach ($managers as $manager) {
-            $telegramId = $manager->telegramUser?->telegram_user_id;
-            if (! $telegramId) {
-                $this->recordNudge(
-                    issue: $issue,
-                    kind: IssueNudge::KIND_MANAGER,
-                    recipient: $manager,
-                    attempt: 1,
-                    templateKey: IssueNudge::TEMPLATE_ESCALATION,
-                    daysStuck: $daysStuck,
-                    status: IssueNudge::STATUS_SKIPPED,
-                    payload: ['reason' => 'no_telegram_user'],
-                );
-                $results[] = IssueNudge::STATUS_SKIPPED;
-                continue;
-            }
-
-            $chatId = $testChatId ?? (string) $telegramId;
-
-            try {
-                $this->sendTelegram($chatId, $text);
-
-                $this->recordNudge(
-                    issue: $issue,
-                    kind: IssueNudge::KIND_MANAGER,
-                    recipient: $manager,
-                    attempt: 1,
-                    templateKey: IssueNudge::TEMPLATE_ESCALATION,
-                    daysStuck: $daysStuck,
-                    status: IssueNudge::STATUS_SENT,
-                    payload: $testChatId ? ['test_redirect' => true] : [],
-                );
-                $results[] = IssueNudge::STATUS_SENT;
-            } catch (\Throwable $e) {
-                $sanitized = TelegramErrorSanitizer::sanitize($e->getMessage());
-                Log::warning('StuckIssueNudgeService: manager escalation send failed', [
-                    'issue_id'   => $issue->id,
-                    'manager_id' => $manager->id,
-                    'error'      => $sanitized,
-                ]);
-
-                $this->recordNudge(
-                    issue: $issue,
-                    kind: IssueNudge::KIND_MANAGER,
-                    recipient: $manager,
-                    attempt: 1,
-                    templateKey: IssueNudge::TEMPLATE_ESCALATION,
-                    daysStuck: $daysStuck,
-                    status: IssueNudge::STATUS_FAILED,
-                    payload: $testChatId ? ['test_redirect' => true] : [],
-                    error: $sanitized,
-                );
-                $results[] = IssueNudge::STATUS_FAILED;
-            }
-        }
-
-        return $results;
     }
 
     /**
@@ -322,6 +356,7 @@ class StuckIssueNudgeService
                 ->where('organization_user.role', 'manager')
             )
             ->where('id', '!=', $issue->assignee_id)
+            ->orderBy('id')
             ->get();
     }
 
@@ -370,6 +405,11 @@ class StuckIssueNudgeService
         return rtrim((string) config('app.frontend_url'), '/') . '/dashboard/issues/' . $issue->id;
     }
 
+    private function issueBullet(Issue $issue, int $daysStuck, string $unit): string
+    {
+        return '• <a href="' . e($this->issueUrl($issue)) . '">«' . e($issue->name) . '»</a> — ' . $daysStuck . ' ' . $unit;
+    }
+
     private function formatExec1(Issue $issue, int $daysStuck): string
     {
         return implode("\n", [
@@ -378,6 +418,27 @@ class StuckIssueNudgeService
             'Как продвигается задача <a href="' . e($this->issueUrl($issue)) . '">«' . e($issue->name) . '»</a>?',
             'Уже ' . $daysStuck . ' дня без движения — может, что-то блокирует?',
         ]);
+    }
+
+    /**
+     * @param  array<int, array{issue: Issue, action: NextNudgeAction, daysStuck: int}>  $items
+     */
+    private function formatExec1Batch(array $items): string
+    {
+        if (count($items) === 1) {
+            return $this->formatExec1($items[0]['issue'], $items[0]['daysStuck']);
+        }
+
+        $lines = [
+            '👋 Привет!',
+            '',
+            'Несколько задач без движения — может, что-то блокирует?',
+        ];
+        foreach ($items as $item) {
+            $lines[] = $this->issueBullet($item['issue'], $item['daysStuck'], 'дня');
+        }
+
+        return implode("\n", $lines);
     }
 
     private function formatExec2(Issue $issue, int $daysStuck): string
@@ -390,6 +451,29 @@ class StuckIssueNudgeService
         ]);
     }
 
+    /**
+     * @param  array<int, array{issue: Issue, action: NextNudgeAction, daysStuck: int}>  $items
+     */
+    private function formatExec2Batch(array $items): string
+    {
+        if (count($items) === 1) {
+            return $this->formatExec2($items[0]['issue'], $items[0]['daysStuck']);
+        }
+
+        $lines = [
+            '🔔 Несколько задач не двигаются:',
+            '',
+        ];
+        foreach ($items as $item) {
+            $lines[] = $this->issueBullet($item['issue'], $item['daysStuck'], 'дня');
+        }
+        $lines[] = '';
+        $lines[] = 'Нужна помощь? Если задача уже не актуальна — закрой её.';
+        $lines[] = 'Если кому-то лучше передать — поменяй исполнителя.';
+
+        return implode("\n", $lines);
+    }
+
     private function formatEscalation(Issue $issue, int $daysStuck, User $assignee): string
     {
         return implode("\n", [
@@ -400,5 +484,40 @@ class StuckIssueNudgeService
             '',
             'Возможно, стоит обсудить блокеры или переназначить.',
         ]);
+    }
+
+    /**
+     * @param  array<int, array{issue: Issue, assignee: User, daysStuck: int}>  $items
+     */
+    private function formatEscalationBatch(array $items): string
+    {
+        if (count($items) === 1) {
+            return $this->formatEscalation($items[0]['issue'], $items[0]['daysStuck'], $items[0]['assignee']);
+        }
+
+        // Group issues by assignee, preserving first-seen order.
+        $byAssignee = [];
+        foreach ($items as $item) {
+            $aid = $item['assignee']->id;
+            $byAssignee[$aid]['assignee'] ??= $item['assignee'];
+            $byAssignee[$aid]['issues'][] = $item;
+        }
+
+        $lines = [
+            '🟠 <b>Зависшие задачи требуют внимания</b>',
+            '',
+            'Напоминания исполнителям не сработали:',
+        ];
+        foreach ($byAssignee as $group) {
+            $lines[] = '';
+            $lines[] = '<b>' . e($group['assignee']->name) . '</b>:';
+            foreach ($group['issues'] as $item) {
+                $lines[] = $this->issueBullet($item['issue'], $item['daysStuck'], 'дней');
+            }
+        }
+        $lines[] = '';
+        $lines[] = 'Возможно, стоит обсудить блокеры или переназначить.';
+
+        return implode("\n", $lines);
     }
 }

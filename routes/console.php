@@ -108,10 +108,14 @@ Schedule::command('cpm:process-pending')
     ->withoutOverlapping();
 
 // Critical Path: one batched personal reminder per participant in the morning
-Schedule::command('critical-path:send-daily-reminders')
-    ->dailyAt('09:05')
-    ->name('critical-path:send-daily-reminders')
-    ->withoutOverlapping();
+// TEMP (2026-06-02): личный дайджест «Критический путь» временно отключён по запросу.
+// Чтобы вернуть — раскомментировать блок ниже. Командные CP-уведомления (notifyTeam)
+// и пересчёт графа (cpm:process-pending) НЕ затронуты. Команду можно гонять руками:
+//   php artisan critical-path:send-daily-reminders --test-user=<tg_id>
+// Schedule::command('critical-path:send-daily-reminders')
+//     ->dailyAt('09:05')
+//     ->name('critical-path:send-daily-reminders')
+//     ->withoutOverlapping();
 
 // Prune pending (unbound) issue attachments older than 24 hours
 Schedule::command('attachments:prune-orphans')
