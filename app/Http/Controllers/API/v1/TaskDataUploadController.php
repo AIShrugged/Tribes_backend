@@ -11,6 +11,7 @@ use App\Models\TaskDataUpload;
 use App\Services\TaskData\TaskDataUploadService;
 use App\Services\Transcript\Exceptions\TranscriptParseException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -64,9 +65,11 @@ class TaskDataUploadController extends Controller
     /**
      * Poll processing status. Returns current step + results when done.
      */
-    public function status(int $uploadId): ApiResponse
+    public function status(Request $request, int $uploadId): ApiResponse
     {
-        $upload = TaskDataUpload::find($uploadId);
+        // Ownership gate (IDOR fix): only return uploads the user may see.
+        // Response shape unchanged (raw status) so the form's polling is untouched.
+        $upload = TaskDataUpload::visibleTo($request->user())->find($uploadId);
 
         if (!$upload) {
             return ApiResponse::notFound();
@@ -81,9 +84,13 @@ class TaskDataUploadController extends Controller
         ];
 
         if ($upload->status === 'done') {
+            // Re-filter issue names through Issue visibility (defense-in-depth, matches
+            // UploadLogController::visibleCreatedIssues): the upload-row gate has an
+            // ungated own-uploader clause, so a user who left the org/team must not get
+            // issue names back here either.
             $issues = Issue::where('sourceable_type', TaskDataUpload::class)
                 ->where('sourceable_id', $upload->id)
-                ->whereNull('deleted_at')
+                ->visibleTo($request->user())
                 ->get(['id', 'name'])
                 ->map(fn ($issue) => [
                     'id'     => $issue->id,

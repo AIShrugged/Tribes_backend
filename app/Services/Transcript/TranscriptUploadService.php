@@ -46,8 +46,27 @@ class TranscriptUploadService
      */
     public function handle(UploadTranscriptRequest $request, User $uploader): array
     {
-        $event = $this->eventResolver->resolve($request, $uploader);
+        $event = $this->resolveEvent($request, $uploader);
 
+        return $this->parseAndPersist($event, $request, $uploader);
+    }
+
+    /**
+     * Resolve (and, for "create new" mode, persist) the CalendarEvent the transcript
+     * attaches to. Split out so the controller can capture the event id for the upload
+     * log even when {@see parseAndPersist} later throws (the synthetic event is already
+     * persisted at this point).
+     */
+    public function resolveEvent(UploadTranscriptRequest $request, User $uploader): CalendarEvent
+    {
+        return $this->eventResolver->resolve($request, $uploader);
+    }
+
+    /**
+     * @return array{calendar_event: CalendarEvent, transcript_entries_count: int, participants_count: int}
+     */
+    public function parseAndPersist(CalendarEvent $event, UploadTranscriptRequest $request, User $uploader): array
+    {
         // Archive-transparent: if file is ZIP/GZ, extract the text content first.
         // Non-archives pass through unchanged.
         $rawContent = $this->archiveExtractor->extract($request->file('file'));

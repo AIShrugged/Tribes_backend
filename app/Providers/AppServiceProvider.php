@@ -88,5 +88,12 @@ class AppServiceProvider extends ServiceProvider
 
             return [$perUser, $perOrg];
         });
+
+        // Read limiter for the unified Upload Log feed/detail (per-user).
+        RateLimiter::for('uploads-read', function ($request) {
+            $user = $request->user();
+
+            return Limit::perMinute(60)->by($user?->id ?: $request->ip());
+        });
     }
 }

@@ -84,7 +84,10 @@ class ProcessTaskDataUploadJob implements ShouldQueue
                 $result['updated']->pluck('id')->all(),
             );
         } catch (\Throwable $e) {
-            $upload->update(['status' => 'failed']);
+            $upload->update([
+                'status'        => 'failed',
+                'error_message' => 'Could not process uploaded file',
+            ]);
 
             Log::error('ProcessTaskDataUploadJob: failed', [
                 'upload_id' => $upload->id,
@@ -93,6 +96,18 @@ class ProcessTaskDataUploadJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    /**
+     * Fired by the queue when the job times out or throws past handle()'s own catch.
+     * Marks a stranded (non-done) row failed so the Upload Log shows a real status and
+     * the frontend detail poll terminates — there is no separate reaper.
+     */
+    public function failed(\Throwable $e): void
+    {
+        TaskDataUpload::where('id', $this->uploadId)
+            ->where('status', '!=', 'done')
+            ->update(['status' => 'failed', 'error_message' => 'Could not process uploaded file']);
     }
 
     /**

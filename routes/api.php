@@ -26,6 +26,7 @@ use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\OrganizationController;
+use App\Http\Controllers\API\v1\OrganizationDecisionController;
 use App\Http\Controllers\API\v1\OrganizationLlmPromptController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
 use App\Http\Controllers\API\v1\SandboxToolGatewayController;
@@ -61,6 +62,7 @@ use App\Http\Controllers\API\v1\PersonController;
 use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\TaskDataUploadController;
 use App\Http\Controllers\API\v1\TranscriptUploadController;
+use App\Http\Controllers\API\v1\UploadLogController;
 use App\Http\Controllers\API\v1\UserController;
 use App\Http\Controllers\API\v1\UserFocusController;
 use App\Http\Controllers\API\v1\UserPreferencesController;
@@ -205,6 +207,16 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('tasks/uploads/{uploadId}', [TaskDataUploadController::class, 'status'])
             ->name('tasks.upload.status');
 
+        // Unified Upload Log (transcript + task-data uploads), org/team-wide.
+        Route::get('uploads', [UploadLogController::class, 'index'])
+            ->middleware('throttle:uploads-read')
+            ->name('uploads.index');
+        Route::get('uploads/{type}/{id}', [UploadLogController::class, 'show'])
+            ->whereIn('type', ['transcript', 'task_data'])
+            ->whereNumber('id')
+            ->middleware('throttle:uploads-read')
+            ->name('uploads.show');
+
         Route::get('me/focus', [UserFocusController::class, 'show'])->name('me.focus.show');
         Route::get('me/issues/focused', [FocusedIssuesController::class, 'index'])->name('me.issues.focused');
         Route::put('me/focus', [UserFocusController::class, 'update'])->name('me.focus.update');
@@ -285,6 +297,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::middleware('throttle:60,1')->group(function () {
             Route::get('teams/{team}/decisions', [TeamDecisionController::class, 'index']);
             Route::post('teams/{team}/decisions', [TeamDecisionController::class, 'store']);
+            Route::get('organizations/{organization}/decisions', [OrganizationDecisionController::class, 'index']);
             Route::get('teams/{team}/key-points', [TeamKeyPointController::class, 'index']);
         });
 

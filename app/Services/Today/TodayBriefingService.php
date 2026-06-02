@@ -46,7 +46,15 @@ class TodayBriefingService
             ->exists();
 
         if (! $hasCalendar) {
-            return $this->emptyBriefing($date, 'empty', $taskGroups);
+            // The daily nudge is per-user (not org-scoped), so surface it even
+            // when this org has no connected calendar — otherwise users whose
+            // calendar source has no/another org never see their nudge.
+            return $this->emptyBriefing(
+                $date,
+                'empty',
+                $taskGroups,
+                $this->nudgeService->getCached($user->id, $date),
+            );
         }
 
         $events = $this->loadEvents($user, $date, $organizationId);
@@ -438,7 +446,7 @@ class TodayBriefingService
             ->all();
     }
 
-    private function emptyBriefing(Carbon $date, string $state, ?TodayTaskGroupsDTO $taskGroups = null): TodayBriefingDTO
+    private function emptyBriefing(Carbon $date, string $state, ?TodayTaskGroupsDTO $taskGroups = null, ?string $nudge = null): TodayBriefingDTO
     {
         return new TodayBriefingDTO(
             state: $state,
@@ -447,7 +455,7 @@ class TodayBriefingService
             carried_tasks: [],
             waiting_on_you: [],
             stale: [],
-            nudge: null,
+            nudge: $nudge,
             task_groups: $taskGroups ?? TodayTaskGroupsDTO::empty(),
         );
     }

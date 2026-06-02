@@ -10,6 +10,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Services\Transcript\TranscriptArchiveExtractor;
 use App\Services\Transcript\TranscriptContentNormalizer;
+use Illuminate\Support\Str;
 
 class TaskDataUploadService
 {
@@ -36,14 +37,32 @@ class TaskDataUploadService
             'user_id'           => $uploader->id,
             'team_id'           => $team->id,
             'organization_id'   => $team->organization_id,
-            'original_filename' => $file->getClientOriginalName(),
+            // Strip control chars + cap at the varchar(255) column so a long/hostile
+            // filename produces a valid row instead of a 500 at insert.
+            'original_filename' => Str::limit(
+                preg_replace('/[\x00-\x1F]/', '', $file->getClientOriginalName() ?? 'upload'),
+                255,
+                '',
+            ),
             'status'            => 'queued',
         ]);
 
         // Read + extract + normalize here (sync, in the HTTP-serving container).
         // Only the text string crosses the queue boundary — no filesystem dependency.
-        $rawContent = $this->archiveExtractor->extract($file);
-        $content = $this->normalizer->normalize($rawContent);
+        // A failure here happens AFTER the row exists — mark it failed (else it stays
+        // stuck in 'queued' forever, rendering as 'processing') before re-throwing so
+        // the controller still returns its 422.
+        try {
+            $rawContent = $this->archiveExtractor->extract($file);
+            $content = $this->normalizer->normalize($rawContent);
+        } catch (\Throwable $e) {
+            $upload->update([
+                'status'        => 'failed',
+                'error_message' => 'Could not process uploaded file',
+            ]);
+
+            throw $e;
+        }
 
         ProcessTaskDataUploadJob::dispatch($upload->id, $content);
 
