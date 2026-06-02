@@ -4,8 +4,6 @@ namespace App\Listeners;
 
 use App\Events\MeetingArtifactsReady;
 use App\Models\CalendarEvent;
-use App\Models\Issue;
-use App\Models\IssueComment;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Queue\Queueable;
@@ -79,14 +77,12 @@ class SendTranscriptUploadReportNotification implements ShouldQueueAfterCommit
         $title = e($calendarEvent->title ?: 'Untitled meeting');
         $date = $calendarEvent->starts_at?->format('d.m.Y H:i') ?? '';
 
-        $hasSummary  = $calendarEvent->meetingSummary()->exists();
-        $hasReview   = $calendarEvent->meetingReview()->exists();
-        $followups   = $calendarEvent->followups()->count();
-        $newIssues   = Issue::where('sourceable_type', CalendarEvent::class)
-            ->where('sourceable_id', $calendarEvent->id)
-            ->whereNull('deleted_at')
-            ->count();
-        $updatedIssues = IssueComment::where('calendar_event_id', $calendarEvent->id)->count();
+        $signals = app(\App\Services\Transcript\TranscriptUploadDetailService::class)->derive($calendarEvent);
+        $hasSummary    = $signals['has_summary'];
+        $hasReview     = $signals['has_review'];
+        $followups     = $signals['followups_count'];
+        $newIssues     = $signals['issues_created'];
+        $updatedIssues = $signals['issues_updated'];
 
         $lines = [];
         $lines[] = "\xF0\x9F\x93\xA4 <b>Transcript upload report</b>";
