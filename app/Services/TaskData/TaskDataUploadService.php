@@ -10,6 +10,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Services\Transcript\TranscriptArchiveExtractor;
 use App\Services\Transcript\TranscriptContentNormalizer;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 
 class TaskDataUploadService
@@ -29,10 +30,21 @@ class TaskDataUploadService
      */
     public function handle(UploadTaskDataRequest $request, User $uploader): TaskDataUpload
     {
-        $team = $this->resolveTeam($request, $uploader);
+        return $this->handleFile(
+            $request->file('file'),
+            $uploader,
+            $request->teamId(),
+        );
+    }
 
-        $file = $request->file('file');
-
+    public function handleFile(
+        UploadedFile $file,
+        User $uploader,
+        int $teamId,
+        ?int $sourceTelegramChatId = null,
+        ?int $sourceTelegramThreadId = null,
+    ): TaskDataUpload {
+        $team = $this->resolveTeam($teamId, $uploader);
         $upload = TaskDataUpload::create([
             'user_id'           => $uploader->id,
             'team_id'           => $team->id,
@@ -44,6 +56,8 @@ class TaskDataUploadService
                 255,
                 '',
             ),
+            'source_telegram_chat_id' => $sourceTelegramChatId,
+            'source_telegram_thread_id' => $sourceTelegramThreadId,
             'status'            => 'queued',
         ]);
 
@@ -69,9 +83,9 @@ class TaskDataUploadService
         return $upload;
     }
 
-    private function resolveTeam(UploadTaskDataRequest $request, User $uploader): Team
+    private function resolveTeam(int $teamId, User $uploader): Team
     {
-        $team = Team::findOrFail($request->teamId());
+        $team = Team::findOrFail($teamId);
 
         $uploaderOrgIds = $uploader->organizations()->pluck('organizations.id');
         if (!$uploaderOrgIds->contains($team->organization_id)) {
