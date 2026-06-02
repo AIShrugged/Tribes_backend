@@ -313,4 +313,198 @@ class StuckIssueNudgeServiceTest extends TestCase
         $this->assertStringContainsString('&lt;script&gt;', $sentText);
         $this->assertStringContainsString('&lt;b&gt;InjectedTitle&lt;/b&gt;', $sentText);
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Batching — one message per recipient/stage
+    // ────────────────────────────────────────────────────────────────────
+
+    #[Test]
+    public function it_merges_multiple_exec2_issues_for_one_assignee_into_one_message(): void
+    {
+        $assignee = $this->makeUserWithTg('7001', 'Alice');
+
+        $titles = ['Review mechanisms', 'Не создаются задачи', 'Поправить аттачи'];
+        $issues = [];
+        foreach ($titles as $title) {
+            $issue = $this->makeStuckIssue($assignee, null, daysAgo: 4, name: $title);
+            $this->addNudge($issue, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 2);
+            $issues[] = $issue;
+        }
+
+        $sentText = null;
+        $tg = Mockery::mock(Api::class);
+        // Three stuck issues for one assignee → exactly ONE message.
+        $tg->shouldReceive('sendMessage')->once()->andReturnUsing(function (array $params) use (&$sentText) {
+            $sentText = $params['text'];
+            return new Message([]);
+        });
+
+        $stats = $this->makeService($tg)->run();
+
+        $this->assertSame(['sent' => 3, 'skipped' => 0, 'failed' => 0], $stats);
+        $this->assertNotNull($sentText);
+        $this->assertStringContainsString('🔔 Несколько задач не двигаются:', $sentText);
+        foreach ($titles as $title) {
+            $this->assertStringContainsString('«'.$title.'»', $sentText);
+        }
+        // One exec_2 row written per issue (cadence stays granular).
+        foreach ($issues as $issue) {
+            $this->assertSame(1, $issue->nudges()->where('template_key', IssueNudge::TEMPLATE_EXEC_2)->count());
+        }
+    }
+
+    #[Test]
+    public function it_keeps_exec1_and_exec2_in_separate_messages_for_one_assignee(): void
+    {
+        $assignee = $this->makeUserWithTg('7101', 'Bob');
+
+        // Two fresh issues (no prior nudge) → exec_1 batch.
+        $this->makeStuckIssue($assignee, null, daysAgo: 3, name: 'Свежая A');
+        $this->makeStuckIssue($assignee, null, daysAgo: 3, name: 'Свежая B');
+
+        // Two issues that already got exec_1 → exec_2 batch.
+        $b1 = $this->makeStuckIssue($assignee, null, daysAgo: 4, name: 'Зависшая C');
+        $b2 = $this->makeStuckIssue($assignee, null, daysAgo: 4, name: 'Зависшая D');
+        $this->addNudge($b1, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 2);
+        $this->addNudge($b2, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 2);
+
+        $texts = [];
+        $tg = Mockery::mock(Api::class);
+        // Two stages → two messages (merge only within a stage).
+        $tg->shouldReceive('sendMessage')->twice()->andReturnUsing(function (array $params) use (&$texts) {
+            $texts[] = $params['text'];
+            return new Message([]);
+        });
+
+        $stats = $this->makeService($tg)->run();
+
+        $this->assertSame(['sent' => 4, 'skipped' => 0, 'failed' => 0], $stats);
+        $this->assertCount(2, $texts);
+
+        $exec1 = collect($texts)->first(fn ($t) => str_contains($t, '👋 Привет!'));
+        $exec2 = collect($texts)->first(fn ($t) => str_contains($t, 'не двигаются'));
+        $this->assertNotNull($exec1, 'exec_1 batch message missing');
+        $this->assertNotNull($exec2, 'exec_2 batch message missing');
+
+        $this->assertStringContainsString('«Свежая A»', $exec1);
+        $this->assertStringContainsString('«Свежая B»', $exec1);
+        $this->assertStringNotContainsString('«Зависшая C»', $exec1);
+
+        $this->assertStringContainsString('«Зависшая C»', $exec2);
+        $this->assertStringContainsString('«Зависшая D»', $exec2);
+        $this->assertStringNotContainsString('«Свежая A»', $exec2);
+    }
+
+    #[Test]
+    public function it_batches_escalation_to_one_manager_grouped_by_assignee(): void
+    {
+        $manager = $this->makeUserWithTg('7201', 'Boss');
+        $alice = $this->makeUserWithTg('7202', 'Alice');
+        $bob = $this->makeUserWithTg('7203', 'Bob');
+
+        $org = Organization::create(['name' => 'Acme', 'slug' => 'acme-'.uniqid()]);
+        $org->users()->attach($manager->id, ['role' => 'manager']);
+
+        $issue1 = $this->makeStuckIssue($alice, $org, daysAgo: 7, name: 'Задача Алисы');
+        $this->addNudge($issue1, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 5);
+        $this->addNudge($issue1, IssueNudge::KIND_EXECUTOR, 2, IssueNudge::TEMPLATE_EXEC_2, daysAgo: 3);
+
+        $issue2 = $this->makeStuckIssue($bob, $org, daysAgo: 7, name: 'Задача Боба');
+        $this->addNudge($issue2, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 5);
+        $this->addNudge($issue2, IssueNudge::KIND_EXECUTOR, 2, IssueNudge::TEMPLATE_EXEC_2, daysAgo: 3);
+
+        $sentText = null;
+        $tg = Mockery::mock(Api::class);
+        // Two stuck issues, one shared manager → ONE escalation message.
+        $tg->shouldReceive('sendMessage')->once()->andReturnUsing(function (array $params) use (&$sentText) {
+            $sentText = $params['text'];
+            return new Message([]);
+        });
+
+        $stats = $this->makeService($tg)->run();
+
+        $this->assertSame(['sent' => 2, 'skipped' => 0, 'failed' => 0], $stats);
+        $this->assertNotNull($sentText);
+        $this->assertStringContainsString('🟠 <b>Зависшие задачи требуют внимания</b>', $sentText);
+        $this->assertStringContainsString('Alice', $sentText);
+        $this->assertStringContainsString('Bob', $sentText);
+        $this->assertStringContainsString('«Задача Алисы»', $sentText);
+        $this->assertStringContainsString('«Задача Боба»', $sentText);
+
+        // One manager row per issue, all addressed to the same manager.
+        $this->assertSame($manager->id, $issue1->nudges()->where('kind', IssueNudge::KIND_MANAGER)->first()->recipient_user_id);
+        $this->assertSame($manager->id, $issue2->nudges()->where('kind', IssueNudge::KIND_MANAGER)->first()->recipient_user_id);
+    }
+
+    #[Test]
+    public function it_escapes_html_in_batched_escalation(): void
+    {
+        $manager = $this->makeUserWithTg('7301', 'Boss');
+        $evil = $this->makeUserWithTg('7302', '<script>alert(1)</script>');
+        $normal = $this->makeUserWithTg('7303', 'Normal');
+
+        $org = Organization::create(['name' => 'Acme', 'slug' => 'acme-'.uniqid()]);
+        $org->users()->attach($manager->id, ['role' => 'manager']);
+
+        $i1 = $this->makeStuckIssue($evil, $org, daysAgo: 7, name: '<b>InjectedTitle</b>');
+        $this->addNudge($i1, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 5);
+        $this->addNudge($i1, IssueNudge::KIND_EXECUTOR, 2, IssueNudge::TEMPLATE_EXEC_2, daysAgo: 3);
+
+        $i2 = $this->makeStuckIssue($normal, $org, daysAgo: 7, name: 'Обычная задача');
+        $this->addNudge($i2, IssueNudge::KIND_EXECUTOR, 1, IssueNudge::TEMPLATE_EXEC_1, daysAgo: 5);
+        $this->addNudge($i2, IssueNudge::KIND_EXECUTOR, 2, IssueNudge::TEMPLATE_EXEC_2, daysAgo: 3);
+
+        $sentText = null;
+        $tg = Mockery::mock(Api::class);
+        $tg->shouldReceive('sendMessage')->once()->andReturnUsing(function (array $params) use (&$sentText) {
+            $sentText = $params['text'];
+            return new Message([]);
+        });
+
+        $this->makeService($tg)->run();
+
+        $this->assertNotNull($sentText);
+        // Forces the multi-issue batch formatter (count >= 2).
+        $this->assertStringNotContainsString('<script>alert(1)</script>', $sentText);
+        $this->assertStringNotContainsString('<b>InjectedTitle</b>', $sentText);
+        $this->assertStringContainsString('&lt;script&gt;', $sentText);
+        $this->assertStringContainsString('&lt;b&gt;InjectedTitle&lt;/b&gt;', $sentText);
+    }
+
+    #[Test]
+    public function batch_send_failure_burns_the_attempt_for_every_issue_in_the_bucket(): void
+    {
+        // Documented, deliberate trade-off: a batched message is one send for N
+        // issues, so a single failure marks ALL N as failed — and because FAILED
+        // rows still enter the series, the attempt is "burned" (not retried next
+        // run). This test pins that semantic so it is not "fixed" by accident.
+        $assignee = $this->makeUserWithTg('7401', 'Alice');
+
+        $issues = [];
+        foreach (['Задача 1', 'Задача 2', 'Задача 3'] as $name) {
+            $issues[] = $this->makeStuckIssue($assignee, null, daysAgo: 3, name: $name);
+        }
+
+        $tg = Mockery::mock(Api::class);
+        // Three day-2 issues → ONE batched send, and it fails. No second send on
+        // the re-run (the burned attempt is never retried) — enforced by once().
+        $tg->shouldReceive('sendMessage')->once()->andThrow(new \RuntimeException('boom 429'));
+
+        $service = $this->makeService($tg);
+        $stats = $service->run();
+
+        $this->assertSame(['sent' => 0, 'skipped' => 0, 'failed' => 3], $stats);
+        foreach ($issues as $issue) {
+            $n = $issue->nudges()->where('template_key', IssueNudge::TEMPLATE_EXEC_1)->first();
+            $this->assertNotNull($n);
+            $this->assertSame(IssueNudge::STATUS_FAILED, $n->status);
+        }
+
+        // Re-run: exec_1 is burned for all three (day 3 < 4 so exec_2 not yet due) →
+        // no further send, no new rows.
+        $service->run();
+        foreach ($issues as $issue) {
+            $this->assertSame(1, $issue->nudges()->where('template_key', IssueNudge::TEMPLATE_EXEC_1)->count());
+        }
+    }
 }
