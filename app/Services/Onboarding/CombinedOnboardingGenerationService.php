@@ -4,7 +4,6 @@ namespace App\Services\Onboarding;
 
 use App\Exceptions\AppException;
 use App\Models\Organization;
-use App\Models\Participant;
 use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use App\Support\IssueDescriptionFormatter;
@@ -31,15 +30,15 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         $template     = $payload['template'] ?? null;
 
         $fileTexts     = $this->readUploadedFiles($uploadToken, $userId, $org->id);
-        $participants  = $this->loadParticipantNames($org);
         $existingUsers = $org->users()->select(['users.id', 'users.name', 'users.email'])->get();
+        $browseEvidence = '';
 
         $model = config('ai.providers.openrouter.models.onboarding');
 
         if (!empty($links)) {
-            $raw = $this->runWithBrowsing($org, $description, $fileTexts, $participants, $existingUsers, $links, $model, $template);
+            ['raw' => $raw, 'evidence' => $browseEvidence] = $this->runWithBrowsing($org, $description, $fileTexts, $links, $model, $template);
         } else {
-            $messages = $this->buildMessages($org, $description, $fileTexts, $participants, $existingUsers, $template);
+            $messages = $this->buildMessages($org, $description, $fileTexts, $template);
             $raw      = app(OpenRouterClient::class)->chat($messages, $model, 8192, true);
         }
 
@@ -49,23 +48,29 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
             return $result;
         }
 
+        $teamEvidence = $this->buildTeamEvidenceText($description, $fileTexts, $browseEvidence);
+        $result = $this->filterTeamByEvidence($result, $teamEvidence);
+        $result = $this->normalizeTeamEmailsByEvidence($result, $teamEvidence);
+
         return $this->enrichTeamWithSystemUsers($result, $existingUsers);
     }
 
     // -------------------------------------------------------------------------
 
+    /**
+     * @return array{raw: string, evidence: string}
+     */
     private function runWithBrowsing(
         Organization $org,
         ?string $description,
         string $fileTexts,
-        string $participants,
-        \Illuminate\Support\Collection $existingUsers,
         array $links,
         string $model,
         ?string $template,
-    ): string {
-        $messages = $this->buildBrowsingMessages($org, $description, $fileTexts, $participants, $existingUsers, $links, $template);
+    ): array {
+        $messages = $this->buildBrowsingMessages($org, $description, $fileTexts, $links, $template);
         $tool     = $this->fetchUrlToolDefinition();
+        $evidence = [];
 
         for ($i = 0; $i < self::MAX_BROWSE_ITERATIONS; $i++) {
             $response = app(OpenRouterClient::class)->chatWithTools($messages, [$tool], $model, 8192);
@@ -74,7 +79,10 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
             $messages[] = $message;
 
             if (empty($message['tool_calls'])) {
-                return $this->extractTextContent($message['content'] ?? '');
+                return [
+                    'raw' => $this->extractTextContent($message['content'] ?? ''),
+                    'evidence' => implode("\n\n", $evidence),
+                ];
             }
 
             foreach ($message['tool_calls'] as $toolCall) {
@@ -89,6 +97,8 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
                     'url'       => $url,
                     'chars'     => strlen($content),
                 ]);
+
+                $evidence[] = $content;
 
                 $messages[] = [
                     'role'         => 'tool',
@@ -111,13 +121,11 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         Organization $org,
         ?string $description,
         string $fileTexts,
-        string $participants,
-        \Illuminate\Support\Collection $existingUsers,
         ?string $template,
     ): array {
         $system = $this->systemPrompt();
 
-        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $participants, $existingUsers, $template);
+        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $template);
         $userParts[] = $this->taskSection();
 
         return [
@@ -130,14 +138,12 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         Organization $org,
         ?string $description,
         string $fileTexts,
-        string $participants,
-        \Illuminate\Support\Collection $existingUsers,
         array $links,
         ?string $template,
     ): array {
         $system = $this->systemPromptBrowsing();
 
-        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $participants, $existingUsers, $template);
+        $userParts   = $this->buildCommonParts($org, $description, $fileTexts, $template);
         $linkList    = implode("\n", array_map(fn($l) => "- {$l}", array_slice($links, 0, 5)));
         $userParts[] = "## Links to investigate:\n{$linkList}";
         $userParts[] = $this->taskSectionBrowsing();
@@ -152,12 +158,10 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
         Organization $org,
         ?string $description,
         string $fileTexts,
-        string $participants,
-        \Illuminate\Support\Collection $existingUsers,
         ?string $template,
     ): array {
         $parts   = [];
-        $parts[] = "## Organization\nName: {$org->name}\nCurrent description: " . ($org->context ?? 'not set');
+        $parts[] = "## Organization\nName: {$org->name}";
 
         if ($template !== null) {
             $hints = match ($template) {
@@ -175,15 +179,6 @@ class CombinedOnboardingGenerationService extends OnboardingLlmBase
 
         if ($fileTexts !== '') {
             $parts[] = "## Uploaded documents:\n{$fileTexts}";
-        }
-
-        if ($participants !== '') {
-            $parts[] = "## Meeting participants (from transcripts):\n{$participants}";
-        }
-
-        if ($existingUsers->isNotEmpty()) {
-            $userList = $existingUsers->map(fn($u) => "- ID:{$u->id} {$u->name} <{$u->email}>")->join("\n");
-            $parts[]  = "## Existing team members already in the system:\n{$userList}";
         }
 
         return $parts;
@@ -242,6 +237,8 @@ Based on all provided information:
 2. Identify 3–7 strategic goals (epics). For each goal, decompose it into 3–10 concrete tasks.
    Each task has a type: "development" (coding/technical) or "organization" (process/non-technical).
 3. Map the team: list every person you can identify from documents, links, commits, or transcripts.
+   Only include a person if their name appears verbatim in the provided source material.
+   Do NOT add people merely because they are listed as existing system members; that list is for matching only.
    For each person, note where they were found and whether they match an existing system member.
    The "role" field must be one of: "manager" or "employee". Use "manager" only for owners, leads,
    and decision-makers; use "employee" for everyone else.
@@ -348,8 +345,7 @@ TASK;
 
                 return [
                     'name'     => $name,
-                    'email'    => $this->normalizeEmail($m['email'] ?? null, $nullishEmails)
-                        ?? $this->fallbackEmailForName($name),
+                    'email'    => $this->normalizeEmail($m['email'] ?? null, $nullishEmails),
                     'role'     => in_array($m['role'] ?? '', $validRoles, true) ? $m['role'] : 'employee',
                     'found_in' => is_array($m['found_in'] ?? null) ? $m['found_in'] : [],
                 ];
@@ -418,6 +414,74 @@ TASK;
         return $result;
     }
 
+    private function filterTeamByEvidence(array $result, string $evidence): array
+    {
+        $normalizedEvidence = $this->normalizeEvidenceText($evidence);
+
+        $result['team'] = array_values(array_filter(
+            $result['team'] ?? [],
+            fn(array $member): bool => $this->nameAppearsInEvidence((string) ($member['name'] ?? ''), $normalizedEvidence),
+        ));
+
+        return $result;
+    }
+
+    private function normalizeTeamEmailsByEvidence(array $result, string $evidence): array
+    {
+        $normalizedEvidence = $this->normalizeEvidenceText($evidence);
+
+        $result['team'] = array_map(function (array $member) use ($normalizedEvidence): array {
+            $email = $member['email'] ?? null;
+
+            if (is_string($email) && $email !== '' && $this->emailAppearsInEvidence($email, $normalizedEvidence)) {
+                return $member;
+            }
+
+            return array_merge($member, [
+                'email' => $this->fallbackEmailForName((string) ($member['name'] ?? '')),
+            ]);
+        }, $result['team'] ?? []);
+
+        return $result;
+    }
+
+    private function buildTeamEvidenceText(?string $description, string $fileTexts, string $browseEvidence): string
+    {
+        return implode("\n\n", array_filter([
+            $description,
+            $fileTexts,
+            $browseEvidence,
+        ], fn($part): bool => is_string($part) && trim($part) !== ''));
+    }
+
+    private function nameAppearsInEvidence(string $name, string $normalizedEvidence): bool
+    {
+        $normalizedName = $this->normalizeEvidenceText($name);
+
+        if ($normalizedName === '' || $normalizedEvidence === '') {
+            return false;
+        }
+
+        $pattern = '/(?<![\pL\pN])' . preg_quote($normalizedName, '/') . '(?![\pL\pN])/u';
+
+        return preg_match($pattern, $normalizedEvidence) === 1;
+    }
+
+    private function emailAppearsInEvidence(string $email, string $normalizedEvidence): bool
+    {
+        $normalizedEmail = $this->normalizeEvidenceText($email);
+
+        return $normalizedEmail !== '' && str_contains($normalizedEvidence, $normalizedEmail);
+    }
+
+    private function normalizeEvidenceText(string $value): string
+    {
+        $value = mb_strtolower($value);
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+
+        return trim($value);
+    }
+
     private function normalizeEmail(mixed $value, array $nullish): ?string
     {
         if ($value === null) {
@@ -444,29 +508,4 @@ TASK;
         return "{$username}@shrugged.ai";
     }
 
-    private function loadParticipantNames(Organization $org): string
-    {
-        $teamIds = $org->teams()->pluck('id');
-
-        if ($teamIds->isEmpty()) {
-            return '';
-        }
-
-        $eventIds = \Illuminate\Support\Facades\DB::table('followups')
-            ->whereIn('team_id', $teamIds)
-            ->whereNotNull('calendar_event_id')
-            ->pluck('calendar_event_id');
-
-        if ($eventIds->isEmpty()) {
-            return '';
-        }
-
-        $names = Participant::whereIn('calendar_event_id', $eventIds)
-            ->distinct('name')
-            ->pluck('name')
-            ->filter()
-            ->take(50);
-
-        return $names->join(', ');
-    }
 }
