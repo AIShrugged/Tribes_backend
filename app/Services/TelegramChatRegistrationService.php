@@ -3,9 +3,13 @@
 namespace App\Services;
 
 use App\Models\ChannelConversation;
+use App\Models\Organization;
+use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use App\Models\User;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class TelegramChatRegistrationService
@@ -51,6 +55,20 @@ class TelegramChatRegistrationService
         ?int $teamId,
         User $createdBy,
     ): TelegramChatRegistration {
+        // Without a Teams UI (D1/D2) chats are managed at the org level, but
+        // TeamNotificationSetting requires registration.team_id === team.id. So an
+        // unscoped workspace chat is bound to the org's default ("General") team,
+        // which contains every member and is the canonical notification target.
+        if ($teamId === null) {
+            $teamId = Organization::find($organizationId)?->defaultTeam?->id;
+
+            if ($teamId === null) {
+                Log::warning('createWorkspaceChat: organization has no default team; chat left unscoped', [
+                    'organization_id' => $organizationId,
+                ]);
+            }
+        }
+
         $existing = TelegramChatRegistration::query()
             ->where('telegram_chat_id', $telegramChatId)
             ->when(
@@ -146,11 +164,20 @@ class TelegramChatRegistrationService
 
     public function destroy(TelegramChatRegistration $registration): void
     {
-        if ($registration->channel_conversation_id !== null) {
-            $registration->conversation->delete();
-        } else {
-            $registration->delete();
-        }
+        DB::transaction(function () use ($registration): void {
+            // The morph notifiable on team_notification_settings has no FK/cascade — clean up
+            // the notification rows that point at this chat so they don't become phantom recipients.
+            TeamNotificationSetting::query()
+                ->where('notifiable_type', TelegramChatRegistration::class)
+                ->where('notifiable_id', $registration->id)
+                ->delete();
+
+            if ($registration->channel_conversation_id !== null) {
+                $registration->conversation->delete();
+            } else {
+                $registration->delete();
+            }
+        });
     }
 
     private function isUniqueConstraintViolation(QueryException $exception): bool

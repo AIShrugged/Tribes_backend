@@ -234,6 +234,33 @@ class TelegramChatRegistrationServiceTest extends TestCase
         $this->assertSame('Unknown Chat', $registration->chat_title);
     }
 
+    #[Test]
+    public function create_workspace_chat_auto_binds_to_default_team_when_team_id_null(): void
+    {
+        $manager = User::factory()->create();
+        $organization = Organization::create(['name' => 'Auto Bind Org', 'slug' => 'auto-bind-org']);
+
+        $defaultTeam = $organization->defaultTeam;
+        $this->assertNotNull($defaultTeam, 'OrganizationObserver should create a default team');
+
+        $service = $this->app->make(TelegramChatRegistrationService::class);
+        $registration = $service->createWorkspaceChat('Ops', 556001, null, $organization->id, null, $manager);
+
+        $this->assertSame($defaultTeam->id, $registration->team_id);
+    }
+
+    #[Test]
+    public function create_workspace_chat_keeps_explicit_team_id(): void
+    {
+        $manager = User::factory()->create();
+        [$organization, $team] = $this->createTenantContextFor($manager, 'manager');
+
+        $service = $this->app->make(TelegramChatRegistrationService::class);
+        $registration = $service->createWorkspaceChat('Ops', 556002, null, $organization->id, $team->id, $manager);
+
+        $this->assertSame($team->id, $registration->team_id);
+    }
+
     private function createTenantContextFor(User $user, string $role): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()

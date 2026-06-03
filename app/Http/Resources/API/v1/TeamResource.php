@@ -18,6 +18,7 @@ class TeamResource extends JsonResource
             'id'             => $this->id,
             'name'           => $this->name,
             'slug'           => $this->slug,
+            'is_default'     => (bool) $this->is_default,
             'employee_count' => $this->employee_count,
             'members'        => $this->whenLoaded('users', function () {
                 return $this->users->map(fn ($user) => [

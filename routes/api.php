@@ -278,6 +278,9 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::get('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'index']);
         Route::post('teams/{team}/notification-settings', [TeamNotificationSettingController::class, 'store']);
+        Route::put('teams/{team}/notification-settings/sync', [TeamNotificationSettingController::class, 'sync']);
+        Route::put('teams/{team}/notification-settings/set-enabled', [TeamNotificationSettingController::class, 'setEnabled']);
+        Route::put('teams/{team}/notification-settings/set-minutes-before', [TeamNotificationSettingController::class, 'setMinutesBefore']);
         Route::patch('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'update']);
         Route::delete('teams/{team}/notification-settings/{setting}', [TeamNotificationSettingController::class, 'destroy']);
 
