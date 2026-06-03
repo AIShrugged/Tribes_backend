@@ -259,6 +259,46 @@ class IssueControllerTest extends TestCase
             ->assertJsonValidationErrors(['status']);
     }
 
+    #[Test]
+    public function it_filters_persons_by_organization(): void
+    {
+        $viewer = User::factory()->create();
+        $orgMember = User::factory()->create(['name' => 'Org Member']);
+        $otherOrgMember = User::factory()->create(['name' => 'Other Org Member']);
+        $organization = Organization::create(['name' => 'Product', 'slug' => 'product']);
+        $otherOrganization = Organization::create(['name' => 'Marketing', 'slug' => 'marketing']);
+
+        $organization->users()->attach($viewer->id, ['role' => 'manager']);
+        $organization->users()->attach($orgMember->id, ['role' => 'employee']);
+        $otherOrganization->users()->attach($viewer->id, ['role' => 'manager']);
+        $otherOrganization->users()->attach($otherOrgMember->id, ['role' => 'employee']);
+
+        $this->actingAs($viewer)
+            ->getJson("/api/v1/persons?organization_id={$organization->id}&limit=100")
+            ->assertStatus(200)
+            ->assertJsonFragment(['id' => $viewer->id])
+            ->assertJsonFragment(['id' => $orgMember->id])
+            ->assertJsonMissing(['id' => $otherOrgMember->id]);
+
+        $this->actingAs($viewer)
+            ->getJson("/api/v1/persons?organization_id={$otherOrganization->id}&limit=100")
+            ->assertStatus(200)
+            ->assertJsonFragment(['id' => $viewer->id])
+            ->assertJsonFragment(['id' => $otherOrgMember->id])
+            ->assertJsonMissing(['id' => $orgMember->id]);
+    }
+
+    #[Test]
+    public function it_forbids_persons_filter_for_inaccessible_organization(): void
+    {
+        $viewer = User::factory()->create();
+        $otherOrganization = Organization::create(['name' => 'Marketing', 'slug' => 'marketing']);
+
+        $this->actingAs($viewer)
+            ->getJson("/api/v1/persons?organization_id={$otherOrganization->id}&limit=100")
+            ->assertForbidden();
+    }
+
     private function createTenantContextFor(array|User $firstUser, User ...$users): array
     {
         $allUsers = [];
