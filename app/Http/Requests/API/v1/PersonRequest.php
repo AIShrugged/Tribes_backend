@@ -14,6 +14,14 @@ class PersonRequest extends FormRequest
         return [
             'offset' => ['nullable', 'integer', 'min:0'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
         ];
+    }
+
+    public function getOrganizationId(): ?int
+    {
+        return $this->filled('organization_id')
+            ? (int) $this->input('organization_id')
+            : null;
     }
 }

@@ -16,6 +16,7 @@ class PersonController extends Controller
         $user = $request->user();
         $organizationIds = $user->organizations()->pluck('organizations.id');
         $teamIds = $user->teams()->pluck('teams.id');
+        $organizationId = $request->getOrganizationId();
 
         $query = User::query()
             ->where(function (Builder $builder) use ($organizationIds, $teamIds, $user): void {
@@ -35,6 +36,17 @@ class PersonController extends Controller
             })
             ->orderBy('name')
             ->orderBy('id');
+
+        if ($organizationId !== null) {
+            abort_unless(
+                $organizationIds->contains($organizationId),
+                403,
+            );
+
+            $query->whereHas('organizations', function (Builder $relation) use ($organizationId): void {
+                $relation->whereKey($organizationId);
+            });
+        }
 
         $count = (clone $query)->count();
         $persons = $query->offset($request->getOffset())
