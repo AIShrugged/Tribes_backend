@@ -13,6 +13,7 @@ class CriticalPathGraph extends Model
         'team_id',
         'status',
         'computed_at',
+        'last_notified_signature',
     ];
 
     protected $casts = [

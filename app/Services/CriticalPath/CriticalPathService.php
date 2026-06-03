@@ -2,6 +2,7 @@
 
 namespace App\Services\CriticalPath;
 
+use App\Jobs\NotifyCriticalPathJob;
 use App\Jobs\RebuildCriticalPathJob;
 use App\Models\CriticalPathEdge;
 use App\Models\CriticalPathGraph;
@@ -168,6 +169,15 @@ class CriticalPathService
                 'error' => $e->getMessage(),
             ]);
             $graph->update(['status' => 'failed']);
+
+            return;
+        }
+
+        // Notify off the scheduler tick: a dedicated tries=1 job owns the Telegram send,
+        // and notifyTeam debounces if the critical path did not actually change.
+        $fresh = $graph->fresh();
+        if ($fresh && $fresh->isReady()) {
+            NotifyCriticalPathJob::dispatch($fresh->id);
         }
     }
 

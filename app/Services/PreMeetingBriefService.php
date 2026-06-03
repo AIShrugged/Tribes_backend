@@ -29,13 +29,22 @@ class PreMeetingBriefService
 
     private const TELEGRAM_MAX_LENGTH = 4096;
 
+    /** Lead time used when a setting has no explicit minutes_before. */
+    private const DEFAULT_LEAD_MINUTES = 15;
+
+    /** Upper bound on configurable lead (mirrors TeamNotificationSettingRequest minutes_before max). */
+    private const MAX_LEAD_MINUTES = 1440;
+
     public function sendBriefs(): int
     {
-        $from = Carbon::now()->addMinutes(10);
-        $to = Carbon::now()->addMinutes(20);
+        $now = Carbon::now();
 
+        // Widen the candidate window to the max configurable lead so a setting with a large
+        // minutes_before can fire early. Per-setting timing + idempotent dedup (one row per
+        // event+setting) decide the exact moment each recipient is sent to, exactly once.
         $events = CalendarEvent::query()
-            ->whereBetween('starts_at', [$from, $to])
+            ->where('starts_at', '>', $now)
+            ->where('starts_at', '<=', (clone $now)->addMinutes(self::MAX_LEAD_MINUTES))
             ->with(['sources' => fn ($q) => $q->withTrashed(), 'sources.user.teams', 'profiles.user'])
             ->get();
 
@@ -59,6 +68,13 @@ class PreMeetingBriefService
                     ->get();
 
                 foreach ($settings as $setting) {
+                    // Honour the configured lead time: only fire once now has reached
+                    // (start − minutes_before). Falls back to a 15-minute lead when unset.
+                    $lead = $setting->minutes_before ?? self::DEFAULT_LEAD_MINUTES;
+                    if ($now->lt(Carbon::parse($event->starts_at)->subMinutes($lead))) {
+                        continue; // not yet time for this recipient's lead
+                    }
+
                     // Atomic dedup via Postgres INSERT … ON CONFLICT DO NOTHING.
                     // Survives Redis/container restarts (unlike the old Cache::has/put pattern
                     // that produced duplicates on deploy churn). Returns 0 when a row already
@@ -87,6 +103,14 @@ class PreMeetingBriefService
         }
 
         return $sent;
+    }
+
+    private function upcomingHeader(CalendarEvent $event): string
+    {
+        $minutesUntil = (int) round(Carbon::now()->diffInMinutes(Carbon::parse($event->starts_at), false));
+        $minutesUntil = max(1, $minutesUntil);
+
+        return '📅 <b>Upcoming meeting in '.$minutesUntil.' min</b>';
     }
 
     private function send(TelegramChatRegistration $registration, CalendarEvent $event, Team $team, string $channelType): void
@@ -128,7 +152,7 @@ class PreMeetingBriefService
     {
         $teamId = $team->id;
         $lines = [];
-        $lines[] = '📅 <b>Upcoming meeting in 15 minutes</b>';
+        $lines[] = $this->upcomingHeader($event);
         $lines[] = '';
         $lines[] = '<b>'.e($event->title).'</b>';
 
@@ -260,7 +284,7 @@ class PreMeetingBriefService
     {
         $raw = $agenda->raw_json ?? [];
         $lines = [];
-        $lines[] = '📅 <b>Upcoming meeting in 15 minutes</b>';
+        $lines[] = $this->upcomingHeader($event);
         $lines[] = '';
         $lines[] = '<b>'.e($event->title).'</b>';
 

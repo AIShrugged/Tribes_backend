@@ -45,8 +45,8 @@ class RebuildCriticalPathJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $notificationService = app(\App\Services\CriticalPath\CriticalPathNotificationService::class);
-        $notificationService->notifyTeam($graph->fresh(['nodes.issue', 'edges']));
+        // Isolate the Telegram send in a tries=1 job so a compute retry here never re-sends.
+        NotifyCriticalPathJob::dispatch($graph->id);
     }
 
     public function failed(\Throwable $e): void

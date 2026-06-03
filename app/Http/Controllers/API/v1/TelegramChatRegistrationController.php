@@ -85,6 +85,19 @@ class TelegramChatRegistrationController extends Controller
             return ApiResponse::error('Private chats cannot be removed from the workspace chat list.', status: 422);
         }
 
+        // Authorize against the chat's own organization — without this any authenticated user
+        // could delete another tenant's workspace chat by iterating the id (IDOR).
+        $this->tenantScopeValidator->assertScopeIsValid(
+            $request->user(),
+            $telegramChatRegistration->organization_id,
+            $telegramChatRegistration->team_id,
+            allowUnbound: true,
+        );
+        $this->tenantScopeValidator->assertUserCanManageOrganization(
+            $request->user(),
+            $telegramChatRegistration->organization_id,
+        );
+
         $this->registrationService->destroy($telegramChatRegistration);
 
         return ApiResponse::success();

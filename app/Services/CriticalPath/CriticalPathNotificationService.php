@@ -4,6 +4,7 @@ namespace App\Services\CriticalPath;
 
 use App\Models\CriticalPathGraph;
 use App\Models\Issue;
+use App\Models\Team;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use App\Models\User;
@@ -15,12 +16,14 @@ class CriticalPathNotificationService
 {
     public function notifyTeam(CriticalPathGraph $graph): void
     {
-        if (! $graph->team_id) {
+        $targetTeamId = $this->resolveNotificationTeamId($graph);
+
+        if ($targetTeamId === null) {
             return;
         }
 
         $settings = TeamNotificationSetting::query()
-            ->where('team_id', $graph->team_id)
+            ->where('team_id', $targetTeamId)
             ->where('event_type', 'critical_path')
             ->where('enabled', true)
             ->where('notifiable_type', TelegramChatRegistration::class)
@@ -31,7 +34,7 @@ class CriticalPathNotificationService
             return;
         }
 
-        $graph->loadMissing(['nodes.issue.assignee', 'team']);
+        $graph->loadMissing(['nodes.issue.assignee']);
 
         $criticalNodes = $graph->nodes
             ->where('node_type', 'issue')
@@ -43,8 +46,20 @@ class CriticalPathNotificationService
             ->where('is_critical', false)
             ->sortByDesc('slack');
 
+        // Debounce: skip if the critical path is identical to what we last notified about.
+        // Without this, any trivial edit to any open task re-sends the full digest twice/day.
+        $signature = $this->criticalPathSignature($criticalNodes);
+        if ($graph->last_notified_signature === $signature) {
+            return;
+        }
+
+        // org-level graph has no team relation — point it at the resolved (default) team so the
+        // message header shows a real name instead of the literal "команда".
+        $graph->setRelation('team', Team::find($targetTeamId));
+
         $text = $this->formatTeamMessage($graph, $criticalNodes, $otherNodes);
 
+        $anySent = false;
         foreach ($settings as $setting) {
             /** @var TelegramChatRegistration $registration */
             $registration = $setting->notifiable;
@@ -53,8 +68,51 @@ class CriticalPathNotificationService
                 continue;
             }
 
-            $this->sendToChat($registration, $text);
+            // Defense-in-depth: never send to a chat from another organization.
+            if ((int) $registration->organization_id !== (int) $graph->organization_id) {
+                continue;
+            }
+
+            $anySent = $this->sendToChat($registration, $text) || $anySent;
         }
+
+        // Only mark this critical-path state as notified once at least one delivery succeeded —
+        // otherwise a transient Telegram outage would permanently debounce (tries=1, no resend).
+        if ($anySent) {
+            $graph->update(['last_notified_signature' => $signature]);
+        }
+    }
+
+    /**
+     * Which team's critical_path settings drive this graph's notification — and a null "skip" signal.
+     *
+     * In the no-teams model graphs are org-level (team_id=null) and must be driven by the org's
+     * default-team settings. A graph scoped to the default team is suppressed to avoid duplicating
+     * the org-level graph's send; a graph scoped to a real (non-default) team uses its own settings.
+     */
+    private function resolveNotificationTeamId(CriticalPathGraph $graph): ?int
+    {
+        $defaultTeamId = $graph->organization_id
+            ? Team::where('organization_id', $graph->organization_id)->where('is_default', true)->value('id')
+            : null;
+
+        if ($graph->team_id === null) {
+            return $defaultTeamId;
+        }
+
+        if ($defaultTeamId !== null && (int) $graph->team_id === (int) $defaultTeamId) {
+            return null; // covered by the org-level graph — avoid duplicate send
+        }
+
+        return (int) $graph->team_id;
+    }
+
+    private function criticalPathSignature(Collection $criticalNodes): string
+    {
+        return md5(json_encode([
+            'critical' => $criticalNodes->pluck('issue_id')->filter()->sort()->values()->all(),
+            'duration' => (string) ($criticalNodes->max('early_finish') ?? 0),
+        ]));
     }
 
     public function notifyParticipants(Issue $issue, array $createdSubIssues): void
@@ -241,7 +299,7 @@ class CriticalPathNotificationService
         return implode("\n", $lines);
     }
 
-    private function sendToChat(TelegramChatRegistration $registration, string $text): void
+    private function sendToChat(TelegramChatRegistration $registration, string $text): bool
     {
         try {
             $telegram = new Api(config('telegram.bot_token'));
@@ -257,11 +315,15 @@ class CriticalPathNotificationService
             }
 
             $telegram->sendMessage($params);
+
+            return true;
         } catch (\Throwable $e) {
             Log::warning('CriticalPathNotificationService: failed to send team message', [
                 'telegram_chat_id' => $registration->telegram_chat_id,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
     }
 }

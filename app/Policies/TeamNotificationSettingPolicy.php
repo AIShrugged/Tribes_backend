@@ -10,21 +10,21 @@ class TeamNotificationSettingPolicy
 {
     public function viewAny(User $user, Team $team): bool
     {
-        return $user->isTeamMember($team);
+        return $user->isOrganizationManager($team->organization);
     }
 
     public function create(User $user, Team $team): bool
     {
-        return $user->isOrganizationMember($team->organization);
+        return $user->isOrganizationManager($team->organization);
     }
 
     public function update(User $user, TeamNotificationSetting $setting): bool
     {
-        return $user->isOrganizationMember($setting->team->organization);
+        return $user->isOrganizationManager($setting->team->organization);
     }
 
     public function destroy(User $user, TeamNotificationSetting $setting): bool
     {
-        return $user->isOrganizationMember($setting->team->organization);
+        return $user->isOrganizationManager($setting->team->organization);
     }
 }

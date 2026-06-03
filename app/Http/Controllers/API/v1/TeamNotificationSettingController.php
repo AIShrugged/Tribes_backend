@@ -41,6 +41,57 @@ class TeamNotificationSettingController extends Controller
         return ApiResponse::success(data: TeamNotificationSettingResource::make($setting->load('notifiable')));
     }
 
+    public function sync(TeamNotificationSettingRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('create', [TeamNotificationSetting::class, $team]);
+
+        $settings = $this->service->sync(
+            $team,
+            $request->getEventType(),
+            $request->getChannelType(),
+            $request->getChatRegistrationIds(),
+        );
+
+        return ApiResponse::list(
+            TeamNotificationSettingResource::collection($settings),
+            $settings->count(),
+        );
+    }
+
+    public function setEnabled(TeamNotificationSettingRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('create', [TeamNotificationSetting::class, $team]);
+
+        $settings = $this->service->setEventEnabled(
+            $team,
+            $request->getEventType(),
+            $request->getChannelType(),
+            $request->boolean('enabled'),
+        );
+
+        return ApiResponse::list(
+            TeamNotificationSettingResource::collection($settings),
+            $settings->count(),
+        );
+    }
+
+    public function setMinutesBefore(TeamNotificationSettingRequest $request, Team $team): ApiResponse
+    {
+        Gate::authorize('create', [TeamNotificationSetting::class, $team]);
+
+        $settings = $this->service->setEventMinutesBefore(
+            $team,
+            $request->getEventType(),
+            $request->getChannelType(),
+            $request->getMinutesBefore(),
+        );
+
+        return ApiResponse::list(
+            TeamNotificationSettingResource::collection($settings),
+            $settings->count(),
+        );
+    }
+
     public function update(TeamNotificationSettingRequest $request, Team $team, TeamNotificationSetting $setting): ApiResponse
     {
         abort_if($setting->team_id !== $team->id, 404);
