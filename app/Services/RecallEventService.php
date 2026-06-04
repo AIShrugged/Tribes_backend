@@ -8,6 +8,7 @@ use App\Models\Source;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Arr;
 
 class RecallEventService implements SourceEventServiceInterface
 {
@@ -53,17 +54,36 @@ class RecallEventService implements SourceEventServiceInterface
 
     public function getRawCalendarEvents(): array
     {
-        $response = Http::withHeader('Authorization', config('services.recall.api_token'))
-            ->get(static::API_EVENTS_URL, [
+        $httpClient = Http::withHeader('Authorization', config('services.recall.api_token'));
+        $url = static::API_EVENTS_URL;
+        $query = [
                 'calendar_id' => $this->source->external_id,
-            ]);
+        ];
+        $events = [];
+        $seenUrls = [];
 
-        if (!$response->successful()) {
-            throw new AppException($response->json('message'), 'RECALL_GENERIC_ERROR');
-        }
+        do {
+            if (isset($seenUrls[$url])) {
+                throw new AppException('Recall calendar events pagination loop detected', 'RECALL_GENERIC_ERROR');
+            }
+            $seenUrls[$url] = true;
 
-        Log::info('Event data', $response->json());
+            $response = $query === []
+                ? $httpClient->get($url)
+                : $httpClient->get($url, $query);
 
-        return $response->json()['results'] ?? [];
+            if (!$response->successful()) {
+                throw new AppException($response->json('message'), 'RECALL_GENERIC_ERROR');
+            }
+
+            $payload = $response->json();
+            Log::info('Event data', $payload);
+
+            $events = array_merge($events, $payload['results'] ?? []);
+            $url = Arr::get($payload, 'next');
+            $query = [];
+        } while ($url);
+
+        return $events;
     }
 }
