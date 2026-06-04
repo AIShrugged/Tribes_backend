@@ -37,13 +37,8 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
         }
 
         $eventService = new RecallEventService($source);
-        $presentExternalIds = [];
 
         foreach ($eventService->getRawCalendarEvents() as $event) {
-            if (!empty($event['id'])) {
-                $presentExternalIds[] = $event['id'];
-            }
-
             if ($event['is_deleted'] ?? false) {
                 $this->calendarEventSyncService->deleteForSource($source, $event['id']);
 
@@ -58,7 +53,5 @@ class CalendarUpdateHandler implements RecallEventHandlerInterface
 
             $this->calendarEventSyncService->sync($source, $eventDTO, []);
         }
-
-        $this->calendarEventSyncService->deleteMissingFutureForSource($source, $presentExternalIds);
     }
 }
