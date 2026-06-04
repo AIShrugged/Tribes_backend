@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\IssueComment;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
+use App\Models\Organization;
 use App\Models\Source;
 use App\Models\User;
 use App\Services\Today\TodayBriefingService;
@@ -160,6 +162,184 @@ class TodayBriefingServiceTest extends TestCase
 
         $this->assertCount(1, $briefing->events[0]->tasks);
         $this->assertEquals('Open task', $briefing->events[0]->tasks[0]->name);
+    }
+
+    #[Test]
+    public function it_separates_new_action_items_from_updated_tasks(): void
+    {
+        $event = $this->createEvent();
+        MeetingSummary::create([
+            'calendar_event_id' => $event->id,
+            'status' => 'done',
+        ]);
+
+        // New task created on this meeting → belongs in `tasks`.
+        Issue::create([
+            'name' => 'New action item',
+            'status' => 'open',
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id' => $event->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        // Pre-existing issue (sourced elsewhere) augmented by THIS meeting via a merge comment
+        // whose author is NON-null → belongs in `updated_tasks`, not `tasks`.
+        $preExisting = Issue::create([
+            'name' => 'Carryover augmented',
+            'status' => 'in_progress',
+            'sourceable_type' => null,
+            'sourceable_id' => null,
+            'user_id' => $this->user->id,
+        ]);
+        IssueComment::create([
+            'issue_id' => $preExisting->id,
+            'user_id' => $this->user->id,
+            'parent_id' => null,
+            'calendar_event_id' => $event->id,
+            'content' => '**Обновление по встрече:** сдвинули срок.',
+        ]);
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::today());
+        $eventDTO = $briefing->events[0];
+
+        $this->assertEqualsCanonicalizing(
+            ['New action item'],
+            collect($eventDTO->tasks)->pluck('name')->all(),
+        );
+        $this->assertEqualsCanonicalizing(
+            ['Carryover augmented'],
+            collect($eventDTO->updated_tasks)->pluck('name')->all(),
+        );
+        // Updated tasks stay out of the readiness totals.
+        $this->assertEquals(1, $eventDTO->total_tasks_count);
+    }
+
+    #[Test]
+    public function it_returns_empty_updated_tasks_when_no_merge_comments(): void
+    {
+        $event = $this->createEvent();
+        MeetingSummary::create([
+            'calendar_event_id' => $event->id,
+            'status' => 'done',
+        ]);
+        Issue::create([
+            'name' => 'New action item',
+            'status' => 'open',
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id' => $event->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::today());
+
+        $this->assertEmpty($briefing->events[0]->updated_tasks);
+    }
+
+    #[Test]
+    public function it_excludes_cancelled_issues_from_updated_tasks(): void
+    {
+        $event = $this->createEvent();
+        MeetingSummary::create(['calendar_event_id' => $event->id, 'status' => 'done']);
+
+        $cancelled = Issue::create([
+            'name' => 'Cancelled carryover',
+            'status' => 'cancelled',
+            'sourceable_type' => null,
+            'sourceable_id' => null,
+            'user_id' => $this->user->id,
+        ]);
+        IssueComment::create([
+            'issue_id' => $cancelled->id,
+            'user_id' => $this->user->id,
+            'parent_id' => null,
+            'calendar_event_id' => $event->id,
+            'content' => '**Обновление по встрече:** уже неактуально.',
+        ]);
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::today());
+
+        $this->assertEmpty($briefing->events[0]->updated_tasks);
+    }
+
+    #[Test]
+    public function it_classifies_issue_that_is_both_new_and_commented_as_new_only(): void
+    {
+        // De-dup guard: an issue sourced from THIS meeting that also got a merge comment for
+        // it must appear only in `tasks` (new), never in `updated_tasks`.
+        $event = $this->createEvent();
+        MeetingSummary::create(['calendar_event_id' => $event->id, 'status' => 'done']);
+
+        $issue = Issue::create([
+            'name' => 'New and commented',
+            'status' => 'open',
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id' => $event->id,
+            'user_id' => $this->user->id,
+        ]);
+        IssueComment::create([
+            'issue_id' => $issue->id,
+            'user_id' => $this->user->id,
+            'parent_id' => null,
+            'calendar_event_id' => $event->id,
+            'content' => '**Обновление по встрече:** уточнили формулировку.',
+        ]);
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::today());
+        $eventDTO = $briefing->events[0];
+
+        $this->assertEqualsCanonicalizing(['New and commented'], collect($eventDTO->tasks)->pluck('name')->all());
+        $this->assertEmpty($eventDTO->updated_tasks);
+    }
+
+    #[Test]
+    public function it_scopes_updated_tasks_to_the_requested_organization(): void
+    {
+        $orgA = Organization::create(['name' => 'Org A', 'slug' => 'org-a']);
+        $orgB = Organization::create(['name' => 'Org B', 'slug' => 'org-b']);
+
+        // Event must be reachable for orgA: getBriefing scopes events by source.organization_id.
+        $source = Source::create([
+            'user_id' => $this->user->id,
+            'external_id' => 'orga_src_' . uniqid(),
+            'identity' => 'orga_' . uniqid() . '@test.com',
+            'type' => 'google_calendar',
+            'organization_id' => $orgA->id,
+        ]);
+        $event = CalendarEvent::create([
+            'title' => 'Org A Meeting',
+            'url' => 'https://meet.google.com/orga-' . uniqid(),
+            'starts_at' => Carbon::today()->setHour(10),
+            'ends_at' => Carbon::today()->setHour(11),
+            'platform' => 'google_meet',
+            'description' => '',
+        ]);
+        $event->sources()->attach($source);
+        MeetingSummary::create(['calendar_event_id' => $event->id, 'status' => 'done']);
+
+        foreach ([['Org A task', $orgA->id], ['Org B task', $orgB->id]] as [$name, $orgId]) {
+            $issue = Issue::create([
+                'name' => $name,
+                'status' => 'open',
+                'organization_id' => $orgId,
+                'sourceable_type' => null,
+                'sourceable_id' => null,
+                'user_id' => $this->user->id,
+            ]);
+            IssueComment::create([
+                'issue_id' => $issue->id,
+                'user_id' => $this->user->id,
+                'parent_id' => null,
+                'calendar_event_id' => $event->id,
+                'content' => '**Обновление по встрече.**',
+            ]);
+        }
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::today(), $orgA->id);
+
+        $this->assertEqualsCanonicalizing(
+            ['Org A task'],
+            collect($briefing->events[0]->updated_tasks)->pluck('name')->all(),
+        );
     }
 
     #[Test]

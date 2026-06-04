@@ -119,6 +119,20 @@ class Issue extends Model
             ->where('sourceable_id', $calendarEventId);
     }
 
+    /**
+     * Pre-existing issues this meeting "augmented" via a merge comment. The merge comment
+     * is stamped with calendar_event_id by IssueMergeService / EpicMergeService; plain user
+     * comments never set it, so presence of a comment for this event uniquely identifies a
+     * meeting-driven update. Callers exclude forMeeting() ids to separate new vs. updated.
+     */
+    public function scopeUpdatedForMeeting(Builder $query, int $calendarEventId): Builder
+    {
+        return $query->whereHas(
+            'comments',
+            fn (Builder $q) => $q->where('calendar_event_id', $calendarEventId)
+        );
+    }
+
     public function scopeManual(Builder $query): Builder
     {
         return $query

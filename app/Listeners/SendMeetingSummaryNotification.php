@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Events\MeetingArtifactsReady;
+use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\MeetingSummary;
 use App\Models\MeetingSummaryTemplate;
@@ -45,13 +46,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
 
         $calendarEvent->loadMissing(['participants', 'issues.assignee']);
 
-        $newTasks = Issue::forMeeting($calendarEvent->id)->with('assignee')->get();
-
-        $updatedTasks = Issue::whereHas('comments', fn ($q) => $q->where('calendar_event_id', $calendarEvent->id)->whereNull('user_id')
-        )
-            ->whereNotIn('id', $newTasks->pluck('id'))
-            ->with('assignee')
-            ->get();
+        [$newTasks, $updatedTasks] = $this->resolveMeetingTasks($calendarEvent);
 
         foreach ($teams as $team) {
             $settings = TeamNotificationSetting::query()
@@ -79,6 +74,33 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
                 $this->send($registration, $summary, $newTasks, $updatedTasks, $template);
             }
         }
+    }
+
+    /**
+     * Split this meeting's tasks into freshly created vs. pre-existing-but-updated.
+     *
+     * new     — issues whose source IS this meeting (Issue::forMeeting).
+     * updated — pre-existing issues this meeting touched via a merge comment. The merge
+     *           comment is stamped with calendar_event_id by IssueMergeService /
+     *           EpicMergeService; plain user comments never set calendar_event_id, so the
+     *           presence of a comment for this event uniquely identifies a meeting-driven
+     *           update. We deliberately do NOT filter on user_id: merge comments always
+     *           carry a non-null author (US-6.8), so the old whereNull('user_id') matched
+     *           zero rows and this list was always empty.
+     *
+     * @return array{0: Collection<int, Issue>, 1: Collection<int, Issue>}
+     */
+    private function resolveMeetingTasks(CalendarEvent $calendarEvent): array
+    {
+        $newTasks = Issue::forMeeting($calendarEvent->id)->with('assignee')->get();
+
+        $updatedTasks = Issue::updatedForMeeting($calendarEvent->id)
+            ->whereNotIn('status', ['cancelled'])
+            ->whereNotIn('id', $newTasks->pluck('id'))
+            ->with('assignee')
+            ->get();
+
+        return [$newTasks, $updatedTasks];
     }
 
     private function send(TelegramChatRegistration $registration, MeetingSummary $summary, Collection $newTasks, Collection $updatedTasks, ?MeetingSummaryTemplate $template): void

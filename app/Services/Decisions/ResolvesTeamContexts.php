@@ -39,34 +39,17 @@ trait ResolvesTeamContexts
         $organizationId = $event->source?->organization_id;
 
         if ($organizationId) {
-            $teams = \App\Models\Team::where('organization_id', $organizationId)
-                ->when(
-                    $userIds->isNotEmpty(),
-                    fn ($q) => $q->whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds)),
-                )
-                ->get(['id', 'organization_id']);
-
-            if ($teams->isNotEmpty()) {
-                return $teams->map(fn ($t) => [$t->id, $t->organization_id])->all();
-            }
-
-            // No participant-matched teams in org — return all teams in the org
-            $teamsInOrg = \App\Models\Team::where('organization_id', $organizationId)
-                ->get(['id', 'organization_id']);
-
-            if ($teamsInOrg->isNotEmpty()) {
-                return $teamsInOrg->map(fn ($t) => [$t->id, $t->organization_id])->all();
-            }
-
-            return [[null, $organizationId]];
+            return $this->teamContextsForOrganization($organizationId, $userIds);
         }
 
-        // Backward compat: no organization_id on source — use participant-based discovery
+        // Backward compat: no organization_id on source — use participant-based discovery.
         if ($userIds->isEmpty()) {
             return [[null, null]];
         }
 
-        $teams = \App\Models\Team::whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds))
+        // Real (non-default) teams the participants belong to, across any org.
+        $teams = \App\Models\Team::where('is_default', false)
+            ->whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds))
             ->get(['id', 'organization_id']);
 
         if ($teams->isNotEmpty()) {
@@ -80,14 +63,48 @@ trait ResolvesTeamContexts
             ->first();
 
         if ($orgId) {
-            $teamsInOrg = \App\Models\Team::where('organization_id', $orgId)
-                ->get(['id', 'organization_id']);
-
-            if ($teamsInOrg->isNotEmpty()) {
-                return $teamsInOrg->map(fn ($t) => [$t->id, $t->organization_id])->all();
-            }
+            return $this->teamContextsForOrganization($orgId, $userIds);
         }
 
-        return [[null, $orgId ?? null]];
+        return [[null, null]];
+    }
+
+    /**
+     * Team/organization pairs for a known organization.
+     *
+     * Returns the real (non-default) teams whose members include a participant.
+     * The default "General" team contains every org member, so it would always
+     * match and write a duplicate decision/key-point per row — it is therefore
+     * excluded from the primary result and used only as a fallback when no real
+     * team matches. Mirrors the is_default guard in CalendarEventOrganizationResolver
+     * and UserTeamsResolver::forPipelineTrigger.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $userIds
+     * @return array<int, array{0: int|null, 1: int|null}>
+     */
+    private function teamContextsForOrganization(int $organizationId, \Illuminate\Support\Collection $userIds): array
+    {
+        $teams = \App\Models\Team::where('organization_id', $organizationId)
+            ->where('is_default', false)
+            ->when(
+                $userIds->isNotEmpty(),
+                fn ($q) => $q->whereHas('users', fn ($q) => $q->whereIn('users.id', $userIds)),
+            )
+            ->get(['id', 'organization_id']);
+
+        if ($teams->isNotEmpty()) {
+            return $teams->map(fn ($t) => [$t->id, $t->organization_id])->all();
+        }
+
+        // Fallback: the org's default "General" team (contains all members), else org-only.
+        $default = \App\Models\Team::where('organization_id', $organizationId)
+            ->where('is_default', true)
+            ->first(['id', 'organization_id']);
+
+        if ($default) {
+            return [[$default->id, $default->organization_id]];
+        }
+
+        return [[null, $organizationId]];
     }
 }

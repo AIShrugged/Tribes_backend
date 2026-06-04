@@ -204,6 +204,7 @@ class TodayBriefingService
 
         // Ready meeting: show tasks created on this meeting
         // Future/waiting meeting: show open tasks from previous meeting in series
+        $updatedTasks = collect();
         if ($meetingState === 'ready') {
             $allTasks = Issue::withoutTrashed()
                 ->forMeeting($event->id)
@@ -215,6 +216,16 @@ class TodayBriefingService
             $totalTasks = $allTasks->count();
             $doneTasks = $allTasks->where('status', 'done')->count();
             $prevTasks = $allTasks;
+
+            // Pre-existing issues this meeting augmented via a merge comment (kept separate
+            // from new action items — they do NOT count toward the readiness bar/totals).
+            $updatedTasks = Issue::withoutTrashed()
+                ->updatedForMeeting($event->id)
+                ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
+                ->whereNotIn('status', ['cancelled'])
+                ->whereNotIn('id', $allTasks->pluck('id'))
+                ->with('assignee')
+                ->get();
         } else {
             $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
 
@@ -253,6 +264,7 @@ class TodayBriefingService
             tasks: $prevTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
             total_tasks_count: $totalTasks,
             done_tasks_count: $doneTasks,
+            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
             agenda_content: $agendaContent,
         );
     }
