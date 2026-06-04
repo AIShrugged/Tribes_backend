@@ -104,7 +104,7 @@ class TeamUserController extends Controller
     {
         Gate::authorize('kick', [$user, $team]);
 
-        $team->teamUsers()->delete($user);
+        $user->delete();
 
         return ApiResponse::success();
     }

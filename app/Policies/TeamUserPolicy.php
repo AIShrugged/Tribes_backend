@@ -26,6 +26,7 @@ class TeamUserPolicy
 
     public function kick(User $user, TeamUser $teamUser, Team $team): bool
     {
-        return $user->isOrganizationMember($team->organization);
+        return $teamUser->user_id !== $user->id
+            && $user->isOrganizationMember($team->organization);
     }
 }
