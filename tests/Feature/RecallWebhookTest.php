@@ -520,7 +520,7 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
-    public function calendar_update_event_deletes_future_local_meetings_missing_from_recall_but_keeps_past_meetings(): void
+    public function calendar_update_event_keeps_local_meetings_when_recall_returns_empty_results(): void
     {
         Http::fake(function ($request) {
             if (str_contains($request->url(), '/api/v2/calendars/')) {
@@ -580,7 +580,7 @@ class RecallWebhookTest extends TestCase
 
         $response->assertOk();
 
-        $this->assertDatabaseMissing('calendar_events', [
+        $this->assertDatabaseHas('calendar_events', [
             'id' => $futureEvent->id,
         ]);
         $this->assertDatabaseHas('calendar_events', [
@@ -594,7 +594,66 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
-    public function calendar_sync_event_deletes_future_local_meetings_missing_from_recall_but_keeps_past_meetings(): void
+    public function calendar_update_event_deletes_local_meeting_when_recall_marks_it_deleted(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/api/v2/calendars/')) {
+                return Http::response(['status' => 'connected'], 200);
+            }
+
+            return Http::response([
+                'results' => [
+                    [
+                        'id' => 'update-deleted-recall-event-id',
+                        'is_deleted' => true,
+                    ],
+                ],
+            ], 200);
+        });
+
+        $source = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'update-deleted-calendar-id',
+            'identity'    => 'update-deleted@example.com',
+        ]);
+
+        $event = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'update-deleted-recall-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Update deleted meeting',
+            'url'         => 'https://meet.google.com/update-deleted-test',
+            'description' => 'This meeting was deleted in the source calendar.',
+            'starts_at'   => now()->addHours(2),
+            'ends_at'     => now()->addHours(3),
+        ]);
+
+        $event->sources()->attach($source->id, [
+            'external_id'  => 'update-deleted-recall-event-id',
+            'required_bot' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.update',
+            'data' => [
+                'calendar_id' => $source->external_id,
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseMissing('calendar_events', [
+            'id' => $event->id,
+        ]);
+        $this->assertDatabaseMissing('calendar_event_source', [
+            'calendar_event_id' => $event->id,
+            'source_id' => $source->id,
+        ]);
+    }
+
+    #[Test]
+    public function calendar_sync_event_keeps_local_meetings_when_recall_returns_empty_results(): void
     {
         Http::fake([
             'https://us-west-2.recall.ai/api/v2/calendar-events/*' => Http::response([
@@ -651,7 +710,7 @@ class RecallWebhookTest extends TestCase
 
         $response->assertOk();
 
-        $this->assertDatabaseMissing('calendar_events', [
+        $this->assertDatabaseHas('calendar_events', [
             'id' => $futureEvent->id,
         ]);
         $this->assertDatabaseHas('calendar_events', [
