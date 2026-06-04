@@ -520,7 +520,7 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
-    public function calendar_update_event_keeps_local_meetings_when_recall_returns_empty_results(): void
+    public function calendar_update_event_deletes_future_local_meetings_missing_from_full_recall_list(): void
     {
         Http::fake(function ($request) {
             if (str_contains($request->url(), '/api/v2/calendars/')) {
@@ -580,7 +580,7 @@ class RecallWebhookTest extends TestCase
 
         $response->assertOk();
 
-        $this->assertDatabaseHas('calendar_events', [
+        $this->assertDatabaseMissing('calendar_events', [
             'id' => $futureEvent->id,
         ]);
         $this->assertDatabaseHas('calendar_events', [
@@ -591,6 +591,72 @@ class RecallWebhookTest extends TestCase
             'source_id' => $source->id,
             'external_id' => 'missing-past-event-id',
         ]);
+    }
+
+    #[Test]
+    public function calendar_update_event_reads_all_recall_pages_before_deleting_missing_meetings(): void
+    {
+        $source = Source::create([
+            'user_id'     => $this->user->id,
+            'type'        => 'google_calendar',
+            'external_id' => 'paginated-calendar-id',
+            'identity'    => 'paginated@example.com',
+        ]);
+
+        $futureEvent = CalendarEvent::create([
+            'source_id'   => $source->id,
+            'external_id' => 'page-two-event-id',
+            'platform'    => 'google_meet',
+            'title'       => 'Page two meeting',
+            'url'         => 'https://meet.google.com/page-two-test',
+            'description' => 'This meeting is returned on the second Recall page.',
+            'starts_at'   => now()->addHours(2),
+            'ends_at'     => now()->addHours(3),
+        ]);
+
+        $futureEvent->sources()->attach($source->id, [
+            'external_id'  => 'page-two-event-id',
+            'required_bot' => true,
+        ]);
+
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/api/v2/calendars/')) {
+                return Http::response(['status' => 'connected'], 200);
+            }
+
+            if (str_contains($request->url(), 'page=2')) {
+                return Http::response([
+                    'next' => null,
+                    'results' => [
+                        [
+                            'id' => 'page-two-event-id',
+                            'meeting_platform' => null,
+                            'meeting_url' => null,
+                            'is_deleted' => false,
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response([
+                'next' => 'https://us-west-2.recall.ai/api/v2/calendar-events/?calendar_id=paginated-calendar-id&page=2',
+                'results' => [],
+            ], 200);
+        });
+
+        $response = $this->postJson('/api/v1/recall/webhook', [
+            'event' => 'calendar.update',
+            'data' => [
+                'calendar_id' => $source->external_id,
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseHas('calendar_events', [
+            'id' => $futureEvent->id,
+        ]);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'page=2'));
     }
 
     #[Test]
