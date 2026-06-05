@@ -7,6 +7,7 @@ use App\Models\CalendarEvent;
 use App\Models\Decision;
 use App\Models\UpcomingAgenda;
 use App\Services\Agenda\AgendaRenderer;
+use App\Services\CalendarEventOrganizationResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Auth;
@@ -280,7 +281,7 @@ class CalendarEventDetailResource extends JsonResource
 
     private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
     {
-        $teamId = $event->source?->user?->teams?->first()?->id;
+        $teamId = app(CalendarEventOrganizationResolver::class)->resolveDefaultTeamId($event);
         if (! $teamId) {
             return null;
         }

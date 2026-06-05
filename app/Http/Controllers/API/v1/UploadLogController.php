@@ -136,6 +136,7 @@ class UploadLogController extends Controller
 
         if (UploadStatus::normalize($record->status) === UploadStatus::DONE) {
             $resource->issues = $this->visibleCreatedIssues($record, $user);
+            $resource->issuesUpdated = $this->visibleUpdatedIssues($record, $user);
         }
 
         return ApiResponse::success(data: $resource);
@@ -158,6 +159,33 @@ class UploadLogController extends Controller
                 'id'     => $issue->id,
                 'name'   => $issue->name,
                 'status' => 'new',
+            ])
+            ->all();
+    }
+
+    /**
+     * Issues this upload merely updated (snapshot of ids stored at processing time —
+     * they keep their original sourceable, so there's no morph to follow). Re-filtered
+     * through Issue::scopeVisibleTo for the same cross-team name protection as created
+     * issues; a since-deleted id simply drops out of the whereIn.
+     *
+     * @return array<int, array{id: int, name: string, status: string}>
+     */
+    private function visibleUpdatedIssues(TaskDataUpload $upload, User $user): array
+    {
+        $ids = $upload->updated_issue_ids ?? [];
+
+        if ($ids === []) {
+            return [];
+        }
+
+        return Issue::whereIn('id', $ids)
+            ->visibleTo($user)
+            ->get(['id', 'name'])
+            ->map(static fn (Issue $issue) => [
+                'id'     => $issue->id,
+                'name'   => $issue->name,
+                'status' => 'updated',
             ])
             ->all();
     }

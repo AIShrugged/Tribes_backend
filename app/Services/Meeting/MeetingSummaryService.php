@@ -9,6 +9,7 @@ use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
 use App\Models\MeetingSummary;
 use App\Models\MeetingSummaryTemplate;
+use App\Services\CalendarEventOrganizationResolver;
 use App\Services\Followup\TranscriptBuilderService;
 use App\Models\Setting;
 use App\Services\LlmPromptService;
@@ -115,12 +116,13 @@ class MeetingSummaryService
     /**
      * Resolve a team-configured prompt override for this event, if any.
      *
-     * Looks up the event owner's first team (same pattern used in agenda/followup pipelines)
-     * and returns its {@see MeetingSummaryTemplate::$prompt_override} when non-empty.
+     * Looks up the organization's default team (same deterministic, org-scoped resolution
+     * used by the agenda template pipelines) and returns its
+     * {@see MeetingSummaryTemplate::$prompt_override} when non-empty.
      */
     private function resolvePromptOverride(CalendarEvent $event): ?string
     {
-        $teamId = $event->source?->user?->teams()->first()?->id;
+        $teamId = app(CalendarEventOrganizationResolver::class)->resolveDefaultTeamId($event);
         if (! $teamId) {
             return null;
         }

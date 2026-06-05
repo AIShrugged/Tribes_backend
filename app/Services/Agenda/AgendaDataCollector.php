@@ -168,7 +168,7 @@ class AgendaDataCollector
                     $colonPos = mb_strpos($line, ':');
                     $topics[] = $colonPos && $colonPos < 80
                         ? mb_substr($line, 0, $colonPos)
-                        : mb_substr($line, 0, 80);
+                        : mb_substr($line, 0, 1024);
                 }
             }
         }

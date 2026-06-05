@@ -99,6 +99,21 @@ class TaskDataUploadController extends Controller
                 ]);
 
             $data['issues'] = $issues;
+
+            // Updated issues keep their original sourceable, so they're found by the
+            // snapshot of ids stored at processing time (not the morph). Same visibility
+            // re-filter as created issues.
+            $updatedIds = $upload->updated_issue_ids ?? [];
+            $data['updated_issues'] = $updatedIds === []
+                ? collect()
+                : Issue::whereIn('id', $updatedIds)
+                    ->visibleTo($request->user())
+                    ->get(['id', 'name'])
+                    ->map(fn ($issue) => [
+                        'id'     => $issue->id,
+                        'name'   => $issue->name,
+                        'status' => 'updated',
+                    ]);
         }
 
         return ApiResponse::success(data: $data);

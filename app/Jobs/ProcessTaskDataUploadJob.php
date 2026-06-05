@@ -63,10 +63,13 @@ class ProcessTaskDataUploadJob implements ShouldQueue
                 app(IssueAutoPipelineDispatcher::class)->dispatchForStandalone($allIssueIds);
             }
 
+            $updatedIds = $result['updated']->pluck('id')->filter()->values()->all();
+
             $upload->update([
-                'status'         => 'done',
-                'issues_created' => $result['created']->count(),
-                'issues_updated' => $result['updated']->count(),
+                'status'            => 'done',
+                'issues_created'    => $result['created']->count(),
+                'issues_updated'    => $result['updated']->count(),
+                'updated_issue_ids' => $updatedIds,
             ]);
 
             Log::info('task_data_upload.done', [
