@@ -87,6 +87,8 @@ class QueryTribesDataTool extends AbstractAgentTool
                         'calendar_event_id' => ['type' => 'integer', 'description' => 'Filter tasks/followups by meeting id.'],
                         'due_before' => ['type' => 'string',  'description' => 'Tasks due on or before (YYYY-MM-DD).'],
                         'due_after' => ['type' => 'string',  'description' => 'Tasks due on or after (YYYY-MM-DD).'],
+                        'created_before' => ['type' => 'string',  'description' => 'Tasks created on or before (YYYY-MM-DD).'],
+                        'created_after' => ['type' => 'string',  'description' => 'Tasks created on or after (YYYY-MM-DD).'],
                         // meetings
                         'query' => ['type' => 'string',  'description' => 'Meeting title search (partial).'],
                         'participant_name' => ['type' => 'string',  'description' => 'Filter meetings by participant name.'],
@@ -327,6 +329,16 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryTasks(array $filters, int $limit): array
     {
+        $scope = $this->validateTaskTenantScope($filters);
+        if ($scope['success'] === false) {
+            return $scope;
+        }
+
+        $filters['organization_id'] = $scope['organization_id'];
+        if ($scope['team_id'] !== null) {
+            $filters['team_id'] = $scope['team_id'];
+        }
+
         $query = Issue::query()->withoutTrashed();
         $eventId = $filters['calendar_event_id'] ?? null;
 
@@ -359,7 +371,7 @@ class QueryTribesDataTool extends AbstractAgentTool
             $query->where('team_id', $filters['team_id']);
         }
         if (! empty($filters['organization_id'])) {
-            $query->where('organization_id', $filters['organization_id']);
+            $query->inOrganization((int) $filters['organization_id']);
         }
         if (! empty($filters['stale_days'])) {
             $query->where('updated_at', '<=', Carbon::now()->subDays($filters['stale_days']));
@@ -369,6 +381,12 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
         if (! empty($filters['due_after'])) {
             $query->where('due_date', '>=', Carbon::parse($filters['due_after'])->toDateString());
+        }
+        if (! empty($filters['created_before'])) {
+            $query->where('created_at', '<=', $this->parseDateBoundary($filters['created_before'], endOfDay: true));
+        }
+        if (! empty($filters['created_after'])) {
+            $query->where('created_at', '>=', $this->parseDateBoundary($filters['created_after'], endOfDay: false));
         }
 
         $tasks = $query->orderByRaw('due_date ASC NULLS LAST')->limit($limit)->get();
@@ -405,6 +423,7 @@ class QueryTribesDataTool extends AbstractAgentTool
                 'assignee_id' => $t->assignee_id,
                 'assignee_profile_id' => $t->assignee_id ? ($assigneeProfileIds[$t->assignee_id] ?? null) : null,
                 'due_date' => $t->due_date?->toDateString(),
+                'created_at' => $t->created_at?->toDateString(),
                 'team_id' => $t->team_id,
                 'organization_id' => $t->organization_id,
                 'days_since_update' => (int) abs($now->diffInDays($t->updated_at)),
@@ -422,6 +441,61 @@ class QueryTribesDataTool extends AbstractAgentTool
                 'created_at' => $t->created_at->toDateString(),
                 ];
             })->toArray(),
+        ];
+    }
+
+    private function parseDateBoundary(string $value, bool $endOfDay): Carbon
+    {
+        $date = Carbon::parse($value);
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value)) === 1) {
+            return $endOfDay ? $date->endOfDay() : $date->startOfDay();
+        }
+
+        return $date;
+    }
+
+    private function validateTaskTenantScope(array $filters): array
+    {
+        $orgId = isset($filters['organization_id']) && $filters['organization_id'] !== ''
+            ? (int) $filters['organization_id']
+            : null;
+        $teamId = isset($filters['team_id']) && $filters['team_id'] !== ''
+            ? (int) $filters['team_id']
+            : null;
+
+        if ($orgId === null && $teamId === null) {
+            return [
+                'success' => false,
+                'error' => 'organization_id or team_id is required for task queries.',
+            ];
+        }
+
+        if ($teamId !== null) {
+            $team = Team::query()->find($teamId);
+            if (! $team) {
+                return ['success' => false, 'error' => "Team {$teamId} not found."];
+            }
+
+            if ($orgId !== null && (int) $team->organization_id !== $orgId) {
+                return ['success' => false, 'error' => 'team_id does not belong to organization_id.'];
+            }
+
+            $orgId ??= (int) $team->organization_id;
+
+            if (! $this->user->isTeamMember($team)) {
+                return ['success' => false, 'error' => 'You do not have access to this team.'];
+            }
+        }
+
+        if ($orgId !== null && ! $this->user->isOrganizationMember($orgId)) {
+            return ['success' => false, 'error' => 'You do not have access to this organization.'];
+        }
+
+        return [
+            'success' => true,
+            'organization_id' => $orgId,
+            'team_id' => $teamId,
         ];
     }
 

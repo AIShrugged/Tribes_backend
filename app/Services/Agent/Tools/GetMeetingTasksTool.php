@@ -5,6 +5,8 @@ namespace App\Services\Agent\Tools;
 use App\Models\CalendarEvent;
 use App\Models\Participant;
 use App\Models\Issue;
+use App\Models\Team;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 
 /**
@@ -20,6 +22,14 @@ use Illuminate\Support\Carbon;
  */
 class GetMeetingTasksTool extends AbstractAgentTool
 {
+    public function __construct(
+        private readonly ?User $user = null,
+        private readonly ?int $organizationId = null,
+        private readonly ?int $teamId = null,
+    ) {
+        parent::__construct();
+    }
+
     public function getName(): string
     {
         return 'get_tasks';
@@ -43,6 +53,14 @@ class GetMeetingTasksTool extends AbstractAgentTool
                     'type'        => 'integer',
                     'description' => 'Optional: filter tasks assigned to a specific person by their user ID.',
                 ],
+                'team_id' => [
+                    'type'        => 'integer',
+                    'description' => 'Required unless organization_id is provided: filter tasks belonging to a specific team.',
+                ],
+                'organization_id' => [
+                    'type'        => 'integer',
+                    'description' => 'Required unless team_id is provided: filter tasks belonging to a specific organization.',
+                ],
                 'assignee_name' => [
                     'type'        => 'string',
                     'description' => 'Optional: filter tasks by assignee name (case-insensitive, partial match). Use when you have a name but no assignee_id.',
@@ -59,6 +77,14 @@ class GetMeetingTasksTool extends AbstractAgentTool
                     'type'        => 'string',
                     'description' => 'Optional: filter tasks with due_date on or after this date (YYYY-MM-DD).',
                 ],
+                'created_before' => [
+                    'type'        => 'string',
+                    'description' => 'Optional: filter tasks created on or before this date (YYYY-MM-DD).',
+                ],
+                'created_after' => [
+                    'type'        => 'string',
+                    'description' => 'Optional: filter tasks created on or after this date (YYYY-MM-DD).',
+                ],
             ],
             'required' => [],
         ];
@@ -69,17 +95,37 @@ class GetMeetingTasksTool extends AbstractAgentTool
         $parameters = $parameters ?? [];
 
         $eventId      = $parameters['calendar_event_id'] ?? null;
+        $teamId       = $parameters['team_id'] ?? null;
+        $orgId        = $parameters['organization_id'] ?? null;
         $assigneeId   = $parameters['assignee_id'] ?? null;
         $assigneeName = $parameters['assignee_name'] ?? null;
         $status       = $parameters['status'] ?? null;
         $dueBefore    = $parameters['due_before'] ?? null;
         $dueAfter     = $parameters['due_after'] ?? null;
+        $createdBefore = $parameters['created_before'] ?? null;
+        $createdAfter  = $parameters['created_after'] ?? null;
+
+        $scope = $this->resolveTenantScope($orgId, $teamId);
+        if ($scope['success'] === false) {
+            return $scope;
+        }
+
+        $orgId = $scope['organization_id'];
+        $teamId = $scope['team_id'];
 
         $query = Issue::query()->withoutTrashed();
 
         if ($eventId) {
             $query->where('sourceable_type', CalendarEvent::class)
                 ->where('sourceable_id', $eventId);
+        }
+
+        if ($teamId) {
+            $query->where('team_id', $teamId);
+        }
+
+        if ($orgId) {
+            $query->inOrganization($orgId);
         }
 
         if ($assigneeName) {
@@ -113,6 +159,14 @@ class GetMeetingTasksTool extends AbstractAgentTool
             $query->where('due_date', '>=', Carbon::parse($dueAfter)->toDateString());
         }
 
+        if ($createdBefore) {
+            $query->where('created_at', '<=', $this->parseDateBoundary($createdBefore, endOfDay: true));
+        }
+
+        if ($createdAfter) {
+            $query->where('created_at', '>=', $this->parseDateBoundary($createdAfter, endOfDay: false));
+        }
+
         $tasks = $query->orderByRaw('due_date ASC NULLS LAST')->get();
 
         if ($tasks->isEmpty()) {
@@ -136,10 +190,64 @@ class GetMeetingTasksTool extends AbstractAgentTool
                 'assignee_name' => $task->assignee_name,
                 'assignee_id'   => $task->assignee_id,
                 'due_date'      => $task->due_date?->toDateString(),
+                'created_at'    => $task->created_at?->toDateString(),
                 'status'        => $task->status,
+                'team_id'       => $task->team_id,
+                'organization_id' => $task->organization_id,
                 'sourceable_type' => $task->sourceable_type,
                 'sourceable_id'   => $task->sourceable_id,
             ])->toArray(),
+        ];
+    }
+
+    private function parseDateBoundary(string $value, bool $endOfDay): Carbon
+    {
+        $date = Carbon::parse($value);
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value)) === 1) {
+            return $endOfDay ? $date->endOfDay() : $date->startOfDay();
+        }
+
+        return $date;
+    }
+
+    private function resolveTenantScope(mixed $orgId, mixed $teamId): array
+    {
+        $orgId = $orgId !== null && $orgId !== '' ? (int) $orgId : $this->organizationId;
+        $teamId = $teamId !== null && $teamId !== '' ? (int) $teamId : $this->teamId;
+
+        if ($orgId === null && $teamId === null) {
+            return [
+                'success' => false,
+                'error' => 'organization_id or team_id is required for task queries.',
+            ];
+        }
+
+        if ($teamId !== null) {
+            $team = Team::query()->find($teamId);
+            if (! $team) {
+                return ['success' => false, 'error' => "Team {$teamId} not found."];
+            }
+
+            if ($orgId !== null && (int) $team->organization_id !== $orgId) {
+                return ['success' => false, 'error' => 'team_id does not belong to organization_id.'];
+            }
+
+            $orgId ??= (int) $team->organization_id;
+
+            if ($this->user !== null && ! $this->user->isTeamMember($team)) {
+                return ['success' => false, 'error' => 'You do not have access to this team.'];
+            }
+        }
+
+        if ($orgId !== null && $this->user !== null && ! $this->user->isOrganizationMember($orgId)) {
+            return ['success' => false, 'error' => 'You do not have access to this organization.'];
+        }
+
+        return [
+            'success' => true,
+            'organization_id' => $orgId,
+            'team_id' => $teamId,
         ];
     }
 }

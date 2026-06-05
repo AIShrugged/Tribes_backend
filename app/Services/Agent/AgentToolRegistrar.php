@@ -26,6 +26,8 @@ use App\Services\Agent\Tools\GetDailyTaskDigestTool;
 use App\Services\Agent\Tools\GetFocusedIssuesTool;
 use App\Services\Agent\Tools\GetInsightProfileHistoryTool;
 use App\Services\Agent\Tools\GetMeetingAgendaTool;
+use App\Services\Agent\Tools\GetMeetingTasksTool;
+use App\Services\Agent\Tools\GetOpenIssuesTool;
 use App\Services\Agent\Tools\GetPendingIssueValidationsTool;
 use App\Services\Agent\Tools\GetRelationshipInsightTool;
 use App\Services\Agent\Tools\GetTeamMembersTool;
@@ -171,6 +173,8 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetRelationshipInsightTool);
         $toolRegistry->register(new GetInsightProfileHistoryTool);
         $toolRegistry->register(new GetMeetingAgendaTool);
+        $toolRegistry->register(new GetMeetingTasksTool($user, $organizationId, $teamId));
+        $toolRegistry->register(new GetOpenIssuesTool($user, $organizationId, $teamId));
         $toolRegistry->register(new GetDailyTaskDigestTool($user, $organizationId));
         $toolRegistry->register(new GetWeeklyTaskDigestTool($user, $organizationId));
         $toolRegistry->register(new GetUserNotificationsTool($user));
