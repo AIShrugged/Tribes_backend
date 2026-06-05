@@ -3,6 +3,8 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\Issue;
+use App\Models\Team;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 
 /**
@@ -16,6 +18,14 @@ use Illuminate\Support\Carbon;
  */
 class GetOpenIssuesTool extends AbstractAgentTool
 {
+    public function __construct(
+        private readonly ?User $user = null,
+        private readonly ?int $organizationId = null,
+        private readonly ?int $teamId = null,
+    ) {
+        parent::__construct();
+    }
+
     public function getName(): string
     {
         return 'get_open_issues';
@@ -55,6 +65,14 @@ class GetOpenIssuesTool extends AbstractAgentTool
                     'type'        => 'string',
                     'description' => 'Optional: comma-separated statuses to include. Defaults to "open,in_progress". Example: "open,in_progress,paused".',
                 ],
+                'created_before' => [
+                    'type'        => 'string',
+                    'description' => 'Optional: filter issues created on or before this date (YYYY-MM-DD).',
+                ],
+                'created_after' => [
+                    'type'        => 'string',
+                    'description' => 'Optional: filter issues created on or after this date (YYYY-MM-DD).',
+                ],
                 'limit' => [
                     'type'        => 'integer',
                     'description' => 'Optional: max number of issues to return. Defaults to 50.',
@@ -72,10 +90,20 @@ class GetOpenIssuesTool extends AbstractAgentTool
         $assigneeName = $parameters['assignee_name'] ?? null;
         $assigneeId   = $parameters['assignee_id'] ?? null;
         $staleDays    = $parameters['stale_days'] ?? null;
+        $createdBefore = $parameters['created_before'] ?? null;
+        $createdAfter  = $parameters['created_after'] ?? null;
         $limit        = min((int) ($parameters['limit'] ?? 50), 200);
 
         $statusesRaw = $parameters['statuses'] ?? 'open,in_progress';
         $statuses    = array_filter(array_map('trim', explode(',', $statusesRaw)));
+
+        $scope = $this->resolveTenantScope($orgId, $teamId);
+        if ($scope['success'] === false) {
+            return $scope;
+        }
+
+        $orgId = $scope['organization_id'];
+        $teamId = $scope['team_id'];
 
         $query = Issue::query()->withoutTrashed();
 
@@ -86,7 +114,7 @@ class GetOpenIssuesTool extends AbstractAgentTool
         }
 
         if ($orgId) {
-            $query->where('organization_id', $orgId);
+            $query->inOrganization($orgId);
         }
 
         if ($assigneeName) {
@@ -100,6 +128,14 @@ class GetOpenIssuesTool extends AbstractAgentTool
         if ($staleDays !== null && $staleDays > 0) {
             $cutoff = Carbon::now()->subDays($staleDays);
             $query->where('updated_at', '<=', $cutoff);
+        }
+
+        if ($createdBefore) {
+            $query->where('created_at', '<=', $this->parseDateBoundary($createdBefore, endOfDay: true));
+        }
+
+        if ($createdAfter) {
+            $query->where('created_at', '>=', $this->parseDateBoundary($createdAfter, endOfDay: false));
         }
 
         $issues = $query
@@ -137,6 +173,57 @@ class GetOpenIssuesTool extends AbstractAgentTool
                 'registration_date' => $issue->registration_date?->toDateString(),
                 'created_at'        => $issue->created_at->toDateString(),
             ])->toArray(),
+        ];
+    }
+
+    private function parseDateBoundary(string $value, bool $endOfDay): Carbon
+    {
+        $date = Carbon::parse($value);
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value)) === 1) {
+            return $endOfDay ? $date->endOfDay() : $date->startOfDay();
+        }
+
+        return $date;
+    }
+
+    private function resolveTenantScope(mixed $orgId, mixed $teamId): array
+    {
+        $orgId = $orgId !== null && $orgId !== '' ? (int) $orgId : $this->organizationId;
+        $teamId = $teamId !== null && $teamId !== '' ? (int) $teamId : $this->teamId;
+
+        if ($orgId === null && $teamId === null) {
+            return [
+                'success' => false,
+                'error' => 'organization_id or team_id is required for task queries.',
+            ];
+        }
+
+        if ($teamId !== null) {
+            $team = Team::query()->find($teamId);
+            if (! $team) {
+                return ['success' => false, 'error' => "Team {$teamId} not found."];
+            }
+
+            if ($orgId !== null && (int) $team->organization_id !== $orgId) {
+                return ['success' => false, 'error' => 'team_id does not belong to organization_id.'];
+            }
+
+            $orgId ??= (int) $team->organization_id;
+
+            if ($this->user !== null && ! $this->user->isTeamMember($team)) {
+                return ['success' => false, 'error' => 'You do not have access to this team.'];
+            }
+        }
+
+        if ($orgId !== null && $this->user !== null && ! $this->user->isOrganizationMember($orgId)) {
+            return ['success' => false, 'error' => 'You do not have access to this organization.'];
+        }
+
+        return [
+            'success' => true,
+            'organization_id' => $orgId,
+            'team_id' => $teamId,
         ];
     }
 }

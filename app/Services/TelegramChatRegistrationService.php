@@ -94,6 +94,8 @@ class TelegramChatRegistrationService
                 'bound_by_user_id' => $createdBy->id,
             ])->save();
 
+            $this->syncConversationScope($existing->refresh());
+
             return $existing->refresh();
         }
 
@@ -150,6 +152,8 @@ class TelegramChatRegistrationService
             $registration->forceFill(['bound_at' => now()])->save();
         }
 
+        $this->syncConversationScope($registration->refresh());
+
         return $registration->refresh();
     }
 
@@ -178,6 +182,18 @@ class TelegramChatRegistrationService
                 $registration->delete();
             }
         });
+    }
+
+    private function syncConversationScope(TelegramChatRegistration $registration): void
+    {
+        if ($registration->channel_conversation_id === null || $registration->conversation === null) {
+            return;
+        }
+
+        $registration->conversation->forceFill([
+            'organization_id' => $registration->organization_id,
+            'team_id' => $registration->team_id,
+        ])->save();
     }
 
     private function isUniqueConstraintViolation(QueryException $exception): bool

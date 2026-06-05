@@ -87,6 +87,8 @@ class TelegramChatRegistrationServiceTest extends TestCase
 
         $this->assertNotNull($registration->bound_at);
         $this->assertSame($conversation->id, $registration->channel_conversation_id);
+        $this->assertSame($organization->id, $conversation->refresh()->organization_id);
+        $this->assertSame($team->id, $conversation->team_id);
         $this->assertSame($organization->id, $registration->organization_id);
         $this->assertSame('My Chat Name', $registration->chat_title);
     }
@@ -197,6 +199,7 @@ class TelegramChatRegistrationServiceTest extends TestCase
         $this->assertNotNull($registration->bound_at);
         $this->assertSame($conversation->id, $registration->channel_conversation_id);
         $this->assertSame('Pre-registered', $registration->chat_title);
+        $this->assertSame($organization->id, $conversation->refresh()->organization_id);
     }
 
     #[Test]
@@ -231,6 +234,7 @@ class TelegramChatRegistrationServiceTest extends TestCase
 
         $this->assertNull($registration->bound_at);
         $this->assertNull($registration->organization_id);
+        $this->assertNull($conversation->refresh()->organization_id);
         $this->assertSame('Unknown Chat', $registration->chat_title);
     }
 
