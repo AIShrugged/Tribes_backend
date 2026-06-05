@@ -15,6 +15,7 @@ use App\Domain\DTO\Today\TodayWaitingTaskDTO;
 use App\Enums\AgendaStatus;
 use App\Models\AgendaTemplate;
 use App\Models\CalendarEvent;
+use App\Services\CalendarEventOrganizationResolver;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
 use App\Services\Agenda\AgendaRenderer;
@@ -308,7 +309,7 @@ class TodayBriefingService
 
         if ($general) {
             if ($general->isGeneral() && ! empty($general->raw_json)) {
-                $template = $this->resolveTemplate($user);
+                $template = $this->resolveTemplate($event);
                 return app(AgendaRenderer::class)->renderForWeb($general->raw_json, $event, $template);
             }
             return $general->content;
@@ -331,9 +332,9 @@ class TodayBriefingService
         return null;
     }
 
-    private function resolveTemplate(User $user): ?AgendaTemplate
+    private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
     {
-        $teamId = $user->teams()->first()?->id;
+        $teamId = app(CalendarEventOrganizationResolver::class)->resolveDefaultTeamId($event);
         if (! $teamId) {
             return null;
         }

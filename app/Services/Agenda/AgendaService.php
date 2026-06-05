@@ -8,6 +8,7 @@ use App\Enums\AgendaStatus;
 use App\Models\AgendaTemplate;
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
+use App\Services\CalendarEventOrganizationResolver;
 use App\Models\Issue;
 use App\Models\MeetingAgenda;
 use App\Models\MeetingSeriesState;
@@ -31,7 +32,7 @@ class AgendaService
 
     private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
     {
-        $teamId = $event->source?->user?->teams?->first()?->id;
+        $teamId = app(CalendarEventOrganizationResolver::class)->resolveDefaultTeamId($event);
         if (! $teamId) {
             return null;
         }

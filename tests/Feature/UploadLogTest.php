@@ -219,6 +219,78 @@ class UploadLogTest extends TestCase
         $response->assertJsonCount(0, 'data.issues');
     }
 
+    #[Test]
+    public function task_data_detail_lists_updated_issues_separately_from_created(): void
+    {
+        // A pre-existing issue (null sourceable — created elsewhere) that this upload
+        // merely updated: it is found via the snapshot of ids, not the morph.
+        $updated = Issue::create([
+            'name'            => 'Pre-existing task that was updated',
+            'type'            => Issue::TYPE_BACKEND,
+            'status'          => 'open',
+            'organization_id' => $this->org->id,
+            'team_id'         => $this->team->id,
+            'user_id'         => $this->user->id,
+            'sourceable_type' => null,
+            'sourceable_id'   => null,
+        ]);
+
+        // A 999999 id that no longer exists must silently drop out of the list.
+        $upload = $this->makeTaskDataUpload(['updated_issue_ids' => [$updated->id, 999999]]);
+
+        $created = Issue::create([
+            'name'            => 'Freshly created task',
+            'type'            => Issue::TYPE_BACKEND,
+            'status'          => 'open',
+            'organization_id' => $this->org->id,
+            'team_id'         => $this->team->id,
+            'user_id'         => $this->user->id,
+            'sourceable_type' => TaskDataUpload::class,
+            'sourceable_id'   => $upload->id,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->getJson(route('uploads.show', ['type' => 'task_data', 'id' => $upload->id]));
+
+        $response->assertOk();
+        // Created list holds only the created issue; updated list only the updated one.
+        $response->assertJsonCount(1, 'data.issues');
+        $response->assertJsonPath('data.issues.0.id', $created->id);
+        $response->assertJsonCount(1, 'data.updated_issues');
+        $response->assertJsonPath('data.updated_issues.0.id', $updated->id);
+        $response->assertJsonPath('data.updated_issues.0.name', 'Pre-existing task that was updated');
+        $response->assertJsonPath('data.updated_issues.0.status', 'updated');
+    }
+
+    #[Test]
+    public function task_data_detail_refilters_updated_issue_names_through_visibility(): void
+    {
+        $updated = Issue::create([
+            'name'            => 'Sensitive updated task',
+            'type'            => Issue::TYPE_BACKEND,
+            'status'          => 'open',
+            'organization_id' => $this->org->id,
+            'team_id'         => $this->team->id,
+            'user_id'         => $this->user->id,
+            'sourceable_type' => null,
+            'sourceable_id'   => null,
+        ]);
+        $upload = $this->makeTaskDataUpload(['updated_issue_ids' => [$updated->id]]);
+
+        // Uploader leaves the org/team: still sees their OWN row (ungated user_id) and
+        // its recorded count, but the updated issue name is withheld.
+        $this->team->users()->detach($this->user);
+        $this->org->users()->detach($this->user);
+
+        $response = $this->actingAs($this->user)
+            ->getJson(route('uploads.show', ['type' => 'task_data', 'id' => $upload->id]));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'done');
+        $response->assertJsonPath('data.issues_updated', 1); // count preserved (honest)
+        $response->assertJsonCount(0, 'data.updated_issues'); // names withheld
+    }
+
     // ── Transcript lifecycle (records the upload-log row) ──
 
     #[Test]

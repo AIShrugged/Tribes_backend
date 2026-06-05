@@ -9,6 +9,7 @@ use App\Models\MeetingAgenda;
 use App\Models\TeamNotificationSetting;
 use App\Models\TelegramChatRegistration;
 use App\Services\Agenda\AgendaRenderer;
+use App\Services\CalendarEventOrganizationResolver;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -243,7 +244,7 @@ class SendAgendaNotificationsJob implements ShouldQueue
 
     private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
     {
-        $teamId = $event->source?->user?->teams?->first()?->id;
+        $teamId = app(CalendarEventOrganizationResolver::class)->resolveDefaultTeamId($event);
         if (! $teamId) {
             return null;
         }

@@ -92,6 +92,27 @@ class CalendarEventOrganizationResolver
         return null;
     }
 
+    /**
+     * Resolve the id of the organization's default ("General") team for this event.
+     *
+     * Deterministic and org-scoped: relies on {@see self::resolveOrganizationId()} for the
+     * authoritative org binding, then picks that org's single is_default=true team. This is
+     * the canonical team for per-team config (agenda/summary templates) — it contains every
+     * org member and is unambiguous, unlike the legacy `teams()->first()` lookup which had no
+     * ordering and could resolve to an arbitrary team (even another org's).
+     */
+    public function resolveDefaultTeamId(CalendarEvent $event): ?int
+    {
+        $orgId = $this->resolveOrganizationId($event);
+        if (! $orgId) {
+            return null;
+        }
+
+        return Team::where('organization_id', $orgId)
+            ->where('is_default', true)
+            ->value('id');
+    }
+
     private function resolveOwner(CalendarEvent $event): ?User
     {
         if ($event->creator) {

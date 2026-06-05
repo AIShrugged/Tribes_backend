@@ -11,6 +11,7 @@ use App\Models\Issue;
 use App\Models\Setting;
 use App\Models\UpcomingAgenda;
 use App\Models\User;
+use App\Services\CalendarEventOrganizationResolver;
 use App\Services\LlmPromptService;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
@@ -107,7 +108,7 @@ class UpcomingAgendaService
                 throw new \RuntimeException('LLM returned invalid JSON: ' . substr($matches[0], 0, 200));
             }
 
-            $template = $this->resolveTemplate($user);
+            $template = $this->resolveTemplate($event);
 
             $agenda->update([
                 'status' => AgendaStatus::DONE->value,
@@ -193,9 +194,9 @@ class UpcomingAgendaService
         );
     }
 
-    private function resolveTemplate(User $user): ?AgendaTemplate
+    private function resolveTemplate(CalendarEvent $event): ?AgendaTemplate
     {
-        $teamId = $user->teams()->first()?->id;
+        $teamId = app(CalendarEventOrganizationResolver::class)->resolveDefaultTeamId($event);
         if (! $teamId) {
             return null;
         }

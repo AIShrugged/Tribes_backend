@@ -31,6 +31,7 @@ class TranscriptUploadDetailResource extends JsonResource
             'status'                   => UploadStatus::normalize($this->status),
             'error_message'            => $this->error_message,
             'calendar_event_id'        => $this->calendar_event_id,
+            'calendar_event_date'      => $this->calendarEvent?->starts_at?->toDateString(),
             'transcript_entries_count' => $this->transcript_entries_count,
             'participants_count'       => $this->participants_count,
             'processing'               => $this->processing,
