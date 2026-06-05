@@ -139,6 +139,37 @@ class TelegramBotWebhookTest extends TestCase
     }
 
     #[Test]
+    public function private_messages_are_not_blocked_by_telegram_allowed_users_config(): void
+    {
+        config()->set('telegram.allowed_users', '111111');
+
+        $user = User::factory()->create();
+        TelegramUser::query()->create([
+            'telegram_user_id' => 900001,
+            'telegram_username' => 'manager_user',
+            'user_id' => $user->id,
+        ]);
+
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('getWebhookUpdate')
+            ->once()
+            ->andReturn(new Update($this->privateMessagePayload('/forget')));
+        $telegramApi->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(fn (array $params) => $params['chat_id'] === 900001
+                && str_contains($params['text'], 'История сброшена'));
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseHas('channel_messages', [
+            'role' => 'user',
+            'content' => '/forget',
+        ]);
+    }
+
+    #[Test]
     public function forum_topic_created_message_saves_topic_title(): void
     {
         $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
@@ -438,6 +469,30 @@ class TelegramBotWebhookTest extends TestCase
                     'id' => 555123,
                     'type' => 'supergroup',
                     'title' => 'Engineering Room',
+                ],
+                'from' => [
+                    'id' => 900001,
+                    'is_bot' => false,
+                    'username' => 'manager_user',
+                    'first_name' => 'Manager',
+                ],
+            ],
+        ];
+    }
+
+    private function privateMessagePayload(string $text): array
+    {
+        return [
+            'update_id' => 1006,
+            'message' => [
+                'message_id' => 6,
+                'date' => now()->timestamp,
+                'text' => $text,
+                'chat' => [
+                    'id' => 900001,
+                    'type' => 'private',
+                    'first_name' => 'Manager',
+                    'username' => 'manager_user',
                 ],
                 'from' => [
                     'id' => 900001,
