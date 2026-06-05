@@ -8,6 +8,8 @@ use Illuminate\Validation\Rule;
 
 class AcceptOrganizationStructureRequest extends FormRequest
 {
+    private const DESCRIPTION_MAX_LENGTH = 20000;
+
     public function authorize(): bool
     {
         return true;
@@ -18,13 +20,13 @@ class AcceptOrganizationStructureRequest extends FormRequest
         return [
             'organization'                    => ['required', 'array'],
             'organization.name'               => ['required', 'string', 'max:255'],
-            'organization.description'        => ['required', 'string', 'max:10000'],
+            'organization.description'        => ['required', 'string', 'max:'.self::DESCRIPTION_MAX_LENGTH],
             'goals'                           => ['required', 'array', 'min:1', 'max:20'],
             'goals.*.title'                   => ['required', 'string', 'max:255'],
-            'goals.*.description'             => ['nullable', 'string', 'max:2000'],
+            'goals.*.description'             => ['nullable', 'string', 'max:'.self::DESCRIPTION_MAX_LENGTH],
             'goals.*.tasks'                   => ['nullable', 'array', 'max:20'],
             'goals.*.tasks.*.title'           => ['required', 'string', 'max:255'],
-            'goals.*.tasks.*.description'     => ['nullable', 'string', 'max:2000'],
+            'goals.*.tasks.*.description'     => ['nullable', 'string', 'max:'.self::DESCRIPTION_MAX_LENGTH],
             'goals.*.tasks.*.type'            => ['nullable', Rule::in(['development', 'organization'])],
             'goals.*.tasks.*.priority'        => ['nullable', 'integer'],
             'template'                        => ['nullable', Rule::in(Organization::TEMPLATES)],

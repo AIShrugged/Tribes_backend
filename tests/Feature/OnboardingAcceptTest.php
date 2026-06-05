@@ -161,4 +161,63 @@ class OnboardingAcceptTest extends TestCase
         $this->assertStringContainsString('## Steps', $task->description);
         $this->assertStringContainsString('## Definition of done', $task->description);
     }
+
+    #[Test]
+    public function accept_allows_long_onboarding_descriptions(): void
+    {
+        $manager = User::factory()->create();
+
+        $organization = Organization::create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+        ]);
+        $organization->users()->attach($manager->id, ['role' => 'manager']);
+
+        OrganizationIssueType::firstOrCreate(
+            ['organization_id' => null, 'key' => 'epic'],
+            [
+                'name' => 'Epic',
+                'base_type' => 'epic',
+                'is_active' => true,
+            ],
+        );
+
+        Sanctum::actingAs($manager);
+
+        $longOrganizationDescription = str_repeat('o', 12000);
+        $longGoalDescription = str_repeat('g', 3000);
+        $longTaskDescription = str_repeat('t', 3000);
+
+        $this->postJson("/api/v1/organizations/{$organization->id}/accept-structure", [
+            'organization' => [
+                'name' => 'Acme Long Context',
+                'description' => $longOrganizationDescription,
+            ],
+            'goals' => [
+                [
+                    'title' => 'Launch long context onboarding',
+                    'description' => $longGoalDescription,
+                    'tasks' => [
+                        [
+                            'title' => 'Capture long task context',
+                            'description' => $longTaskDescription,
+                            'type' => 'organization',
+                            'priority' => 0,
+                        ],
+                    ],
+                ],
+            ],
+            'team' => [],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('organizations', [
+            'id' => $organization->id,
+            'context' => $longOrganizationDescription,
+        ]);
+        $this->assertDatabaseHas('issues', [
+            'organization_id' => $organization->id,
+            'name' => 'Launch long context onboarding',
+            'description' => $longGoalDescription,
+        ]);
+    }
 }
