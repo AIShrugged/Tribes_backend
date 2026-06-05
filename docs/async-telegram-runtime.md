@@ -177,10 +177,9 @@ Private chats:
 
 - all text messages are eligible for processing
 
-Whitelist behavior:
+Access behavior:
 
-- `config('telegram.allowed_users')` empty -> allow all
-- otherwise only listed Telegram user IDs may trigger responses
+- Incoming Telegram users are not gated by a bot-level allowlist
 
 ---
 

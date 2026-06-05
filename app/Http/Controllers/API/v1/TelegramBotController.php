@@ -217,24 +217,6 @@ class TelegramBotController extends Controller
                     return response()->json(['ok' => true]);
                 }
 
-                // Check whitelist (empty = allow all)
-                if (! $this->isUserAllowed($telegramUserId)) {
-                    Log::info('Unauthorized user message (ignored)', [
-                        'chat_id' => $chatId,
-                        'user_id' => $telegramUserId,
-                        'username' => $username,
-                        'text' => $text,
-                    ]);
-
-                    $this->sendTelegramMessage(
-                        $chatId,
-                        'Access denied for this Telegram account.',
-                        $messageThreadId,
-                    );
-
-                    return response()->json(['ok' => true]);
-                }
-
                 // Remove mention if present (in group chats)
                 if (! $isPrivateChat && $botUsername) {
                     $text = trim($this->removeMention($text, $botUsername));
@@ -356,18 +338,6 @@ class TelegramBotController extends Controller
         }
     }
 
-    private function isUserAllowed(int $userId): bool
-    {
-        $allowedUsers = config('telegram.allowed_users', '');
-        if (empty($allowedUsers)) {
-            return true;
-        }
-
-        $allowedIds = array_map('trim', explode(',', $allowedUsers));
-
-        return in_array((string) $userId, $allowedIds);
-    }
-
     private function isBotMentioned(string $text, string $botUsername): bool
     {
         return str_contains(mb_strtolower($text), '@'.mb_strtolower($botUsername));
@@ -475,12 +445,6 @@ class TelegramBotController extends Controller
 
         $telegramUser = TelegramUser::findOrCreateByTelegramId($telegramUserId, $username);
         $user = $telegramUser->user;
-
-        if (! $this->isUserAllowed($telegramUserId)) {
-            $this->sendTelegramMessage($chatId, 'Access denied for this Telegram account.', $messageThreadId);
-
-            return response()->json(['ok' => true]);
-        }
 
         if (! $user) {
             $this->sendTelegramMessage(

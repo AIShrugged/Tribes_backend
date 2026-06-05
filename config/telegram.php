@@ -11,6 +11,5 @@ return [
     */
     'bot_token' => env('TELEGRAM_BOT_TOKEN'),
     'bot_username' => env('TELEGRAM_BOT_USERNAME'),
-    'allowed_users' => env('TELEGRAM_ALLOWED_USERS', ''),
     'webhook_url' => env('TELEGRAM_WEBHOOK_URL'),
 ];
