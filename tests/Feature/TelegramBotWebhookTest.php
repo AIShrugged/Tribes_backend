@@ -272,12 +272,168 @@ class TelegramBotWebhookTest extends TestCase
 
         $this->assertDatabaseHas('task_data_uploads', [
             'user_id' => $manager->id,
-            'team_id' => $team->id,
+            'team_id' => $organization->refresh()->defaultTeam->id,
             'organization_id' => $organization->id,
             'original_filename' => 'tasks.txt',
             'source_telegram_chat_id' => 555123,
             'source_telegram_thread_id' => null,
             'status' => 'queued',
+        ]);
+
+        Queue::assertPushed(ProcessTaskDataUploadJob::class);
+    }
+
+    #[Test]
+    public function private_document_with_multiple_organizations_asks_for_organization_not_team(): void
+    {
+        $manager = User::factory()->create();
+        $first = $this->createTenantContextFor($manager, 'acme-private-a')[0];
+        $second = $this->createTenantContextFor($manager, 'acme-private-b')[0];
+
+        TelegramUser::query()->create([
+            'telegram_user_id' => 900001,
+            'telegram_username' => 'manager_user',
+            'user_id' => $manager->id,
+        ]);
+
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('getWebhookUpdate')
+            ->once()
+            ->andReturn(new Update($this->privateDocumentPayload()));
+        $telegramApi->shouldNotReceive('downloadFile');
+        $telegramApi->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(fn (array $params) => $params['chat_id'] === 900001
+                && str_contains($params['text'], 'Укажите организацию')
+                && str_contains($params['text'], $first->name)
+                && str_contains($params['text'], $second->name)
+                && ! str_contains($params['text'], 'Укажите команду'));
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseCount('task_data_uploads', 0);
+    }
+
+    #[Test]
+    public function private_document_uses_default_team_for_caption_organization(): void
+    {
+        Queue::fake();
+
+        $manager = User::factory()->create();
+        $organization = $this->createTenantContextFor($manager, 'acme-private-upload')[0];
+        $other = $this->createTenantContextFor($manager, 'other-private-upload')[0];
+
+        TelegramUser::query()->create([
+            'telegram_user_id' => 900001,
+            'telegram_username' => 'manager_user',
+            'user_id' => $manager->id,
+        ]);
+
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('getWebhookUpdate')
+            ->once()
+            ->andReturn(new Update($this->privateDocumentPayload('Организация: '.$organization->slug)));
+        $telegramApi->shouldReceive('downloadFile')
+            ->once()
+            ->andReturnUsing(function ($document, string $filename): string {
+                file_put_contents($filename, "Task: prepare launch checklist\nOwner: Alice");
+
+                return $filename;
+            });
+        $telegramApi->shouldReceive('sendMessage')
+            ->once()
+            ->withArgs(fn (array $params) => $params['chat_id'] === 900001
+                && str_contains($params['text'], 'Файл принят'));
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseHas('task_data_uploads', [
+            'user_id' => $manager->id,
+            'team_id' => $organization->refresh()->defaultTeam->id,
+            'organization_id' => $organization->id,
+            'original_filename' => 'tasks.txt',
+            'source_telegram_chat_id' => 900001,
+            'source_telegram_thread_id' => null,
+            'status' => 'queued',
+        ]);
+        $this->assertDatabaseMissing('task_data_uploads', [
+            'organization_id' => $other->id,
+        ]);
+
+        Queue::assertPushed(ProcessTaskDataUploadJob::class);
+    }
+
+    #[Test]
+    public function private_document_waits_for_organization_reply_and_then_uploads_file(): void
+    {
+        Queue::fake();
+
+        $manager = User::factory()->create();
+        $organization = $this->createTenantContextFor($manager, 'acme-pending-upload')[0];
+        $other = $this->createTenantContextFor($manager, 'other-pending-upload')[0];
+
+        TelegramUser::query()->create([
+            'telegram_user_id' => 900001,
+            'telegram_username' => 'manager_user',
+            'user_id' => $manager->id,
+        ]);
+
+        $sent = [];
+        $telegramApi = Mockery::mock('overload:Telegram\Bot\Api');
+        $telegramApi->shouldReceive('getWebhookUpdate')
+            ->twice()
+            ->andReturnUsing(
+                fn () => new Update($this->privateDocumentPayload()),
+                fn () => new Update($this->privateMessagePayload($organization->slug)),
+            );
+        $telegramApi->shouldReceive('downloadFile')
+            ->once()
+            ->withArgs(fn ($file, string $filename) => $file === 'telegram-file-1'
+                && str_ends_with($filename, '.txt'))
+            ->andReturnUsing(function ($file, string $filename): string {
+                file_put_contents($filename, "Task: prepare launch checklist\nOwner: Alice");
+
+                return $filename;
+            });
+        $telegramApi->shouldReceive('sendMessage')
+            ->twice()
+            ->andReturnUsing(function (array $params) use (&$sent): array {
+                $sent[] = $params;
+
+                return ['ok' => true];
+            });
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertDatabaseCount('task_data_uploads', 0);
+        $this->assertStringContainsString('Укажите организацию', $sent[0]['text']);
+
+        $this->postJson('/api/v1/telegram/webhook')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+
+        $this->assertStringContainsString('Файл принят', $sent[1]['text']);
+        $this->assertDatabaseHas('task_data_uploads', [
+            'user_id' => $manager->id,
+            'team_id' => $organization->refresh()->defaultTeam->id,
+            'organization_id' => $organization->id,
+            'original_filename' => 'tasks.txt',
+            'source_telegram_chat_id' => 900001,
+            'source_telegram_thread_id' => null,
+            'status' => 'queued',
+        ]);
+        $this->assertDatabaseMissing('task_data_uploads', [
+            'organization_id' => $other->id,
+        ]);
+        $this->assertDatabaseMissing('channel_messages', [
+            'role' => 'user',
+            'content' => $organization->slug,
         ]);
 
         Queue::assertPushed(ProcessTaskDataUploadJob::class);
@@ -534,7 +690,43 @@ class TelegramBotWebhookTest extends TestCase
         ];
     }
 
-    private function createTenantContextFor(User $user): array
+    private function privateDocumentPayload(?string $caption = null): array
+    {
+        $payload = [
+            'update_id' => 1007,
+            'message' => [
+                'message_id' => 7,
+                'date' => now()->timestamp,
+                'chat' => [
+                    'id' => 900001,
+                    'type' => 'private',
+                    'first_name' => 'Manager',
+                    'username' => 'manager_user',
+                ],
+                'from' => [
+                    'id' => 900001,
+                    'is_bot' => false,
+                    'username' => 'manager_user',
+                    'first_name' => 'Manager',
+                ],
+                'document' => [
+                    'file_id' => 'telegram-file-1',
+                    'file_unique_id' => 'unique-file-1',
+                    'file_name' => 'tasks.txt',
+                    'mime_type' => 'text/plain',
+                    'file_size' => 128,
+                ],
+            ],
+        ];
+
+        if ($caption !== null) {
+            $payload['message']['caption'] = $caption;
+        }
+
+        return $payload;
+    }
+
+    private function createTenantContextFor(User $user, string $slug = 'acme-telegram-webhook'): array
     {
         $methodology = Methodology::query()->where('is_default', true)->first()
             ?? Methodology::create([
@@ -545,15 +737,15 @@ class TelegramBotWebhookTest extends TestCase
             ]);
 
         $organization = Organization::create([
-            'name' => 'Acme Telegram Webhook',
-            'slug' => 'acme-telegram-webhook',
+            'name' => 'Acme Telegram Webhook '.$slug,
+            'slug' => $slug,
         ]);
 
         $team = Team::create([
             'organization_id' => $organization->id,
             'methodology_id' => $methodology->id,
             'name' => 'Platform',
-            'slug' => 'platform-webhook',
+            'slug' => 'platform-webhook-'.$slug,
         ]);
 
         $organization->users()->attach($user->id, ['role' => 'manager']);
