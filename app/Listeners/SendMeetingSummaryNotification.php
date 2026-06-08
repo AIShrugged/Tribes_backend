@@ -106,20 +106,29 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
     private function send(TelegramChatRegistration $registration, MeetingSummary $summary, Collection $newTasks, Collection $updatedTasks, ?MeetingSummaryTemplate $template): void
     {
         try {
-            $text = $this->formatMessage($summary, $newTasks, $updatedTasks, $template);
+            $header = $this->formatHeader($summary);
+            [$visibleBlocks, $detailBlocks] = $this->buildBlocks($summary, $newTasks, $updatedTasks, $template);
 
             $telegram = new Api(config('telegram.bot_token'));
-            $params = [
+            $baseParams = [
                 'chat_id' => $registration->telegram_chat_id,
-                'text' => $text,
                 'parse_mode' => 'HTML',
             ];
 
             if ($registration->message_thread_id) {
-                $params['message_thread_id'] = $registration->message_thread_id;
+                $baseParams['message_thread_id'] = $registration->message_thread_id;
             }
 
-            $telegram->sendMessage($params);
+            $single = $this->formatAsSingle($header, $visibleBlocks, $detailBlocks);
+            if (mb_strlen($single) <= 4096) {
+                $telegram->sendMessage(array_merge($baseParams, ['text' => $single]));
+
+                return;
+            }
+
+            foreach ($this->packIntoMessages($header, array_merge($visibleBlocks, $detailBlocks)) as $text) {
+                $telegram->sendMessage(array_merge($baseParams, ['text' => $text]));
+            }
         } catch (\Throwable $e) {
             Log::warning('SendMeetingSummaryNotification: failed to send Telegram message', [
                 'telegram_chat_id' => $registration->telegram_chat_id,
@@ -129,7 +138,7 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         }
     }
 
-    private function formatMessage(MeetingSummary $summary, Collection $newTasks, Collection $updatedTasks, ?MeetingSummaryTemplate $template): string
+    private function formatHeader(MeetingSummary $summary): string
     {
         $lines = [];
         $lines[] = '📋 <b>Meeting Summary</b>';
@@ -142,15 +151,30 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
         if ($summary->calendarEvent?->starts_at) {
             $lines[] = '📅 '.e($summary->calendarEvent->starts_at->format('d.m.Y H:i'));
         }
-        $lines[] = '';
 
         $attendees = $summary->calendarEvent->participants->pluck('name')->filter()->values();
         if ($attendees->isNotEmpty()) {
-            $lines[] = '👥 <b>Участники:</b> '.e($attendees->implode(', '));
             $lines[] = '';
+            $lines[] = '👥 <b>Участники:</b> '.e($attendees->implode(', '));
         }
 
+        return trim(implode("\n", $lines));
+    }
+
+    /**
+     * Render all template sections into two ordered lists: visible and detail.
+     * Each list preserves the template section order.
+     *
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    private function buildBlocks(MeetingSummary $summary, Collection $newTasks, Collection $updatedTasks, ?MeetingSummaryTemplate $template): array
+    {
         $sections = $template?->sections ?? MeetingSummaryTemplate::DEFAULT_SECTIONS;
+
+        $configuredVisible = $template?->visible_sections;
+        $visibleSections = is_array($configuredVisible) && ! empty($configuredVisible)
+            ? array_values(array_intersect($configuredVisible, $sections))
+            : MeetingSummaryTemplate::DEFAULT_VISIBLE_SECTIONS;
 
         $renderers = [
             'key_points' => fn () => $this->renderKeyPoints($summary),
@@ -161,38 +185,90 @@ class SendMeetingSummaryNotification implements ShouldQueueAfterCommit
             'conflicts' => fn () => $this->renderConflicts($summary),
         ];
 
-        $configuredVisible = $template?->visible_sections;
-        $visibleSections = is_array($configuredVisible) && ! empty($configuredVisible)
-            ? array_values(array_intersect($configuredVisible, $sections))
-            : MeetingSummaryTemplate::DEFAULT_VISIBLE_SECTIONS;
-
+        $visible = [];
+        $detail = [];
         foreach ($sections as $section) {
-            if (! isset($renderers[$section]) || ! in_array($section, $visibleSections, true)) {
+            if (! isset($renderers[$section])) {
                 continue;
             }
             $block = ($renderers[$section])();
-            if ($block) {
-                $lines[] = $block;
+            if (! $block) {
+                continue;
+            }
+            if (in_array($section, $visibleSections, true)) {
+                $visible[] = $block;
+            } else {
+                $detail[] = $block;
             }
         }
 
-        $detailBlocks = [];
-        foreach ($sections as $section) {
-            if (! isset($renderers[$section]) || in_array($section, $visibleSections, true)) {
-                continue;
-            }
-            $block = ($renderers[$section])();
-            if ($block) {
-                $detailBlocks[] = $block;
-            }
-        }
+        return [$visible, $detail];
+    }
+
+    /**
+     * Format all blocks as a single Telegram message, detail sections wrapped in
+     * an expandable blockquote. Used when the result fits within 4096 chars.
+     */
+    private function formatAsSingle(string $header, array $visibleBlocks, array $detailBlocks): string
+    {
+        $parts = [$header, ...$visibleBlocks];
 
         if (! empty($detailBlocks)) {
-            $lines[] = '';
-            $lines[] = '<blockquote expandable>'.implode("\n\n", $detailBlocks).'</blockquote>';
+            $parts[] = '<blockquote expandable>'.implode("\n\n", $detailBlocks).'</blockquote>';
         }
 
-        return trim(implode("\n", $lines));
+        return trim(implode("\n\n", $parts));
+    }
+
+    /**
+     * Pack header + section blocks into Telegram messages of at most $maxLength chars each.
+     * Blocks are never merged across messages once split; if a single block exceeds the limit
+     * it is split line-by-line.
+     *
+     * @param  list<string>  $blocks
+     * @return non-empty-list<string>
+     */
+    private function packIntoMessages(string $header, array $blocks, int $maxLength = 4096): array
+    {
+        $messages = [];
+        $current = $header;
+
+        foreach ($blocks as $block) {
+            $candidate = $current."\n\n".$block;
+
+            if (mb_strlen($candidate) <= $maxLength) {
+                $current = $candidate;
+                continue;
+            }
+
+            $messages[] = $current;
+
+            if (mb_strlen($block) <= $maxLength) {
+                $current = $block;
+                continue;
+            }
+
+            // Block itself exceeds the limit — split line by line
+            $chunk = '';
+            foreach (explode("\n", $block) as $line) {
+                $next = $chunk === '' ? $line : $chunk."\n".$line;
+                if (mb_strlen($next) > $maxLength) {
+                    if ($chunk !== '') {
+                        $messages[] = $chunk;
+                    }
+                    $chunk = $line;
+                } else {
+                    $chunk = $next;
+                }
+            }
+            $current = $chunk;
+        }
+
+        if ($current !== '') {
+            $messages[] = $current;
+        }
+
+        return $messages ?: [$header];
     }
 
     private function renderKeyPoints(MeetingSummary $summary): ?string
