@@ -211,7 +211,7 @@ class TodayBriefingService
                 ->forMeeting($event->id)
                 ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
-                ->with('assignee')
+                ->with(['assignee', 'issueType'])
                 ->get();
 
             $totalTasks = $allTasks->count();
@@ -225,7 +225,7 @@ class TodayBriefingService
                 ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
                 ->whereNotIn('id', $allTasks->pluck('id'))
-                ->with('assignee')
+                ->with(['assignee', 'issueType'])
                 ->get();
         } else {
             $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
@@ -239,7 +239,7 @@ class TodayBriefingService
                     ->forMeeting($prevEvent->id)
                     ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                     ->whereNotIn('status', ['cancelled'])
-                    ->with('assignee')
+                    ->with(['assignee', 'issueType'])
                     ->get();
 
                 $totalTasks = $allPrevTasks->count();
@@ -355,6 +355,7 @@ class TodayBriefingService
             assignee_id: $issue->assignee_id,
             due_date: $issue->due_date?->format('Y-m-d'),
             is_overdue: $isOverdue,
+            is_epic: $issue->isEpic(),
         );
     }
 

@@ -76,12 +76,16 @@ class TaskDataUploadController extends Controller
         }
 
         $data = [
-            'upload_id'      => $upload->id,
-            'status'         => $upload->status,
+            'upload_id'         => $upload->id,
+            'status'            => $upload->status,
             'original_filename' => $upload->original_filename,
-            'issues_created' => $upload->issues_created,
-            'issues_updated' => $upload->issues_updated,
+            'issues_created'    => $upload->issues_created,
+            'issues_updated'    => $upload->issues_updated,
         ];
+
+        if ($upload->status === 'failed' && $upload->error_message) {
+            $data['error_message'] = $upload->error_message;
+        }
 
         if ($upload->status === 'done') {
             // Re-filter issue names through Issue visibility (defense-in-depth, matches

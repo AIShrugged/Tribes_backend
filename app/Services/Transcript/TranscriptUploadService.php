@@ -5,6 +5,7 @@ namespace App\Services\Transcript;
 use App\Events\TranscriptParsed;
 use App\Http\Requests\API\v1\UploadTranscriptRequest;
 use App\Models\CalendarEvent;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\Transcript\Exceptions\TooManyEntriesException;
 use App\Services\Transcript\Exceptions\TranscriptParseException;
@@ -38,6 +39,7 @@ class TranscriptUploadService
         private readonly TranscriptFormatResolver $formatResolver,
         private readonly TranscriptPatternDetector $patternDetector,
         private readonly TranscriptPersistenceService $persistence,
+        private readonly TranscriptRelevanceChecker $relevanceChecker,
     ) {
     }
 
@@ -99,6 +101,9 @@ class TranscriptUploadService
             throw new TooManyEntriesException(count($parsed['entries']), self::ENTRY_LIMIT);
         }
 
+        $orgContext = $this->resolveOrgContext($request, $event);
+        $this->relevanceChecker->check($parsed['entries'], $orgContext);
+
         $counts = $this->persistence->persistAlreadyValidated(
             $event,
             $parsed['speakers'],
@@ -121,5 +126,17 @@ class TranscriptUploadService
             'transcript_entries_count' => $counts['transcript_entries_count'],
             'participants_count'       => $counts['participants_count'],
         ];
+    }
+
+    private function resolveOrgContext(UploadTranscriptRequest $request, CalendarEvent $event): ?string
+    {
+        if ($teamId = $request->teamId()) {
+            $context = Team::with('organization')->find($teamId)?->organization?->context;
+            if (!blank($context)) {
+                return $context;
+            }
+        }
+
+        return $event->sources()->with('organization')->first()?->organization?->context;
     }
 }
