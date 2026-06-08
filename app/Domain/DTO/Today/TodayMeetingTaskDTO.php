@@ -15,5 +15,6 @@ class TodayMeetingTaskDTO extends BaseDTO
         public readonly ?int $assignee_id,
         public readonly ?string $due_date,
         public readonly bool $is_overdue,
+        public readonly bool $is_epic = false,
     ) {}
 }

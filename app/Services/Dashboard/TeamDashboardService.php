@@ -191,14 +191,16 @@ class TeamDashboardService
         })->sortByDesc('starts_at')->first();
 
         // Batch: insight profiles for all team members (1-3 queries via getFullProfileBatch).
+        // Priority: google_calendar → telegram → any profile (users may not have gc connected).
         $gcChannelId = Channel::idFor('google_calendar');
+        $tgChannelId = Channel::idFor('telegram');
         $profileIdByUser = [];
-        if ($gcChannelId) {
-            foreach ($team->users as $user) {
-                $profile = $user->profiles->first(fn ($p) => (int) $p->channel_id === (int) $gcChannelId);
-                if ($profile) {
-                    $profileIdByUser[$user->id] = $profile->id;
-                }
+        foreach ($team->users as $user) {
+            $profile = $user->profiles->first(fn ($p) => (int) $p->channel_id === (int) $gcChannelId)
+                ?? $user->profiles->first(fn ($p) => (int) $p->channel_id === (int) $tgChannelId)
+                ?? $user->profiles->first();
+            if ($profile) {
+                $profileIdByUser[$user->id] = $profile->id;
             }
         }
         $insightMap = $this->insightRetrieval->getFullProfileBatch(array_values($profileIdByUser));

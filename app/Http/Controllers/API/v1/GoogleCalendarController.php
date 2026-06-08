@@ -13,7 +13,9 @@ use App\Models\OAuthState;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\SourceOauth;
+use App\Models\User;
 use App\Services\GoogleOAuthService;
+use App\Services\ProfileLinkingService;
 use App\Services\Recall\CalendarEventSyncService;
 use App\Services\RecallCalendarService;
 use App\Services\RecallEventService;
@@ -123,6 +125,9 @@ class GoogleCalendarController extends Controller
 
                 return [$source, $shouldSyncUpcomingMeetings];
             });
+
+            // Re-link any gc profile that was orphaned (user_id=null) during a previous disconnect.
+            app(ProfileLinkingService::class)->linkByEmail(User::findOrFail($oauthState->user_id));
 
             if ($shouldSyncUpcomingMeetings) {
                 $this->syncUpcomingMeetings($source);

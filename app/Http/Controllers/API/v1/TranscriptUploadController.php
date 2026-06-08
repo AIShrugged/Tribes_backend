@@ -160,8 +160,9 @@ class TranscriptUploadController extends Controller
     private function appErrorMessage(AppException $e): string
     {
         return match ($e->getErrorCode()) {
-            'NO_SOURCE' => 'Connect a calendar to upload transcripts',
-            default     => 'Upload could not be processed',
+            'NO_SOURCE'             => 'Connect a calendar to upload transcripts',
+            'CONTENT_NOT_RELEVANT'  => 'Transcript does not appear to be related to this organization\'s work',
+            default                 => 'Upload could not be processed',
         };
     }
 

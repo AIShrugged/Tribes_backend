@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\ContentNotRelevantException;
 use App\Models\Issue;
 use App\Models\TaskDataUpload;
 use App\Models\Team;
@@ -86,6 +87,15 @@ class ProcessTaskDataUploadJob implements ShouldQueue
                 $result['created']->pluck('id')->all(),
                 $result['updated']->pluck('id')->all(),
             );
+        } catch (ContentNotRelevantException $e) {
+            $upload->update([
+                'status'        => 'failed',
+                'error_message' => $e->getMessage(),
+            ]);
+
+            Log::info('ProcessTaskDataUploadJob: content rejected as not relevant', [
+                'upload_id' => $upload->id,
+            ]);
         } catch (\Throwable $e) {
             $upload->update([
                 'status'        => 'failed',

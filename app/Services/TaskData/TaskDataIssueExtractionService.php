@@ -3,6 +3,7 @@
 namespace App\Services\TaskData;
 
 use App\Domain\DTO\AI\MessageDTO;
+use App\Exceptions\ContentNotRelevantException;
 use App\Models\Setting;
 use App\Models\TaskDataUpload;
 use App\Models\Team;
@@ -67,7 +68,14 @@ class TaskDataIssueExtractionService
                 $json = $matches[0];
             }
             $decoded = is_string($json) ? json_decode($json, true) : $json;
+
+            if (isset($decoded['is_work_relevant']) && $decoded['is_work_relevant'] === false) {
+                throw new ContentNotRelevantException();
+            }
+
             $items = $decoded['issues'] ?? [];
+        } catch (ContentNotRelevantException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('Task data issue extraction failed', [
                 'upload_id' => $upload->id,
@@ -112,6 +120,20 @@ You are an AI assistant that extracts actionable tasks from text documents.{$con
 
 The input document may be meeting notes, a TODO list, project update, email thread, task description, protocol, or any other text containing information about work to be done.
 
+## Relevance check
+
+First, evaluate whether the document is related to this organization's work activity.
+
+Set "is_work_relevant" to false if the document is:
+- Personal/non-work content: recipes, diaries, fiction, personal chats, shopping lists, entertainment
+- Clearly from a completely different organization with no connection to the context described above
+
+Set "is_work_relevant" to true for:
+- Any work-related document: meeting notes, tasks, project updates, protocols, email threads, backlogs, etc.
+- When uncertain — default to true
+
+## Task extraction
+
 Your goal is to find concrete tasks, assignments, decisions, and action items. Do NOT invent tasks that aren't in the text. Extract ONLY what is explicitly stated or clearly implied.
 
 ## What IS a task:
@@ -130,6 +152,7 @@ Your goal is to find concrete tasks, assignments, decisions, and action items. D
 
 Return JSON strictly in this format:
 {
+  "is_work_relevant": true,
   "issues": [
     {
       "name": "Verb + what exactly to do (up to 80 characters)",
