@@ -12,6 +12,7 @@ return [
                 'meeting_summary' => 'google/gemini-3.1-pro-preview',
                 'meeting_review'  => 'google/gemini-3.1-pro-preview',
                 'meeting_tasks'   => 'google/gemini-3.1-pro-preview',
+                'meeting_task_review' => env('AI_MODEL_MEETING_TASK_REVIEW', 'google/gemini-3.1-pro-preview'),
                 'insight'         => 'google/gemini-3.1-pro-preview',
                 'demo'            => 'google/gemini-3.1-pro-preview',
                 'agenda'          => 'google/gemini-3.1-pro-preview',

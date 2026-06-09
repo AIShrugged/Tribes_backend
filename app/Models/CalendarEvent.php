@@ -75,6 +75,11 @@ class CalendarEvent extends Model
         return $this->hasOne(MeetingReview::class);
     }
 
+    public function meetingTaskReview(): HasOne
+    {
+        return $this->hasOne(MeetingTaskReview::class);
+    }
+
     public function issues(): MorphMany
     {
         return $this->morphMany(Issue::class, 'sourceable');
