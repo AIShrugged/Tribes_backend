@@ -21,6 +21,7 @@ use App\Models\MeetingAgenda;
 use App\Services\Agenda\AgendaRenderer;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
+use App\Models\MeetingTaskReviewItem;
 use App\Models\Source;
 use App\Models\UpcomingAgenda;
 use App\Models\User;
@@ -206,6 +207,8 @@ class TodayBriefingService
         // Ready meeting: show tasks created on this meeting
         // Future/waiting meeting: show open tasks from previous meeting in series
         $updatedTasks = collect();
+        $doneReviewTasks = collect();
+        $doneNotesMap = collect();
         if ($meetingState === 'ready') {
             $allTasks = Issue::withoutTrashed()
                 ->forMeeting($event->id)
@@ -229,6 +232,24 @@ class TodayBriefingService
                 ->whereNotIn('id', $allTasks->pluck('id'))
                 ->with(['assignee', 'issueType', 'comments'])
                 ->get();
+
+            // "What was done" — pre-existing tasks the LLM flagged as completed in THIS
+            // meeting's transcript (MeetingTaskReview, progress='done'). All done items
+            // regardless of the task's current status. The transcript quote (notes) is shown
+            // as context. Empty when no review exists yet (queued) or for pre-2026-06-08
+            // meetings — the block is then hidden on the frontend.
+            $doneNotesMap = MeetingTaskReviewItem::query()
+                ->whereHas('review', fn ($q) => $q->where('calendar_event_id', $event->id))
+                ->where('progress', 'done')
+                ->pluck('notes', 'issue_id');
+
+            if ($doneNotesMap->isNotEmpty()) {
+                $doneReviewTasks = Issue::withoutTrashed()
+                    ->whereIn('id', $doneNotesMap->keys())
+                    ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
+                    ->with(['assignee', 'issueType', 'user'])
+                    ->get();
+            }
         } else {
             $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
 
@@ -268,6 +289,7 @@ class TodayBriefingService
             total_tasks_count: $totalTasks,
             done_tasks_count: $doneTasks,
             updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, $event->id))->values()->all(),
+            done_tasks: $doneReviewTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, null, $doneNotesMap[$i->id] ?? null))->values()->all(),
             agenda_content: $agendaContent,
         );
     }
@@ -344,15 +366,19 @@ class TodayBriefingService
         return AgendaTemplate::where('team_id', $teamId)->first();
     }
 
-    private function buildMeetingTaskDTO(Issue $issue, ?int $updateContextEventId = null): TodayMeetingTaskDTO
+    private function buildMeetingTaskDTO(Issue $issue, ?int $updateContextEventId = null, ?string $contextOverride = null): TodayMeetingTaskDTO
     {
         $isOverdue = $issue->due_date && Carbon::parse($issue->due_date)->lt(Carbon::today());
 
         // Why this task surfaced on this meeting.
         //  - updated tasks ($updateContextEventId set): the merge comment written for THIS
         //    meeting carries both who updated it and what changed;
+        //  - done tasks ($contextOverride set): the transcript quote from the task review;
         //  - generated tasks: the extractor's "## Context" section + the task author (creator).
-        if ($updateContextEventId !== null) {
+        if ($contextOverride !== null) {
+            $authorName = $issue->user?->name;
+            $context = $contextOverride;
+        } elseif ($updateContextEventId !== null) {
             $comment = $issue->comments->firstWhere('calendar_event_id', $updateContextEventId);
             $authorName = $comment?->user?->name;
             $context = $comment ? trim($comment->content) : null;

@@ -21,6 +21,7 @@ class TodayEventDTO extends BaseDTO
         public readonly int $total_tasks_count,
         public readonly int $done_tasks_count,
         public readonly array $updated_tasks,
+        public readonly array $done_tasks,
         public readonly ?string $agenda_content,
     ) {}
 
@@ -41,6 +42,7 @@ class TodayEventDTO extends BaseDTO
             'total_tasks_count' => $this->total_tasks_count,
             'done_tasks_count' => $this->done_tasks_count,
             'updated_tasks' => array_map(fn(TodayMeetingTaskDTO $t) => $t->toArray(), $this->updated_tasks),
+            'done_tasks' => array_map(fn(TodayMeetingTaskDTO $t) => $t->toArray(), $this->done_tasks),
             'agenda_content' => $this->agenda_content,
         ];
     }
