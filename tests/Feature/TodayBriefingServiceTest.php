@@ -7,6 +7,8 @@ use App\Models\Issue;
 use App\Models\IssueComment;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
+use App\Models\MeetingTaskReview;
+use App\Models\MeetingTaskReviewItem;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\User;
@@ -340,6 +342,72 @@ class TodayBriefingServiceTest extends TestCase
             ['Org A task'],
             collect($briefing->events[0]->updated_tasks)->pluck('name')->all(),
         );
+    }
+
+    #[Test]
+    public function it_surfaces_done_tasks_from_meeting_task_review(): void
+    {
+        // "What was done": pre-existing tasks the meeting task review flagged as completed
+        // (progress='done') surface in done_tasks regardless of the task's current status,
+        // with the transcript quote (notes) as context. Other progress values are excluded.
+        $org = Organization::create(['name' => 'Org', 'slug' => 'org-' . uniqid()]);
+        $event = $this->createEvent();
+        MeetingSummary::create(['calendar_event_id' => $event->id, 'status' => 'done']);
+
+        $completed = Issue::create([
+            'name' => 'Shipped the API',
+            'status' => 'in_progress',
+            'sourceable_type' => null,
+            'sourceable_id' => null,
+            'user_id' => $this->user->id,
+        ]);
+        $stillGoing = Issue::create([
+            'name' => 'Refactor pipeline',
+            'status' => 'in_progress',
+            'sourceable_type' => null,
+            'sourceable_id' => null,
+            'user_id' => $this->user->id,
+        ]);
+
+        $review = MeetingTaskReview::create([
+            'calendar_event_id' => $event->id,
+            'organization_id' => $org->id,
+            'status' => 'done',
+            'analyzed_count' => 2,
+        ]);
+        MeetingTaskReviewItem::create([
+            'meeting_task_review_id' => $review->id,
+            'issue_id' => $completed->id,
+            'progress' => 'done',
+            'confidence' => 'high',
+            'notes' => 'Деплой выкатили в прод вчера.',
+        ]);
+        MeetingTaskReviewItem::create([
+            'meeting_task_review_id' => $review->id,
+            'issue_id' => $stillGoing->id,
+            'progress' => 'in_progress',
+            'confidence' => 'medium',
+            'notes' => 'Ещё в работе.',
+        ]);
+
+        $eventDTO = $this->service->getBriefing($this->user, Carbon::today())->events[0];
+
+        $this->assertEqualsCanonicalizing(
+            ['Shipped the API'],
+            collect($eventDTO->done_tasks)->pluck('name')->all(),
+        );
+        $this->assertEquals('Деплой выкатили в прод вчера.', $eventDTO->done_tasks[0]->context);
+    }
+
+    #[Test]
+    public function it_returns_empty_done_tasks_when_no_task_review(): void
+    {
+        $event = $this->createEvent();
+        MeetingSummary::create(['calendar_event_id' => $event->id, 'status' => 'done']);
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::today());
+
+        $this->assertEmpty($briefing->events[0]->done_tasks);
     }
 
     #[Test]
