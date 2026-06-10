@@ -160,3 +160,9 @@ Schedule::command('extraction:reap-stuck-plans')
     ->everyFifteenMinutes()
     ->name('extraction:reap-stuck-plans')
     ->withoutOverlapping();
+
+// Daily issue health analysis per team
+Schedule::command('issues:generate-health-reports')
+    ->dailyAt('10:00')
+    ->name('issues:generate-health-reports')
+    ->withoutOverlapping();

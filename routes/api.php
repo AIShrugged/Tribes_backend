@@ -54,6 +54,7 @@ use App\Http\Controllers\API\v1\IssueCommentController;
 use App\Http\Controllers\API\v1\IssueAgentFlowController;
 use App\Http\Controllers\API\v1\CriticalPathController;
 use App\Http\Controllers\API\v1\IssueController;
+use App\Http\Controllers\API\v1\IssueHealthReportController;
 use App\Http\Controllers\API\v1\IssueStatsController;
 use App\Http\Controllers\API\v1\PaperclipIssueStatusController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
@@ -290,6 +291,7 @@ Route::group(['prefix' => 'v1'], function () {
             ->except(['index']);
         Route::get('teams/{team}/dashboard', [TeamDashboardController::class, 'show'])
             ->name('teams.dashboard');
+        Route::get('teams/{team}/issue-health', [IssueHealthReportController::class, 'show']);
         Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
         Route::post('methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
 

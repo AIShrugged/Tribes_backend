@@ -20,7 +20,7 @@ class MeetingSummaryTemplate extends Model
      * Placeholders supported inside {@see $prompt_override}; substituted at runtime by
      * {@see \App\Services\Meeting\MeetingSummaryService::buildPrompt}.
      */
-    public const array PROMPT_PLACEHOLDERS = ['{transcript}', '{meeting_date}', '{next_day}', '{example}'];
+    public const array PROMPT_PLACEHOLDERS = ['{transcript}', '{meeting_date}', '{end_of_week}', '{example}'];
 
     protected $casts = [
         'sections'         => 'array',

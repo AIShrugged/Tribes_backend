@@ -197,14 +197,18 @@ class TelegramTaskService
             ? "\n## Контекст организации\n\nИспользуй это для лучшего понимания предметной области, ролей команды и терминологии при определении задач:\n\n{$orgContext}\n"
             : '';
 
+        $endOfWeek = now()->endOfWeek(\Carbon\Carbon::FRIDAY)->toDateString();
+
         $prompt = app(LlmPromptService::class)->renderView(
             slug: 'telegram.tasks.user',
             organizationId: $organizationId,
             fallbackView: 'llm-prompts.telegram.tasks-user',
             variables: [
                 'context_block' => $contextBlock,
-                'messages' => $messagesText,
-                'tasks' => $tasksText,
+                'messages'      => $messagesText,
+                'tasks'         => $tasksText,
+                'current_date'  => now()->toDateString(),
+                'end_of_week'   => $endOfWeek,
             ],
             name: 'Telegram task extraction prompt',
         );

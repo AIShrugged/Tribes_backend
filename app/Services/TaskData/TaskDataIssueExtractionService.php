@@ -47,11 +47,14 @@ class TaskDataIssueExtractionService
 
         $orgContext = $team->organization?->context;
 
+        $endOfWeek = now()->endOfWeek(\Carbon\Carbon::FRIDAY)->toDateString();
+
         $messages = [
             new MessageDTO('system', $this->buildSystemPrompt($orgContext)),
             new MessageDTO('user',
                 "Source: {$upload->original_filename}\n"
-                . "Current date: " . now()->toDateString() . "\n\n"
+                . "Current date: " . now()->toDateString() . "\n"
+                . "End of current week (default deadline): {$endOfWeek}\n\n"
                 . "Document content:\n" . $text
             ),
         ];
@@ -193,7 +196,7 @@ Return JSON strictly in this format:
 
 **assignee_name** — person explicitly assigned. If unclear — null.
 
-**due_date** — only if a deadline is explicitly mentioned. Convert relative dates from today. If none — null.
+**due_date** — if a deadline is explicitly mentioned, use that (convert relative dates from today). If no specific deadline is mentioned — use the end-of-week date provided in the user message.
 
 **priority**: "critical" (blocker/urgent), "high" (ASAP), "normal" (default), "low" (nice-to-have), "minimal" (someday).
 
