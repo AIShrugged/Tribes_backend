@@ -38,9 +38,33 @@ class ExtractionPlanController extends Controller
         }
 
         return ApiResponse::success(data: [
-            'status' => $plan->status,
-            'plan'   => $plan->plan,
+            'status'    => $plan->status,
+            'plan'      => $plan->plan,
+            'assignees' => $this->assignableNames($plan),
         ]);
+    }
+
+    /**
+     * Names of the upload team's members — the assignee dropdown options. The apply path resolves
+     * assignee_name → user by matching team members by name, so only team members are assignable
+     * (for a manual upload the team is usually the org-wide "General" team = every org member).
+     *
+     * @return array<int, string>
+     */
+    private function assignableNames(ExtractionPlan $plan): array
+    {
+        $team = $plan->team;
+        if (! $team) {
+            return [];
+        }
+
+        return $team->users()
+            ->orderBy('name')
+            ->pluck('name')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function update(UpdateExtractionPlanRequest $request, string $type, int $id): ApiResponse
