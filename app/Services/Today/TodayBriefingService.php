@@ -21,6 +21,7 @@ use App\Models\MeetingAgenda;
 use App\Services\Agenda\AgendaRenderer;
 use App\Models\MeetingReview;
 use App\Models\MeetingSummary;
+use App\Models\MeetingTaskReviewItem;
 use App\Models\Source;
 use App\Models\UpcomingAgenda;
 use App\Models\User;
@@ -206,12 +207,14 @@ class TodayBriefingService
         // Ready meeting: show tasks created on this meeting
         // Future/waiting meeting: show open tasks from previous meeting in series
         $updatedTasks = collect();
+        $doneReviewTasks = collect();
+        $doneNotesMap = collect();
         if ($meetingState === 'ready') {
             $allTasks = Issue::withoutTrashed()
                 ->forMeeting($event->id)
                 ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
-                ->with(['assignee', 'issueType'])
+                ->with(['assignee', 'issueType', 'user'])
                 ->get();
 
             $totalTasks = $allTasks->count();
@@ -220,13 +223,33 @@ class TodayBriefingService
 
             // Pre-existing issues this meeting augmented via a merge comment (kept separate
             // from new action items — they do NOT count toward the readiness bar/totals).
+            // `comments` is eager-loaded so the task dropdown can show the merge note
+            // (context + author) written for THIS meeting.
             $updatedTasks = Issue::withoutTrashed()
                 ->updatedForMeeting($event->id)
                 ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
                 ->whereNotIn('id', $allTasks->pluck('id'))
-                ->with(['assignee', 'issueType'])
+                ->with(['assignee', 'issueType', 'comments'])
                 ->get();
+
+            // "What was done" — pre-existing tasks the LLM flagged as completed in THIS
+            // meeting's transcript (MeetingTaskReview, progress='done'). All done items
+            // regardless of the task's current status. The transcript quote (notes) is shown
+            // as context. Empty when no review exists yet (queued) or for pre-2026-06-08
+            // meetings — the block is then hidden on the frontend.
+            $doneNotesMap = MeetingTaskReviewItem::query()
+                ->whereHas('review', fn ($q) => $q->where('calendar_event_id', $event->id))
+                ->where('progress', 'done')
+                ->pluck('notes', 'issue_id');
+
+            if ($doneNotesMap->isNotEmpty()) {
+                $doneReviewTasks = Issue::withoutTrashed()
+                    ->whereIn('id', $doneNotesMap->keys())
+                    ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
+                    ->with(['assignee', 'issueType', 'user'])
+                    ->get();
+            }
         } else {
             $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
 
@@ -239,7 +262,7 @@ class TodayBriefingService
                     ->forMeeting($prevEvent->id)
                     ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                     ->whereNotIn('status', ['cancelled'])
-                    ->with(['assignee', 'issueType'])
+                    ->with(['assignee', 'issueType', 'user'])
                     ->get();
 
                 $totalTasks = $allPrevTasks->count();
@@ -265,7 +288,8 @@ class TodayBriefingService
             tasks: $prevTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
             total_tasks_count: $totalTasks,
             done_tasks_count: $doneTasks,
-            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
+            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, $event->id))->values()->all(),
+            done_tasks: $doneReviewTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, null, $doneNotesMap[$i->id] ?? null))->values()->all(),
             agenda_content: $agendaContent,
         );
     }
@@ -342,9 +366,26 @@ class TodayBriefingService
         return AgendaTemplate::where('team_id', $teamId)->first();
     }
 
-    private function buildMeetingTaskDTO(Issue $issue): TodayMeetingTaskDTO
+    private function buildMeetingTaskDTO(Issue $issue, ?int $updateContextEventId = null, ?string $contextOverride = null): TodayMeetingTaskDTO
     {
         $isOverdue = $issue->due_date && Carbon::parse($issue->due_date)->lt(Carbon::today());
+
+        // Why this task surfaced on this meeting.
+        //  - updated tasks ($updateContextEventId set): the merge comment written for THIS
+        //    meeting carries both who updated it and what changed;
+        //  - done tasks ($contextOverride set): the transcript quote from the task review;
+        //  - generated tasks: the extractor's "## Context" section + the task author (creator).
+        if ($contextOverride !== null) {
+            $authorName = $issue->user?->name;
+            $context = $contextOverride;
+        } elseif ($updateContextEventId !== null) {
+            $comment = $issue->comments->firstWhere('calendar_event_id', $updateContextEventId);
+            $authorName = $comment?->user?->name;
+            $context = $comment ? trim($comment->content) : null;
+        } else {
+            $authorName = $issue->user?->name;
+            $context = $this->extractContextSection($issue->description);
+        }
 
         return new TodayMeetingTaskDTO(
             id: $issue->id,
@@ -356,7 +397,37 @@ class TodayBriefingService
             due_date: $issue->due_date?->format('Y-m-d'),
             is_overdue: $isOverdue,
             is_epic: $issue->isEpic(),
+            author_name: $authorName,
+            context: $context !== '' ? $context : null,
         );
+    }
+
+    /**
+     * Pull the "why this task exists" part out of an extractor-written description.
+     * Prefers an explicit "## Context" section; otherwise falls back to the lead text
+     * before the first markdown heading (drops "## Steps" / "## Definition of done").
+     */
+    private function extractContextSection(?string $description): ?string
+    {
+        if ($description === null) {
+            return null;
+        }
+
+        $text = trim($description);
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match('/##\s*Context\s*\R(.*?)(?=\R##\s|\z)/isu', $text, $m)) {
+            $section = trim($m[1]);
+            if ($section !== '') {
+                return $section;
+            }
+        }
+
+        $lead = trim(preg_split('/\R##\s/u', $text)[0] ?? '');
+
+        return $lead !== '' ? $lead : $text;
     }
 
     private function buildCarriedTaskDTO(Issue $issue, array $syncsCounts): TodayCarriedTaskDTO

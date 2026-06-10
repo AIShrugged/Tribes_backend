@@ -35,28 +35,33 @@ class IssueMergeService
      */
     public function persist(array $items, CalendarEvent $event, Team $team, User $user): Collection
     {
+        // Thin wrapper over the compute/apply seam — behavior is identical to the pre-split
+        // method (compute then apply in one call). The seam lets the pre-moderation gate stage
+        // the computed plan and replay applyPlan() later on approve. See PREMODERATION_PLAN.md.
+        return $this->applyPlan($this->computePlan($items, $event, $team), $event, $team, $user);
+    }
+
+    /**
+     * COMPUTE half (read + LLM only, NO writes). Loads existing open issues, runs the merge-LLM
+     * dedup, and returns the resolved plan. decisions===null means "create all" (no existing issues
+     * OR LLM failed — the createAll fallback). The Recall/non-gated path feeds this straight into
+     * applyPlan(); the moderation gate stages it instead.
+     *
+     * @param  array<int, array>  $items
+     * @return array{items: array<int, array>, decisions: ?array, existing_snapshots: array<int, array>}
+     */
+    public function computePlan(array $items, CalendarEvent $event, Team $team): array
+    {
         if (empty($items)) {
-            return collect();
+            return ['items' => [], 'decisions' => null, 'existing_snapshots' => []];
         }
 
-        // Load FULL models (no select(): Issue::saving hook calls IssueTypeResolver on EVERY
-        // save and uses the model's `type` + `organization_id` + `issue_type_id`. A partial-
-        // select hydration would leave those null, the resolver would fall back to default,
-        // and the saving hook would silently overwrite type to 'development' on update —
-        // demoting epics among others.
-        $existingIssues = Issue::query()
-            ->where(function ($q) use ($team) {
-                $q->where('team_id', $team->id)
-                    ->orWhere(function ($q2) use ($team) {
-                        $q2->whereNull('team_id')
-                            ->where('organization_id', $team->organization_id);
-                    });
-            })
-            ->where('status', '!=', MeetingTaskStatus::DONE->value)
-            ->get();
+        $items = array_values($items);
+        $existingIssues = $this->loadExistingOpenIssues($team);
+        $snapshots = $this->snapshotExisting($existingIssues);
 
         if ($existingIssues->isEmpty()) {
-            return $this->createAll($items, $event, $team, $user);
+            return ['items' => $items, 'decisions' => null, 'existing_snapshots' => $snapshots];
         }
 
         $decisions = $this->getDecisions($items, $existingIssues, $event);
@@ -66,7 +71,30 @@ class IssueMergeService
                 'calendar_event_id' => $event->id,
                 'team_id' => $team->id,
             ]);
+        }
 
+        return ['items' => $items, 'decisions' => $decisions, 'existing_snapshots' => $snapshots];
+    }
+
+    /**
+     * APPLY half (DB::transaction writes). Re-reads LIVE existing issues so a row closed/deleted
+     * between compute and apply is detected (applyDecisions' create-on-miss guard then handles it).
+     * Snapshots in the plan are for UI diff only and are never used for the write.
+     *
+     * @param  array{items: array<int, array>, decisions: ?array}  $plan
+     * @return Collection<int, Issue>
+     */
+    public function applyPlan(array $plan, CalendarEvent $event, Team $team, User $user): Collection
+    {
+        $items = $plan['items'] ?? [];
+        if (empty($items)) {
+            return collect();
+        }
+
+        $decisions = $plan['decisions'] ?? null;
+        $existingIssues = $this->loadExistingOpenIssues($team);
+
+        if ($decisions === null || $existingIssues->isEmpty()) {
             return $this->createAll($items, $event, $team, $user);
         }
 
@@ -74,17 +102,18 @@ class IssueMergeService
     }
 
     /**
-     * Generic persist via IssueSourceContext — works for any source (CalendarEvent, TaskDataUpload, etc.)
+     * Existing OPEN issues for a team (or org-wide null-team), as FULL models.
      *
-     * @return array{created: Collection<int, Issue>, updated: Collection<int, Issue>}
+     * No select(): Issue::saving hook calls IssueTypeResolver on EVERY save and uses the model's
+     * `type` + `organization_id` + `issue_type_id`. A partial-select hydration would leave those
+     * null, the resolver would fall back to default, and the saving hook would silently overwrite
+     * type to 'development' on update — demoting epics among others.
+     *
+     * @return Collection<int, Issue>
      */
-    public function persistFromSource(array $items, Team $team, User $user, IssueSourceContext $ctx): array
+    private function loadExistingOpenIssues(Team $team): Collection
     {
-        if (empty($items)) {
-            return ['created' => collect(), 'updated' => collect()];
-        }
-
-        $existingIssues = Issue::query()
+        return Issue::query()
             ->where(function ($q) use ($team) {
                 $q->where('team_id', $team->id)
                     ->orWhere(function ($q2) use ($team) {
@@ -94,10 +123,59 @@ class IssueMergeService
             })
             ->where('status', '!=', MeetingTaskStatus::DONE->value)
             ->get();
+    }
+
+    /**
+     * Read-only pre-image of existing issues for the moderation UI diff (UPDATE rows show
+     * old → new). updated_at is the optimistic-concurrency token the approve service compares
+     * against the live row before applying an update. Never used for the write itself.
+     *
+     * @param  Collection<int, Issue>  $existingIssues
+     * @return array<int, array>
+     */
+    private function snapshotExisting(Collection $existingIssues): array
+    {
+        return $existingIssues->map(fn (Issue $issue) => [
+            'id'            => $issue->id,
+            'name'          => $issue->name,
+            'assignee_name' => $issue->assignee_name,
+            'assignee_id'   => $issue->assignee_id,
+            'due_date'      => $issue->due_date?->toDateString(),
+            'priority'      => $issue->priority,
+            'updated_at'    => $issue->updated_at?->toIso8601String(),
+        ])->values()->all();
+    }
+
+    /**
+     * Generic persist via IssueSourceContext — works for any source (CalendarEvent, TaskDataUpload, etc.)
+     *
+     * @return array{created: Collection<int, Issue>, updated: Collection<int, Issue>}
+     */
+    public function persistFromSource(array $items, Team $team, User $user, IssueSourceContext $ctx): array
+    {
+        // Thin wrapper over the compute/apply seam — identical behavior to the pre-split method.
+        return $this->applyPlanFromSource($this->computePlanFromSource($items, $team, $ctx), $team, $user, $ctx);
+    }
+
+    /**
+     * COMPUTE half for the generic source (task-data) path. Read + merge-LLM only, NO writes.
+     * decisions===null means "create all" (no existing OR LLM failed).
+     *
+     * @param  array<int, array>  $items
+     * @return array{items: array<int, array>, decisions: ?array, existing_snapshots: array<int, array>}
+     */
+    public function computePlanFromSource(array $items, Team $team, IssueSourceContext $ctx): array
+    {
+        if (empty($items)) {
+            return ['items' => [], 'decisions' => null, 'existing_snapshots' => []];
+        }
+
+        $items = array_values($items);
+        $existingIssues = $this->loadExistingOpenIssues($team);
+        $snapshots = $this->snapshotExisting($existingIssues);
 
         if ($existingIssues->isEmpty()) {
-            $created = collect($items)->map(fn (array $item) => $this->createIssueFromSource($item, $team, $user, $ctx));
-            return ['created' => $created, 'updated' => collect()];
+            return ['items' => $items, 'decisions' => null, 'existing_snapshots' => $snapshots];
         }
 
         $decisions = $this->getDecisionsForSource($items, $existingIssues, $ctx);
@@ -107,11 +185,43 @@ class IssueMergeService
                 'source' => $ctx->sourceTitle(),
                 'team_id' => $team->id,
             ]);
-            $created = collect($items)->map(fn (array $item) => $this->createIssueFromSource($item, $team, $user, $ctx));
-            return ['created' => $created, 'updated' => collect()];
+        }
+
+        return ['items' => $items, 'decisions' => $decisions, 'existing_snapshots' => $snapshots];
+    }
+
+    /**
+     * APPLY half for the generic source path. Re-reads LIVE existing issues (stale-row detection).
+     *
+     * @param  array{items: array<int, array>, decisions: ?array}  $plan
+     * @return array{created: Collection<int, Issue>, updated: Collection<int, Issue>}
+     */
+    public function applyPlanFromSource(array $plan, Team $team, User $user, IssueSourceContext $ctx): array
+    {
+        $items = $plan['items'] ?? [];
+        if (empty($items)) {
+            return ['created' => collect(), 'updated' => collect()];
+        }
+
+        $decisions = $plan['decisions'] ?? null;
+        $existingIssues = $this->loadExistingOpenIssues($team);
+
+        if ($decisions === null || $existingIssues->isEmpty()) {
+            return $this->createAllFromSource($items, $team, $user, $ctx);
         }
 
         return $this->applyDecisionsFromSource($decisions, $items, $existingIssues, $team, $user, $ctx);
+    }
+
+    /**
+     * @param  array<int, array>  $items
+     * @return array{created: Collection<int, Issue>, updated: Collection<int, Issue>}
+     */
+    private function createAllFromSource(array $items, Team $team, User $user, IssueSourceContext $ctx): array
+    {
+        $created = collect($items)->map(fn (array $item) => $this->createIssueFromSource($item, $team, $user, $ctx));
+
+        return ['created' => $created, 'updated' => collect()];
     }
 
     private function getDecisionsForSource(array $items, Collection $existingIssues, IssueSourceContext $ctx): ?array

@@ -9,6 +9,8 @@ use App\Http\Resources\API\v1\TaskDataUploadFeedResource;
 use App\Http\Resources\API\v1\TranscriptUploadDetailResource;
 use App\Http\Resources\API\v1\TranscriptUploadFeedResource;
 use App\Http\Responses\ApiResponse;
+use App\Models\CalendarEvent;
+use App\Models\ExtractionPlan;
 use App\Models\Issue;
 use App\Models\TaskDataUpload;
 use App\Models\TranscriptUpload;
@@ -119,6 +121,10 @@ class UploadLogController extends Controller
             $resource->processing = app(TranscriptUploadDetailService::class)->derive($record->calendarEvent);
         }
 
+        if (UploadStatus::normalize($record->status) === UploadStatus::REVIEW && $record->calendar_event_id) {
+            $resource->plan = $this->loadPlan(CalendarEvent::class, $record->calendar_event_id);
+        }
+
         return ApiResponse::success(data: $resource);
     }
 
@@ -134,12 +140,23 @@ class UploadLogController extends Controller
 
         $resource = TaskDataUploadDetailResource::make($record);
 
-        if (UploadStatus::normalize($record->status) === UploadStatus::DONE) {
+        $normalized = UploadStatus::normalize($record->status);
+        if ($normalized === UploadStatus::DONE) {
             $resource->issues = $this->visibleCreatedIssues($record, $user);
             $resource->issuesUpdated = $this->visibleUpdatedIssues($record, $user);
+        } elseif ($normalized === UploadStatus::REVIEW) {
+            $resource->plan = $this->loadPlan(TaskDataUpload::class, $record->id);
         }
 
         return ApiResponse::success(data: $resource);
+    }
+
+    /** Decoded moderation-plan payload for the upload's source, or null when no plan exists. */
+    private function loadPlan(string $sourceableType, int $sourceableId): ?array
+    {
+        return ExtractionPlan::where('sourceable_type', $sourceableType)
+            ->where('sourceable_id', $sourceableId)
+            ->first()?->plan;
     }
 
     /**

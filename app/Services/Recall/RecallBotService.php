@@ -39,6 +39,12 @@ class RecallBotService
                             'recallai_streaming' => [
                                 'mode' => 'prioritize_accuracy'
                             ]
+                        ],
+                        // Per-participant audio streams → speaker attribution by stream,
+                        // not by acoustic guessing. Prevents diarization fragmentation
+                        // (one speaker's words misattributed mid-sentence to another).
+                        'diarization' => [
+                            'use_separate_streams_when_available' => true
                         ]
                     ]
                 ]
@@ -78,6 +84,12 @@ class RecallBotService
                         'recallai_streaming' => [
                             'mode' => 'prioritize_accuracy'
                         ]
+                    ],
+                    // Per-participant audio streams → speaker attribution by stream,
+                    // not by acoustic guessing. Prevents diarization fragmentation
+                    // (one speaker's words misattributed mid-sentence to another).
+                    'diarization' => [
+                        'use_separate_streams_when_available' => true
                     ]
                 ]
             ],

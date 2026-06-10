@@ -154,6 +154,13 @@ Schedule::command('digests:prune')
     ->name('digests:prune')
     ->withoutOverlapping();
 
+// Pre-moderation: fail extraction plans stuck in 'collecting' beyond TTL (anti-strand backstop).
+// No-op unless a manual upload has produced plans; never touches the Recall flow.
+Schedule::command('extraction:reap-stuck-plans')
+    ->everyFifteenMinutes()
+    ->name('extraction:reap-stuck-plans')
+    ->withoutOverlapping();
+
 // Daily issue health analysis per team
 Schedule::command('issues:generate-health-reports')
     ->dailyAt('10:00')

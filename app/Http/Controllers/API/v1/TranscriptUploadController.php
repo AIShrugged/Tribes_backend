@@ -7,8 +7,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\UploadTranscriptRequest;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
+use App\Models\ExtractionPlan;
 use App\Models\Team;
 use App\Models\TranscriptUpload;
+use App\Models\User;
 use App\Services\CalendarEventOrganizationResolver;
 use App\Services\Transcript\Exceptions\TooManyEntriesException;
 use App\Services\Transcript\Exceptions\TranscriptParseException;
@@ -53,19 +55,47 @@ class TranscriptUploadController extends Controller
 
         try {
             $event  = $this->service->resolveEvent($request, $user);
+
+            // EVERY upload through this controller is a manual admin upload → always moderate,
+            // including "attach transcript to an existing (Recall) meeting" (the event keeps its
+            // recall platform, so we key moderation on the plan's existence, NOT on platform).
+            // Recall ingestion never reaches this controller (it goes via ParseTranscriptJob).
+            // The collecting plan AND the upload row's calendar_event_id must be committed BEFORE
+            // parseAndPersist dispatches TranscriptParsed — under a sync queue the
+            // ShouldQueueAfterCommit producers run immediately and must find both to stage/flip.
+            $gated = true;
+
+            if ($gated) {
+                $this->safeMark(fn () => $record?->update([
+                    'status'            => 'processing',
+                    'calendar_event_id' => $event->id,
+                    'organization_id'   => $this->resolveUploadOrg($event, $request),
+                ]));
+                $this->createExtractionPlan($event, $request, $user);
+            }
+
             $result = $this->service->parseAndPersist($event, $request, $user);
 
-            $this->safeMark(fn () => $record?->update([
-                'status'                   => 'done',
-                'calendar_event_id'        => $event->id,
-                'organization_id'          => $this->resolveUploadOrg($event, $request),
-                'transcript_entries_count' => $result['transcript_entries_count'],
-                'participants_count'       => $result['participants_count'],
-            ]));
+            // Non-gated: finalize 'done' as before. Gated: the barrier coordinator owns the status
+            // (processing → pending_review → done/failed); only stamp the counts here.
+            $this->safeMark(fn () => $record?->update($gated
+                ? [
+                    'transcript_entries_count' => $result['transcript_entries_count'],
+                    'participants_count'       => $result['participants_count'],
+                ]
+                : [
+                    'status'                   => 'done',
+                    'calendar_event_id'        => $event->id,
+                    'organization_id'          => $this->resolveUploadOrg($event, $request),
+                    'transcript_entries_count' => $result['transcript_entries_count'],
+                    'participants_count'       => $result['participants_count'],
+                ]));
 
             return ApiResponse::success(
                 message: 'Transcript uploaded',
                 data: [
+                    'upload_id'                => $record?->id,
+                    'moderation'               => $gated,
                     'calendar_event_id'        => $result['calendar_event']->id,
                     'transcript_entries_count' => $result['transcript_entries_count'],
                     'participants_count'       => $result['participants_count'],
@@ -164,6 +194,35 @@ class TranscriptUploadController extends Controller
             'CONTENT_NOT_RELEVANT'  => 'Transcript does not appear to be related to this organization\'s work',
             default                 => 'Upload could not be processed',
         };
+    }
+
+    /**
+     * Eagerly create the collecting moderation plan (single writer — no firstOrCreate race). The
+     * issues section is expected only when the issue-extraction branch will actually dispatch
+     * (CalendarEventOrganizationResolver::resolve != null), mirroring GenerateFollowup's own gate so
+     * the barrier never waits for a section that never arrives. Best-effort like the other log writes.
+     */
+    private function createExtractionPlan(CalendarEvent $event, UploadTranscriptRequest $request, User $user): void
+    {
+        $this->safeMark(function () use ($event, $request, $user) {
+            $expected = ['decisions'];
+            if ($this->orgResolver->resolve($event) !== null) {
+                $expected[] = 'issues';
+            }
+
+            ExtractionPlan::updateOrCreate(
+                ['sourceable_type' => CalendarEvent::class, 'sourceable_id' => $event->id],
+                [
+                    'status'            => ExtractionPlan::STATUS_COLLECTING,
+                    'team_id'           => $this->orgResolver->resolveDefaultTeamId($event),
+                    'organization_id'   => $this->resolveUploadOrg($event, $request),
+                    'user_id'           => $event->creator_user_id ?? $user->id,
+                    'expected_sections' => $expected,
+                    'section_status'    => [],
+                    'plan'              => ['issues' => null, 'decisions' => null, 'review' => null],
+                ],
+            );
+        });
     }
 
     /** Run a best-effort upload-log write; a logging failure must never break the upload. */

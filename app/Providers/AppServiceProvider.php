@@ -98,5 +98,13 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(60)->by($user?->id ?: $request->ip());
         });
+
+        // Pre-moderation approve/reject: each approve replays ~10 LLM/notify jobs, so it is tighter
+        // than the read limiter but is not a per-upload create.
+        RateLimiter::for('upload-approve', function ($request) {
+            $user = $request->user();
+
+            return Limit::perMinute(10)->by($user?->id ?: $request->ip());
+        });
     }
 }
