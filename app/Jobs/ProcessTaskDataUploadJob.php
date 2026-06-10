@@ -3,16 +3,16 @@
 namespace App\Jobs;
 
 use App\Exceptions\ContentNotRelevantException;
-use App\Models\Issue;
+use App\Models\ExtractionPlan;
 use App\Models\TaskDataUpload;
 use App\Models\Team;
 use App\Models\User;
-use App\Services\Issue\IssueAutoPipelineDispatcher;
+use App\Services\Extraction\ExtractionPlanSections;
+use App\Services\TaskData\TaskDataFanout;
 use App\Services\TaskData\TaskDataIssueExtractionService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Telegram\Bot\Api;
 
 class ProcessTaskDataUploadJob implements ShouldQueue
 {
@@ -50,43 +50,21 @@ class ProcessTaskDataUploadJob implements ShouldQueue
 
             $items = $extractionService->extractItems($this->content, $upload, $team);
 
+            // Pre-moderation is the concept for DASHBOARD task-data uploads: compute the plan WITHOUT
+            // writing, stage it for human review, and STOP before persist + fanout (no DB rows, no
+            // Telegram). Telegram-origin uploads (source_telegram_chat_id set) are excluded — that path
+            // has no dashboard reviewer and expects an immediate report back to the chat, like Recall.
+            if ($upload->source_telegram_chat_id === null) {
+                $this->stagePlan($extractionService, $upload, $team, $user, $items);
+
+                return;
+            }
+
             $upload->update(['status' => 'deduplicating']);
 
             $result = $extractionService->persistItems($items, $team, $user, $upload);
 
-            $allIssueIds = $result['created']->pluck('id')
-                ->merge($result['updated']->pluck('id'))
-                ->filter()
-                ->values()
-                ->all();
-
-            if ($allIssueIds !== []) {
-                app(IssueAutoPipelineDispatcher::class)->dispatchForStandalone($allIssueIds);
-            }
-
-            $updatedIds = $result['updated']->pluck('id')->filter()->values()->all();
-
-            $upload->update([
-                'status'            => 'done',
-                'issues_created'    => $result['created']->count(),
-                'issues_updated'    => $result['updated']->count(),
-                'updated_issue_ids' => $updatedIds,
-            ]);
-
-            Log::info('task_data_upload.done', [
-                'upload_id'      => $upload->id,
-                'team_id'        => $team->id,
-                'issues_created' => $result['created']->count(),
-                'issues_updated' => $result['updated']->count(),
-            ]);
-
-            $this->notifyIncompleteIssues($upload, $user, $result['created']);
-
-            SendTaskDataUploadReportJob::dispatch(
-                $upload,
-                $result['created']->pluck('id')->all(),
-                $result['updated']->pluck('id')->all(),
-            );
+            app(TaskDataFanout::class)->afterIssues($upload, $user, $result['created'], $result['updated']);
         } catch (ContentNotRelevantException $e) {
             $upload->update([
                 'status'        => 'failed',
@@ -112,6 +90,41 @@ class ProcessTaskDataUploadJob implements ShouldQueue
     }
 
     /**
+     * Stage the computed plan for moderation. Single-writer create (no barrier needed — task-data has
+     * one section), so the upload row goes straight to pending_review.
+     *
+     * @param  array<int, array>  $items
+     */
+    private function stagePlan(
+        TaskDataIssueExtractionService $extractionService,
+        TaskDataUpload $upload,
+        Team $team,
+        User $user,
+        array $items,
+    ): void {
+        $section = ExtractionPlanSections::issues($extractionService->computePlan($items, $team, $upload));
+        $section['team_id'] = $team->id;
+        $section['user_id'] = $user->id;
+
+        ExtractionPlan::updateOrCreate(
+            ['sourceable_type' => TaskDataUpload::class, 'sourceable_id' => $upload->id],
+            [
+                'status'            => ExtractionPlan::STATUS_PENDING_REVIEW,
+                'team_id'           => $team->id,
+                'organization_id'   => $team->organization_id,
+                'user_id'           => $user->id,
+                'expected_sections' => ['issues'],
+                'section_status'    => ['issues' => 'ready'],
+                'plan'              => ['issues' => $section, 'decisions' => null, 'review' => null],
+            ],
+        );
+
+        $upload->update(['status' => 'pending_review']);
+
+        Log::info('task_data_upload.pending_review', ['upload_id' => $upload->id]);
+    }
+
+    /**
      * Fired by the queue when the job times out or throws past handle()'s own catch.
      * Marks a stranded (non-done) row failed so the Upload Log shows a real status and
      * the frontend detail poll terminates — there is no separate reaper.
@@ -121,67 +134,5 @@ class ProcessTaskDataUploadJob implements ShouldQueue
         TaskDataUpload::where('id', $this->uploadId)
             ->where('status', '!=', 'done')
             ->update(['status' => 'failed', 'error_message' => 'Could not process uploaded file']);
-    }
-
-    /**
-     * Check created issues for missing assignee/due_date and TG-notify the uploader.
-     * Mirrors IncompleteIssuesNotifier logic but without CalendarEvent dependency.
-     */
-    private function notifyIncompleteIssues(TaskDataUpload $upload, User $uploader, $createdIssues): void
-    {
-        $incomplete = $createdIssues->filter(function ($issue) {
-            return empty($issue->assignee_id) || empty($issue->due_date);
-        });
-
-        if ($incomplete->isEmpty()) {
-            return;
-        }
-
-        $chatId = $uploader->telegramUser?->telegram_user_id;
-        if (!$chatId) {
-            return;
-        }
-
-        $frontendUrl = rtrim(config('app.frontend_url', ''), '/');
-        $filename = e($upload->original_filename);
-
-        $lines = [];
-        $lines[] = "\xF0\x9F\x93\x8B Tasks from <b>\"{$filename}\"</b> need attention:";
-        $lines[] = '';
-
-        foreach ($incomplete->take(10) as $i => $issue) {
-            $name = e($issue->name);
-            $url = "{$frontendUrl}/dashboard/issues/{$issue->id}";
-            $missing = [];
-            if (empty($issue->assignee_id)) {
-                $missing[] = 'no assignee';
-            }
-            if (empty($issue->due_date)) {
-                $missing[] = 'no due date';
-            }
-            $lines[] = ($i + 1) . ". <a href=\"{$url}\">{$name}</a> — " . implode(', ', $missing);
-        }
-
-        if ($incomplete->count() > 10) {
-            $lines[] = '... and ' . ($incomplete->count() - 10) . ' more';
-        }
-
-        $lines[] = '';
-        $lines[] = 'Please fill in the missing fields in the dashboard.';
-
-        try {
-            $telegram = new Api(config('telegram.bot_token'));
-            $telegram->sendMessage([
-                'chat_id'                  => $chatId,
-                'text'                     => implode("\n", $lines),
-                'parse_mode'               => 'HTML',
-                'disable_web_page_preview' => true,
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('ProcessTaskDataUploadJob: incomplete issues notify failed', [
-                'upload_id' => $upload->id,
-                'error'     => $e->getMessage(),
-            ]);
-        }
     }
 }

@@ -211,7 +211,7 @@ class TodayBriefingService
                 ->forMeeting($event->id)
                 ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
-                ->with(['assignee', 'issueType'])
+                ->with(['assignee', 'issueType', 'user'])
                 ->get();
 
             $totalTasks = $allTasks->count();
@@ -220,12 +220,14 @@ class TodayBriefingService
 
             // Pre-existing issues this meeting augmented via a merge comment (kept separate
             // from new action items — they do NOT count toward the readiness bar/totals).
+            // `comments` is eager-loaded so the task dropdown can show the merge note
+            // (context + author) written for THIS meeting.
             $updatedTasks = Issue::withoutTrashed()
                 ->updatedForMeeting($event->id)
                 ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                 ->whereNotIn('status', ['cancelled'])
                 ->whereNotIn('id', $allTasks->pluck('id'))
-                ->with(['assignee', 'issueType'])
+                ->with(['assignee', 'issueType', 'comments'])
                 ->get();
         } else {
             $prevEvent = $this->meetingContext->findPreviousEventWithTasks($event);
@@ -239,7 +241,7 @@ class TodayBriefingService
                     ->forMeeting($prevEvent->id)
                     ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
                     ->whereNotIn('status', ['cancelled'])
-                    ->with(['assignee', 'issueType'])
+                    ->with(['assignee', 'issueType', 'user'])
                     ->get();
 
                 $totalTasks = $allPrevTasks->count();
@@ -265,7 +267,7 @@ class TodayBriefingService
             tasks: $prevTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
             total_tasks_count: $totalTasks,
             done_tasks_count: $doneTasks,
-            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
+            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, $event->id))->values()->all(),
             agenda_content: $agendaContent,
         );
     }
@@ -342,9 +344,22 @@ class TodayBriefingService
         return AgendaTemplate::where('team_id', $teamId)->first();
     }
 
-    private function buildMeetingTaskDTO(Issue $issue): TodayMeetingTaskDTO
+    private function buildMeetingTaskDTO(Issue $issue, ?int $updateContextEventId = null): TodayMeetingTaskDTO
     {
         $isOverdue = $issue->due_date && Carbon::parse($issue->due_date)->lt(Carbon::today());
+
+        // Why this task surfaced on this meeting.
+        //  - updated tasks ($updateContextEventId set): the merge comment written for THIS
+        //    meeting carries both who updated it and what changed;
+        //  - generated tasks: the extractor's "## Context" section + the task author (creator).
+        if ($updateContextEventId !== null) {
+            $comment = $issue->comments->firstWhere('calendar_event_id', $updateContextEventId);
+            $authorName = $comment?->user?->name;
+            $context = $comment ? trim($comment->content) : null;
+        } else {
+            $authorName = $issue->user?->name;
+            $context = $this->extractContextSection($issue->description);
+        }
 
         return new TodayMeetingTaskDTO(
             id: $issue->id,
@@ -356,7 +371,37 @@ class TodayBriefingService
             due_date: $issue->due_date?->format('Y-m-d'),
             is_overdue: $isOverdue,
             is_epic: $issue->isEpic(),
+            author_name: $authorName,
+            context: $context !== '' ? $context : null,
         );
+    }
+
+    /**
+     * Pull the "why this task exists" part out of an extractor-written description.
+     * Prefers an explicit "## Context" section; otherwise falls back to the lead text
+     * before the first markdown heading (drops "## Steps" / "## Definition of done").
+     */
+    private function extractContextSection(?string $description): ?string
+    {
+        if ($description === null) {
+            return null;
+        }
+
+        $text = trim($description);
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match('/##\s*Context\s*\R(.*?)(?=\R##\s|\z)/isu', $text, $m)) {
+            $section = trim($m[1]);
+            if ($section !== '') {
+                return $section;
+            }
+        }
+
+        $lead = trim(preg_split('/\R##\s/u', $text)[0] ?? '');
+
+        return $lead !== '' ? $lead : $text;
     }
 
     private function buildCarriedTaskDTO(Issue $issue, array $syncsCounts): TodayCarriedTaskDTO

@@ -23,7 +23,11 @@ class MeetingReviewService
     ) {
     }
 
-    public function generate(CalendarEvent $event): MeetingReview
+    /**
+     * @param  bool  $dispatchNotification  When false (manual upload + moderation), the review row is
+     *   still generated but MeetingReviewGenerated is NOT dispatched — the approve handler re-fires it.
+     */
+    public function generate(CalendarEvent $event, bool $dispatchNotification = true): MeetingReview
     {
         $review = $event->meetingReview()->updateOrCreate([], [
             'status'           => FollowupStatus::IN_PROGRESS->value,
@@ -67,7 +71,9 @@ class MeetingReviewService
                 'previous_suggestions_check'  => $data['previous_suggestions_check'] ?? [],
             ]);
 
-            MeetingReviewGenerated::dispatch($review->fresh());
+            if ($dispatchNotification) {
+                MeetingReviewGenerated::dispatch($review->fresh());
+            }
 
             if ($event->source?->user) {
                 AgentActivityLog::recordActivity(

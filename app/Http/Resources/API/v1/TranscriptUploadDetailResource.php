@@ -22,6 +22,9 @@ class TranscriptUploadDetailResource extends JsonResource
     /** Derived live by the controller when calendar_event_id is set; null otherwise. */
     public ?array $processing = null;
 
+    /** Staged moderation plan; set by the controller only when status normalizes to 'review'. */
+    public ?array $plan = null;
+
     public function toArray(Request $request): array
     {
         return [
@@ -35,6 +38,7 @@ class TranscriptUploadDetailResource extends JsonResource
             'transcript_entries_count' => $this->transcript_entries_count,
             'participants_count'       => $this->participants_count,
             'processing'               => $this->processing,
+            'plan'                     => $this->plan,
             'uploader_name'            => $this->user?->name,
             'created_at'               => $this->created_at?->toISOString(),
             'updated_at'               => $this->updated_at?->toISOString(),
