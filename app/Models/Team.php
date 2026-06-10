@@ -98,6 +98,11 @@ class Team extends Model
         return $this->hasMany(Workspace::class);
     }
 
+    public function healthReports(): HasMany
+    {
+        return $this->hasMany(IssueHealthReport::class);
+    }
+
     public function getEmployeeCountAttribute(): int
     {
         return $this->users->count();

@@ -35,9 +35,11 @@ class IssueExtractionService
 
         $orgContext = $team->organization?->context;
 
+        $endOfWeek = now()->endOfWeek(\Carbon\Carbon::FRIDAY)->toDateString();
+
         $messages = [
             new MessageDTO('system', $this->buildSystemPrompt($orgContext)),
-            new MessageDTO('user', "Дата встречи: {$event->starts_at->toDateString()}\nТекущая дата: ".now()->toDateString()."\n\nТранскрипт встречи:\n".$transcript),
+            new MessageDTO('user', "Дата встречи: {$event->starts_at->toDateString()}\nТекущая дата: ".now()->toDateString()."\nКонец текущей недели (дедлайн по умолчанию): {$endOfWeek}\n\nТранскрипт встречи:\n".$transcript),
         ];
 
         try {

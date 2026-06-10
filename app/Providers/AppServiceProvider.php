@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Models\IssueAttachment;
+use App\Models\IssueHealthReport;
 use App\Models\Organization;
 use App\Observers\OrganizationObserver;
 use App\Policies\IssueAttachmentPolicy;
+use App\Policies\IssueHealthReportPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
@@ -46,6 +48,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(IssueAttachment::class, IssueAttachmentPolicy::class);
+        Gate::policy(IssueHealthReport::class, IssueHealthReportPolicy::class);
         Organization::observe(OrganizationObserver::class);
 
         Http::macro('withProxy', function () {

@@ -56,7 +56,7 @@ The author is the one whose VOICE proposed the task. If unclear from the transcr
 
 **assignee_name** — the name of the person who EXPLICITLY took the task or was EXPLICITLY assigned it in the conversation. If unclear — null.
 
-**due_date** — only if a deadline was EXPLICITLY mentioned in the meeting ("by Friday", "by April 1st", "next week"). Convert relative dates from the meeting date. If no deadline was mentioned — null.
+**due_date** — if a deadline was EXPLICITLY mentioned in the meeting ("by Friday", "by April 1st", "next week"), use that (convert relative dates from the meeting date). If no specific deadline was mentioned — use the end-of-week date provided in the user message.
 
 **priority** — choose based on what was said:
 - "critical" — explicit blockers, prod down, "drop everything else", "must be done today"

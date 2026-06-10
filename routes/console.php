@@ -153,3 +153,9 @@ Schedule::command('digests:prune')
     ->daily()
     ->name('digests:prune')
     ->withoutOverlapping();
+
+// Daily issue health analysis per team
+Schedule::command('issues:generate-health-reports')
+    ->dailyAt('10:00')
+    ->name('issues:generate-health-reports')
+    ->withoutOverlapping();

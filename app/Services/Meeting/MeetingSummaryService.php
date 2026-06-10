@@ -85,12 +85,12 @@ class MeetingSummaryService
     {
         $example = $this->getProtocolExample();
         $meetingDate = \Carbon\Carbon::parse($event->starts_at)->format('d.m.Y');
-        $nextDay = \Carbon\Carbon::parse($event->starts_at)->addDay()->format('d.m.Y');
+        $endOfWeek = \Carbon\Carbon::parse($event->starts_at)->endOfWeek(\Carbon\Carbon::FRIDAY)->format('d.m.Y');
 
         $substitutions = [
             '{transcript}'   => $transcript,
             '{meeting_date}' => $meetingDate,
-            '{next_day}'     => $nextDay,
+            '{end_of_week}'  => $endOfWeek,
             '{example}'      => $example,
         ];
 
@@ -104,10 +104,10 @@ class MeetingSummaryService
             organizationId: $event->source?->organization_id,
             fallbackView: 'llm-prompts.meeting.summary-user',
             variables: [
-                'transcript' => $transcript,
+                'transcript'   => $transcript,
                 'meeting_date' => $meetingDate,
-                'next_day' => $nextDay,
-                'example' => $example,
+                'end_of_week'  => $endOfWeek,
+                'example'      => $example,
             ],
             name: 'Meeting summary prompt',
         );
