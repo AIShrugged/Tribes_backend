@@ -64,6 +64,7 @@ use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\TaskDataUploadController;
 use App\Http\Controllers\API\v1\TranscriptUploadController;
 use App\Http\Controllers\API\v1\UploadLogController;
+use App\Http\Controllers\API\v1\ExtractionPlanController;
 use App\Http\Controllers\API\v1\UserController;
 use App\Http\Controllers\API\v1\UserFocusController;
 use App\Http\Controllers\API\v1\UserPreferencesController;
@@ -222,6 +223,20 @@ Route::group(['prefix' => 'v1'], function () {
             ->whereNumber('id')
             ->middleware('throttle:uploads-read')
             ->name('uploads.show');
+
+        // Pre-moderation review surface (manual uploads only; 404 when no plan exists for the source).
+        Route::get('uploads/{type}/{id}/plan', [ExtractionPlanController::class, 'show'])
+            ->whereIn('type', ['transcript', 'task_data'])->whereNumber('id')
+            ->middleware('throttle:uploads-read')->name('uploads.plan.show');
+        Route::patch('uploads/{type}/{id}/plan', [ExtractionPlanController::class, 'update'])
+            ->whereIn('type', ['transcript', 'task_data'])->whereNumber('id')
+            ->middleware('throttle:uploads-read')->name('uploads.plan.update');
+        Route::post('uploads/{type}/{id}/approve', [ExtractionPlanController::class, 'approve'])
+            ->whereIn('type', ['transcript', 'task_data'])->whereNumber('id')
+            ->middleware('throttle:upload-approve')->name('uploads.plan.approve');
+        Route::post('uploads/{type}/{id}/reject', [ExtractionPlanController::class, 'reject'])
+            ->whereIn('type', ['transcript', 'task_data'])->whereNumber('id')
+            ->middleware('throttle:upload-approve')->name('uploads.plan.reject');
 
         Route::get('me/focus', [UserFocusController::class, 'show'])->name('me.focus.show');
         Route::get('me/issues/focused', [FocusedIssuesController::class, 'index'])->name('me.issues.focused');

@@ -15,18 +15,21 @@ namespace App\Support;
 class UploadStatus
 {
     public const PROCESSING = 'processing';
+    public const REVIEW = 'review';
     public const DONE = 'done';
     public const FAILED = 'failed';
 
     /** The normalized values, e.g. for FormRequest Rule::in validation. */
-    public const NORMALIZED = [self::PROCESSING, self::DONE, self::FAILED];
+    public const NORMALIZED = [self::PROCESSING, self::REVIEW, self::DONE, self::FAILED];
 
     public static function normalize(string $raw): string
     {
         return match ($raw) {
-            'done'   => self::DONE,
-            'failed' => self::FAILED,
-            default  => self::PROCESSING,
+            'done'           => self::DONE,
+            'failed'         => self::FAILED,
+            'rejected'       => self::FAILED, // discarded-in-review is terminal; UI shows the message
+            'pending_review' => self::REVIEW,
+            default          => self::PROCESSING,
         };
     }
 
@@ -39,8 +42,8 @@ class UploadStatus
     public static function rawStatusesFor(string $normalized, string $type): array
     {
         $byType = [
-            'task_data'  => ['queued', 'processing', 'extracting', 'analyzing', 'deduplicating', 'done', 'failed'],
-            'transcript' => ['pending', 'done', 'failed'],
+            'task_data'  => ['queued', 'processing', 'extracting', 'analyzing', 'deduplicating', 'pending_review', 'done', 'failed', 'rejected'],
+            'transcript' => ['pending', 'processing', 'pending_review', 'done', 'failed', 'rejected'],
         ];
 
         return array_values(array_filter(

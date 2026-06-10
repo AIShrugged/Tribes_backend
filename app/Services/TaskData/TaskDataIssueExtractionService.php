@@ -109,6 +109,21 @@ class TaskDataIssueExtractionService
         return $result;
     }
 
+    /**
+     * COMPUTE half (pre-moderation): run the merge-LLM dedup against existing open issues but write
+     * NOTHING. Returns the storable plan section {items, decisions, existing_snapshots}. The approve
+     * handler later replays IssueMergeService::applyPlanFromSource() to materialize the rows.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array{items: array<int, array>, decisions: ?array, existing_snapshots: array<int, array>}
+     */
+    public function computePlan(array $items, Team $team, TaskDataUpload $upload): array
+    {
+        $ctx = new TaskDataUploadSourceContext($upload);
+
+        return $this->issueMerge->computePlanFromSource($items, $team, $ctx);
+    }
+
     private function buildSystemPrompt(?string $orgContext = null): string
     {
         $contextSection = $orgContext

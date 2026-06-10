@@ -26,6 +26,9 @@ class TaskDataUploadDetailResource extends JsonResource
     /** Issues this upload merely updated, re-filtered for visibility; empty unless done. */
     public array $issuesUpdated = [];
 
+    /** Staged moderation plan; set by the controller only when status normalizes to 'review'. */
+    public ?array $plan = null;
+
     public function toArray(Request $request): array
     {
         return [
@@ -39,6 +42,7 @@ class TaskDataUploadDetailResource extends JsonResource
             'issues_updated'    => $this->issues_updated,
             'issues'            => $this->issues,
             'updated_issues'    => $this->issuesUpdated,
+            'plan'              => $this->plan,
             'uploader_name'     => $this->user?->name,
             'team_name'         => $this->team?->name,
             'created_at'        => $this->created_at?->toISOString(),
