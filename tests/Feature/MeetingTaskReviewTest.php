@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\PruneResolvedMeetingTaskItemsJob;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\MeetingTaskReview;
+use App\Models\MeetingTaskReviewItem;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\TranscriptEntry;
@@ -92,13 +95,11 @@ class MeetingTaskReviewTest extends TestCase
     public function it_returns_empty_blocks_when_no_issues()
     {
         $service = app(MeetingTaskReviewService::class);
-        $review = $service->generate($this->event, $this->org->id);
 
-        $blocks = $service->getBlocks($review);
+        $blocks = $service->getHealthBlocks($this->org->id);
 
         $this->assertIsArray($blocks);
-        // Should be empty or have no issues in blocks when there are no issues
-        collect($blocks)->each(fn($block) => $this->assertEquals(0, $block['count']));
+        $this->assertEmpty($blocks);
     }
 
     #[Test]
@@ -113,8 +114,7 @@ class MeetingTaskReviewTest extends TestCase
         ]);
 
         $service = app(MeetingTaskReviewService::class);
-        $review = $service->generate($this->event, $this->org->id);
-        $blocks = $service->getBlocks($review);
+        $blocks = $service->getHealthBlocks($this->org->id);
 
         $noAssigneeBlock = collect($blocks)->firstWhere('type', 'no_assignee');
         $this->assertNotNull($noAssigneeBlock);
@@ -134,11 +134,73 @@ class MeetingTaskReviewTest extends TestCase
         ]);
 
         $service = app(MeetingTaskReviewService::class);
-        $review = $service->generate($this->event, $this->org->id);
-        $blocks = $service->getBlocks($review);
+        $blocks = $service->getHealthBlocks($this->org->id);
 
         $overdueBlock = collect($blocks)->firstWhere('type', 'overdue');
         $this->assertNotNull($overdueBlock);
         $this->assertGreaterThan(0, $overdueBlock['count']);
+    }
+
+    #[Test]
+    public function it_prunes_items_where_issue_status_is_now_closed()
+    {
+        $issue = Issue::create([
+            'organization_id' => $this->org->id,
+            'name' => 'Task Done',
+            'status' => 'in_progress',
+            'user_id' => $this->user->id,
+        ]);
+
+        $review = MeetingTaskReview::create([
+            'calendar_event_id' => $this->event->id,
+            'organization_id' => $this->org->id,
+            'status' => 'done',
+            'analyzed_count' => 1,
+        ]);
+
+        $item = MeetingTaskReviewItem::create([
+            'meeting_task_review_id' => $review->id,
+            'issue_id' => $issue->id,
+            'progress' => 'done',
+            'confidence' => 'high',
+        ]);
+
+        // Item exists while issue is still in_progress
+        (new PruneResolvedMeetingTaskItemsJob($this->org->id))->handle();
+        $this->assertDatabaseHas('meeting_task_review_items', ['id' => $item->id]);
+
+        // User updates the issue status to done
+        $issue->update(['status' => 'done']);
+
+        (new PruneResolvedMeetingTaskItemsJob($this->org->id))->handle();
+        $this->assertDatabaseMissing('meeting_task_review_items', ['id' => $item->id]);
+    }
+
+    #[Test]
+    public function it_does_not_prune_blocked_items_even_when_issue_is_closed()
+    {
+        $issue = Issue::create([
+            'organization_id' => $this->org->id,
+            'name' => 'Blocked Task',
+            'status' => 'done',
+            'user_id' => $this->user->id,
+        ]);
+
+        $review = MeetingTaskReview::create([
+            'calendar_event_id' => $this->event->id,
+            'organization_id' => $this->org->id,
+            'status' => 'done',
+            'analyzed_count' => 1,
+        ]);
+
+        $item = MeetingTaskReviewItem::create([
+            'meeting_task_review_id' => $review->id,
+            'issue_id' => $issue->id,
+            'progress' => 'blocked',
+            'confidence' => 'medium',
+        ]);
+
+        (new PruneResolvedMeetingTaskItemsJob($this->org->id))->handle();
+        $this->assertDatabaseHas('meeting_task_review_items', ['id' => $item->id]);
     }
 }
