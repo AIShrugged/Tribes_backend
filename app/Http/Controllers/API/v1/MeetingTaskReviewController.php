@@ -5,7 +5,6 @@ namespace App\Http\Controllers\API\v1;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
-use App\Models\Issue;
 use App\Models\MeetingTaskReview;
 use App\Services\Issue\MeetingTaskReviewService;
 use App\Services\TenantScopeValidator;
@@ -32,23 +31,20 @@ class MeetingTaskReviewController extends Controller
             ->latest('id')
             ->first();
 
-        if (!$review) {
-            return ApiResponse::error(message: 'No task review found', status: 404);
-        }
-
         $data = [
-            'id' => $review->id,
-            'calendar_event_id' => $review->calendar_event_id,
-            'status' => $review->status,
-            'analyzed_count' => $review->analyzed_count,
-            'error' => $review->error,
-            'generated_at' => $review->created_at,
-            'blocks' => [],
+            'review' => $review ? [
+                'id' => $review->id,
+                'calendar_event_id' => $review->calendar_event_id,
+                'status' => $review->status,
+                'analyzed_count' => $review->analyzed_count,
+                'error' => $review->error,
+                'generated_at' => $review->created_at,
+            ] : null,
+            'llm_blocks' => $review?->status === 'done'
+                ? $this->reviewService->getLlmBlocks($review)
+                : [],
+            'health_blocks' => $this->reviewService->getHealthBlocks($organizationId),
         ];
-
-        if ($review->status === 'done') {
-            $data['blocks'] = $this->reviewService->getBlocks($review);
-        }
 
         return ApiResponse::success(data: $data);
     }
@@ -58,24 +54,23 @@ class MeetingTaskReviewController extends Controller
         $event = CalendarEvent::findOrFail($calendarEventId);
         $review = MeetingTaskReview::where('calendar_event_id', $calendarEventId)->firstOrFail();
 
-        // For tenant scope validation, we need to verify the user can see this event's organization
         $orgId = $review->organization_id;
         $this->tenantScopeValidator->assertScopeIsValid($request->user(), $orgId, null);
 
         $data = [
-            'id' => $review->id,
-            'calendar_event_id' => $review->calendar_event_id,
-            'status' => $review->status,
-            'analyzed_count' => $review->analyzed_count,
-            'error' => $review->error,
-            'generated_at' => $review->created_at,
-            'blocks' => [],
+            'review' => [
+                'id' => $review->id,
+                'calendar_event_id' => $review->calendar_event_id,
+                'status' => $review->status,
+                'analyzed_count' => $review->analyzed_count,
+                'error' => $review->error,
+                'generated_at' => $review->created_at,
+            ],
+            'llm_blocks' => $review->status === 'done'
+                ? $this->reviewService->getLlmBlocks($review)
+                : [],
+            'health_blocks' => $this->reviewService->getHealthBlocks($orgId),
         ];
-
-        // Only compute blocks if review is done
-        if ($review->status === 'done') {
-            $data['blocks'] = $this->reviewService->getBlocks($review);
-        }
 
         return ApiResponse::success(data: $data);
     }

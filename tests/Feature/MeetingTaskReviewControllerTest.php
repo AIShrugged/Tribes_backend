@@ -65,12 +65,18 @@ class MeetingTaskReviewControllerTest extends TestCase
         $response->assertJson([
             'success' => true,
             'data' => [
-                'id' => $review->id,
-                'calendar_event_id' => $this->event->id,
-                'status' => 'done',
-                'analyzed_count' => 5,
+                'review' => [
+                    'id' => $review->id,
+                    'calendar_event_id' => $this->event->id,
+                    'status' => 'done',
+                    'analyzed_count' => 5,
+                ],
             ],
         ]);
+
+        $data = $response->json('data');
+        $this->assertIsArray($data['llm_blocks']);
+        $this->assertIsArray($data['health_blocks']);
     }
 
     #[Test]
@@ -83,7 +89,7 @@ class MeetingTaskReviewControllerTest extends TestCase
     }
 
     #[Test]
-    public function it_includes_blocks_only_when_done()
+    public function it_returns_empty_llm_blocks_when_pending()
     {
         MeetingTaskReview::create([
             'calendar_event_id' => $this->event->id,
@@ -96,7 +102,8 @@ class MeetingTaskReviewControllerTest extends TestCase
             ->getJson("/api/v1/calendar-events/{$this->event->id}/task-review");
 
         $response->assertOk();
-        $this->assertIsArray($response->json('data.blocks'));
-        $this->assertEmpty($response->json('data.blocks'));
+        $this->assertIsArray($response->json('data.llm_blocks'));
+        $this->assertEmpty($response->json('data.llm_blocks'));
+        $this->assertIsArray($response->json('data.health_blocks'));
     }
 }

@@ -130,41 +130,23 @@ class MeetingTaskReviewService
     }
 
     /**
-     * Compute health blocks from the review results + fresh issue data.
-     *
-     * @return array<int, array{type: string, label: string, issues: array}>
+     * @return array<int, array{type: string, label: string, count: int, issues: array}>
      */
-    public function getBlocks(MeetingTaskReview $review): array
+    public function getLlmBlocks(MeetingTaskReview $review): array
     {
-        $organizationId = $review->organization_id;
-
-        // Load issues with latest_comment_at for stuck calculation
-        $issuesMap = Issue::query()
-            ->activeForNudging()
-            ->inOrganization($organizationId)
-            ->withoutTrashed()
-            ->withMax('allComments as latest_comment_at', 'created_at')
-            ->with(['assignee'])
-            ->orderBy('id')
-            ->get()
-            ->keyBy('id')
-            ->all();
+        $issuesMap = $this->loadIssuesMap($review->organization_id);
 
         if (empty($issuesMap)) {
             return [];
         }
 
         $blocks = [];
-
         $resultsMap = $review->items->keyBy('issue_id');
 
         foreach ($issuesMap as $issue) {
-            $lastMovement = $this->lastMovement($issue);
-            $daysInactive = (int) $lastMovement->diffInDays(Carbon::now());
-
+            $daysInactive = (int) $this->lastMovement($issue)->diffInDays(Carbon::now());
             $item = $resultsMap->get($issue->id);
 
-            // status_not_updated: LLM said done but status is not done
             if ($item && $item->progress === 'done' && $issue->status !== 'done') {
                 $blocks['status_not_updated'][] = [
                     'id' => $issue->id,
@@ -179,7 +161,6 @@ class MeetingTaskReviewService
                 ];
             }
 
-            // blocked: LLM said blocked
             if ($item && $item->progress === 'blocked') {
                 $blocks['blocked'][] = [
                     'id' => $issue->id,
@@ -193,8 +174,27 @@ class MeetingTaskReviewService
                     'transcript_evidence' => $item->notes,
                 ];
             }
+        }
 
-            // no_assignee
+        return $this->formatBlocks($blocks);
+    }
+
+    /**
+     * @return array<int, array{type: string, label: string, count: int, issues: array}>
+     */
+    public function getHealthBlocks(int $organizationId): array
+    {
+        $issuesMap = $this->loadIssuesMap($organizationId);
+
+        if (empty($issuesMap)) {
+            return [];
+        }
+
+        $blocks = [];
+
+        foreach ($issuesMap as $issue) {
+            $daysInactive = (int) $this->lastMovement($issue)->diffInDays(Carbon::now());
+
             if (!$issue->assignee_id) {
                 $blocks['no_assignee'][] = [
                     'id' => $issue->id,
@@ -209,7 +209,6 @@ class MeetingTaskReviewService
                 ];
             }
 
-            // incomplete_info
             if (blank($issue->description) || strlen(trim($issue->name)) < 5) {
                 $blocks['incomplete_info'][] = [
                     'id' => $issue->id,
@@ -224,7 +223,6 @@ class MeetingTaskReviewService
                 ];
             }
 
-            // overdue
             if ($issue->due_date && Carbon::parse($issue->due_date)->lt(Carbon::today())) {
                 $blocks['overdue'][] = [
                     'id' => $issue->id,
@@ -239,7 +237,6 @@ class MeetingTaskReviewService
                 ];
             }
 
-            // stuck_in_progress: in [in_progress, review, reopen] for 6+ days
             if (in_array($issue->status, ['in_progress', 'review', 'reopen']) && $daysInactive >= 6) {
                 $blocks['stuck_in_progress'][] = [
                     'id' => $issue->id,
@@ -254,7 +251,6 @@ class MeetingTaskReviewService
                 ];
             }
 
-            // abandoned: any active status for 30+ days
             if ($daysInactive >= 30) {
                 $blocks['abandoned'][] = [
                     'id' => $issue->id,
@@ -270,7 +266,25 @@ class MeetingTaskReviewService
             }
         }
 
-        // Format blocks
+        return $this->formatBlocks($blocks);
+    }
+
+    private function loadIssuesMap(int $organizationId): array
+    {
+        return Issue::query()
+            ->activeForNudging()
+            ->inOrganization($organizationId)
+            ->withoutTrashed()
+            ->withMax('allComments as latest_comment_at', 'created_at')
+            ->with(['assignee'])
+            ->orderBy('id')
+            ->get()
+            ->keyBy('id')
+            ->all();
+    }
+
+    private function formatBlocks(array $blocks): array
+    {
         $labels = [
             'status_not_updated' => 'Выполнены, но статус не обновлён',
             'blocked' => 'Заблокированы',

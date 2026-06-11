@@ -102,16 +102,12 @@ class MeetingTaskReviewIntegrationTest extends TestCase
         $this->assertContains($review->status, ['done', 'pending', 'failed']);
         $this->assertGreaterThan(0, $review->analyzed_count);
 
-        // Get blocks
-        $blocks = $service->getBlocks($review);
+        // Get health blocks (always available, no LLM needed)
+        $healthBlocks = $service->getHealthBlocks($review->organization_id);
 
-        // Verify blocks
-        $this->assertIsArray($blocks);
+        $this->assertIsArray($healthBlocks);
 
-        // Check for identified blocks
-        $blockTypes = array_column($blocks, 'type');
-
-        // At least these blocks should be present for our test data
+        $blockTypes = array_column($healthBlocks, 'type');
         $this->assertContains('no_assignee', $blockTypes, 'Should identify issue without assignee');
         $this->assertContains('overdue', $blockTypes, 'Should identify overdue issue');
 
@@ -123,15 +119,15 @@ class MeetingTaskReviewIntegrationTest extends TestCase
         $response->assertJson([
             'success' => true,
             'data' => [
-                'calendar_event_id' => $event->id,
-                'status' => $review->status,
+                'review' => [
+                    'calendar_event_id' => $event->id,
+                    'status' => $review->status,
+                ],
             ],
         ]);
 
-        // If status is done, blocks should be included
-        if ($review->status === 'done') {
-            $data = $response->json('data');
-            $this->assertIsArray($data['blocks']);
-        }
+        $data = $response->json('data');
+        $this->assertIsArray($data['health_blocks']);
+        $this->assertIsArray($data['llm_blocks']);
     }
 }
