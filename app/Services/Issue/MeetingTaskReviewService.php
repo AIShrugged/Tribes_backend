@@ -286,7 +286,7 @@ class MeetingTaskReviewService
     private function formatBlocks(array $blocks): array
     {
         $labels = [
-            'status_not_updated' => 'Выполнены, но статус не обновлён',
+            'status_not_updated' => 'Обсуждались, но статус не обновлён',
             'blocked' => 'Заблокированы',
             'no_assignee' => 'Нет исполнителя',
             'incomplete_info' => 'Неполная информация',
