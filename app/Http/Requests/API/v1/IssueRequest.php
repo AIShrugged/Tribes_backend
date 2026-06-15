@@ -25,6 +25,7 @@ class IssueRequest extends FormRequest
                 'team_id' => ['nullable', 'integer', 'exists:teams,id'],
                 'epic_id' => ['nullable', 'integer', 'exists:issues,id'],
                 'offset' => ['nullable', 'integer', 'min:0'],
+                'page' => ['nullable', 'integer', 'min:1'],
                 'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
                 'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at'])],
                 'order' => ['nullable', Rule::in(['asc', 'desc'])],
