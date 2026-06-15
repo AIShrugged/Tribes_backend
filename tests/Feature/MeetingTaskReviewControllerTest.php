@@ -70,6 +70,7 @@ class MeetingTaskReviewControllerTest extends TestCase
                     'calendar_event_id' => $this->event->id,
                     'status' => 'done',
                     'analyzed_count' => 5,
+                    'discussed_count' => 0,
                 ],
             ],
         ]);
