@@ -9,12 +9,23 @@ trait PaginatedRequestTrait
 
     public function getOffset(): int
     {
-        return $this->input('offset', 0);
+        $offset = $this->input('offset');
+        if ($offset !== null) {
+            return (int) $offset;
+        }
+
+        $page = $this->input('page');
+        if ($page !== null) {
+            $page = max(1, (int) $page);
+            return ($page - 1) * $this->getLimit();
+        }
+
+        return 0;
     }
 
     public function getLimit(): int
     {
-        return $this->input('limit', self::DEFAULT_LIMIT);
+        return (int) $this->input('limit', self::DEFAULT_LIMIT);
     }
 
     public function getPaginationRules(int $maxLimit = self::DEFAULT_MAX_LIMIT): array
