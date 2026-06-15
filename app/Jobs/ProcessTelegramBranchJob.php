@@ -13,7 +13,9 @@ class ProcessTelegramBranchJob implements ShouldQueue
     public function __construct(
         public int $chatId,
         public ?int $messageThreadId = null,
-    ) {}
+    ) {
+        $this->onQueue('chat');
+    }
 
     public function handle(ChannelRuntimeService $runtimeService): void
     {

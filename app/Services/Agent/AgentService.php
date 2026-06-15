@@ -28,8 +28,8 @@ class AgentService
     /** Maximum characters for a single tool result before truncation */
     private const MAX_TOOL_RESULT_CHARS = 15000;
 
-    /** Approximate model context window in tokens (Claude 3.5 Sonnet = 200K) */
-    private const MODEL_CONTEXT_LIMIT = 200000;
+    /** Fallback context window in tokens when a model isn't listed in config. */
+    private const DEFAULT_MODEL_CONTEXT_LIMIT = 200000;
 
     /** Start masking aggressively when context exceeds this fraction of limit */
     private const TOKEN_BUDGET_WARNING_THRESHOLD = 0.8;
@@ -50,7 +50,6 @@ class AgentService
     private AgentModelRouter $modelRouter;
 
     private ConversationCompactionService $compactionService;
-
 
     private PageContextFormatter $pageContextFormatter;
 
@@ -87,7 +86,10 @@ class AgentService
      */
     public function requestStop(int $userId): void
     {
-        Cache::put(self::STOP_KEY_PREFIX.$userId, true, 60);
+        // TTL must outlive a full run so the flag is still present when the worker
+        // reaches its next stop checkpoint, even on long iterations.
+        $ttl = (int) config('agent.run.stop_flag_ttl_seconds', 600);
+        Cache::put(self::STOP_KEY_PREFIX.$userId, true, $ttl);
         Log::info('Stop requested for user', ['user_id' => $userId]);
     }
 
@@ -199,8 +201,32 @@ class AgentService
             'content' => trim("{$datePrefix} {$userPrefix}").$pageContextPrefix."\n\n{$content}",
         ];
 
+        // Two-phase tool routing: for interactive runs, prune the toolset to the
+        // categories relevant to this message so we don't send ~50 tool schemas
+        // on every LLM call. Returns null (keep everything) on any failure.
+        if ($options->taskType === AgentTaskType::INTERACTIVE) {
+            $selectedTools = app(AgentToolRouter::class)->selectToolNames($content);
+            if ($selectedTools !== null) {
+                $this->toolRegistry->keepOnly($selectedTools);
+            }
+        }
+
         // Get available tools
         $tools = $this->toolRegistry->getToolsForLLM();
+
+        // Resolve the active model once so the token budget and per-call timeout
+        // match the model actually being used, instead of a hardcoded assumption.
+        $resolvedModel = $this->modelRouter->resolve($options->taskType);
+        $contextLimit = $this->resolveModelContextLimit($resolvedModel);
+
+        // Wall-clock budget applies to interactive runs only; agent-task runs keep
+        // their own long timeouts and are unaffected.
+        $isInteractive = $options->taskType === AgentTaskType::INTERACTIVE;
+        $runStartedAt = microtime(true);
+        $maxRunSeconds = (int) config('agent.run.max_seconds', 180);
+        $llmTimeoutSeconds = $isInteractive
+            ? (int) config('agent.run.llm_timeout_seconds', 180)
+            : null;
 
         $iteration = 0;
         $finalAnswer = null;
@@ -212,6 +238,8 @@ class AgentService
             'channel' => $channel,
             'message' => $content,
             'tools_count' => count($tools),
+            'model' => $resolvedModel,
+            'context_limit' => $contextLimit,
             'system_prompt_length' => strlen($systemPrompt),
         ]);
 
@@ -226,6 +254,18 @@ class AgentService
                 $this->clearStopFlag($user->id);
 
                 return '⛔️ Processing stopped by your request.';
+            }
+
+            // Wall-clock budget for interactive runs: stop starting new iterations
+            // once we've spent the allotted time and return whatever we have.
+            if ($isInteractive && $maxRunSeconds > 0 && (microtime(true) - $runStartedAt) > $maxRunSeconds) {
+                Log::warning('Agent loop terminated by wall-clock budget', [
+                    'iteration' => $iteration,
+                    'elapsed_seconds' => round(microtime(true) - $runStartedAt, 1),
+                    'max_seconds' => $maxRunSeconds,
+                ]);
+
+                break;
             }
 
             $iteration++;
@@ -252,7 +292,7 @@ class AgentService
                 }
 
                 // Token budget check: mask aggressively or abort if critical
-                if (! $this->enforceTokenBudget($messages, $systemPrompt)) {
+                if (! $this->enforceTokenBudget($messages, $systemPrompt, $contextLimit)) {
                     Log::warning('Agent loop terminated by token budget', ['iteration' => $iteration]);
 
                     // Try to get whatever the LLM can produce with remaining context
@@ -283,10 +323,11 @@ class AgentService
                 $response = app(OpenRouterClient::class)->chatWithTools(
                     $messages,
                     $tools,
-                    $this->modelRouter->resolve($options->taskType),
+                    $resolvedModel,
                     $options->maxTokens,
                     $systemPrompt,
                     $extraPayload,
+                    $llmTimeoutSeconds,
                 );
 
                 $assistantMessage = $response['choices'][0]['message'] ?? null;
@@ -307,6 +348,18 @@ class AgentService
 
                     // Execute each tool call
                     foreach ($assistantMessage['tool_calls'] as $toolCall) {
+                        // Honor /stop between tools so long multi-tool iterations can be
+                        // interrupted promptly, not only at the next loop boundary.
+                        if ($this->isStopRequested($user->id)) {
+                            Log::info('Agent loop stopped by user request (mid-iteration)', [
+                                'user_id' => $user->id,
+                                'iteration' => $iteration,
+                            ]);
+                            $this->clearStopFlag($user->id);
+
+                            return '⛔️ Processing stopped by your request.';
+                        }
+
                         $toolName = $toolCall['function']['name'] ?? null;
                         $toolArgs = json_decode($toolCall['function']['arguments'] ?? '{}', true) ?? [];
                         $toolCallId = $toolCall['id'] ?? 'unknown';
@@ -387,7 +440,7 @@ class AgentService
                 if (! empty($assistantMessage['reasoning'])) {
                     Log::info('Agent thinking', [
                         'agentRunUuid' => $options->agentRunUuid,
-                        'preview'      => mb_substr($assistantMessage['reasoning'], 0, 500),
+                        'preview' => mb_substr($assistantMessage['reasoning'], 0, 500),
                         'length_chars' => strlen($assistantMessage['reasoning']),
                     ]);
                 }
@@ -558,31 +611,40 @@ class AgentService
     }
 
     /**
-     * Estimate token count for messages array (rough: 1 token ≈ 3.5 chars)
+     * Estimate token count for messages array.
+     *
+     * Counts characters with mb_strlen (not bytes) so Cyrillic text — where each
+     * char is 2 bytes in UTF-8 — isn't over-counted ~2x, which would otherwise
+     * trigger premature masking/compaction on Russian conversations.
      */
     private function estimateTokens(array $messages, ?string $systemPrompt = null): int
     {
-        $chars = strlen($systemPrompt ?? '');
+        $chars = mb_strlen($systemPrompt ?? '');
 
         foreach ($messages as $message) {
             $content = $message['content'] ?? '';
-            $chars += is_string($content) ? strlen($content) : strlen(json_encode($content));
+            $chars += is_string($content) ? mb_strlen($content) : mb_strlen(json_encode($content));
 
             if (! empty($message['tool_calls'])) {
-                $chars += strlen(json_encode($message['tool_calls']));
+                $chars += mb_strlen(json_encode($message['tool_calls']));
             }
 
             // Count thinking tokens — reasoning_details not included in content
             if (! empty($message['reasoning_details'])) {
-                $chars += strlen(json_encode($message['reasoning_details']));
+                $chars += mb_strlen(json_encode($message['reasoning_details']));
             }
 
             if (! empty($message['reasoning'])) {
-                $chars += strlen($message['reasoning']);
+                $chars += mb_strlen($message['reasoning']);
             }
         }
 
-        return (int) ceil($chars / 3.5);
+        $charsPerToken = (float) config('agent.token_estimation.chars_per_token', 3.0);
+        if ($charsPerToken <= 0) {
+            $charsPerToken = 3.0;
+        }
+
+        return (int) ceil($chars / $charsPerToken);
     }
 
     /**
@@ -673,8 +735,8 @@ class AgentService
             $originalSize = strlen($messages[$i]['content'] ?? '');
             if ($originalSize > 200) {
                 $messages[$i]['content'] = json_encode([
-                    '_masked'        => true,
-                    '_note'          => 'Previous tool output omitted for brevity. Result was processed in earlier iteration.',
+                    '_masked' => true,
+                    '_note' => 'Previous tool output omitted for brevity. Result was processed in earlier iteration.',
                     '_original_size' => $originalSize,
                 ]);
             }
@@ -727,18 +789,18 @@ class AgentService
             $inRunMemoryCompacted = true;
 
             $this->logToolActivity($user, $options, 'in_run_compaction_triggered', [
-                'iteration'      => $iteration,
+                'iteration' => $iteration,
                 'summary_length' => strlen($summary ?? ''),
             ], ['success' => true]);
 
             Log::info('In-run context compaction completed', [
-                'iteration'      => $iteration,
+                'iteration' => $iteration,
                 'summary_length' => strlen($summary ?? ''),
             ]);
         } catch (\Exception $e) {
             Log::warning('In-run compaction failed, continuing without compaction', [
                 'iteration' => $iteration,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
             $inRunMemoryCompacted = true;
         }
@@ -769,17 +831,17 @@ class AgentService
         }
 
         $compactionPrompt = "Review these tool call results from an ongoing conversation and extract a structured working memory.\n\n"
-            . "CRITICAL: Preserve ALL entity IDs exactly as they appear (user_id, profile_id, team_id, calendar_event_id, issue_id) "
-            . "— these are required for subsequent API calls.\n\n"
-            . "Format your response as JSON:\n"
-            . "{\n"
-            . "  \"people\": [{\"name\": \"...\", \"user_id\": X, \"profile_id\": X, \"role\": \"...\"}],\n"
-            . "  \"entities\": [{\"type\": \"team|meeting|issue\", \"id\": X, \"name\": \"...\", \"key_facts\": \"...\"}],\n"
-            . "  \"decisions\": [\"...\"],\n"
-            . "  \"current_task\": \"what was asked and what has been retrieved so far\"\n"
-            . "}\n\n"
-            . "Omit fields with no data. Tool results:\n\n"
-            . implode("\n---\n", $toolContents);
+            .'CRITICAL: Preserve ALL entity IDs exactly as they appear (user_id, profile_id, team_id, calendar_event_id, issue_id) '
+            ."— these are required for subsequent API calls.\n\n"
+            ."Format your response as JSON:\n"
+            ."{\n"
+            ."  \"people\": [{\"name\": \"...\", \"user_id\": X, \"profile_id\": X, \"role\": \"...\"}],\n"
+            ."  \"entities\": [{\"type\": \"team|meeting|issue\", \"id\": X, \"name\": \"...\", \"key_facts\": \"...\"}],\n"
+            ."  \"decisions\": [\"...\"],\n"
+            ."  \"current_task\": \"what was asked and what has been retrieved so far\"\n"
+            ."}\n\n"
+            ."Omit fields with no data. Tool results:\n\n"
+            .implode("\n---\n", $toolContents);
 
         $model = config('agent.in_run_compaction.model', config('agent.models.extraction', 'openai/gpt-4.1-mini'));
         $maxTokens = (int) config('agent.in_run_compaction.max_summary_tokens', 800);
@@ -849,13 +911,29 @@ class AgentService
     }
 
     /**
+     * Resolve the approximate context window (tokens) for a model id.
+     */
+    private function resolveModelContextLimit(?string $model): int
+    {
+        $limits = (array) config('agent.model_context_limits', []);
+        $default = (int) ($limits['default'] ?? self::DEFAULT_MODEL_CONTEXT_LIMIT);
+
+        if ($model === null || $model === '') {
+            return $default;
+        }
+
+        return (int) ($limits[$model] ?? $default);
+    }
+
+    /**
      * Enforce token budget: aggressively mask if approaching limit, return false if critical.
      */
-    private function enforceTokenBudget(array &$messages, ?string $systemPrompt): bool
+    private function enforceTokenBudget(array &$messages, ?string $systemPrompt, ?int $contextLimit = null): bool
     {
+        $contextLimit = $contextLimit ?? self::DEFAULT_MODEL_CONTEXT_LIMIT;
         $estimatedTokens = $this->estimateTokens($messages, $systemPrompt);
-        $warningLimit = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_WARNING_THRESHOLD);
-        $criticalLimit = (int) (self::MODEL_CONTEXT_LIMIT * self::TOKEN_BUDGET_CRITICAL_THRESHOLD);
+        $warningLimit = (int) ($contextLimit * self::TOKEN_BUDGET_WARNING_THRESHOLD);
+        $criticalLimit = (int) ($contextLimit * self::TOKEN_BUDGET_CRITICAL_THRESHOLD);
 
         if ($estimatedTokens > $criticalLimit) {
             // Last resort: mask everything except the very last tool result

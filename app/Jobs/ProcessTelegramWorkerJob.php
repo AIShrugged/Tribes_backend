@@ -35,7 +35,11 @@ class ProcessTelegramWorkerJob implements ShouldQueue
         public string $batchUuid,
         public string $content,
         public ?int $messageThreadId = null,
-    ) {}
+    ) {
+        // Interactive responses run on a dedicated queue so they aren't starved
+        // behind heavy background jobs on the default queue.
+        $this->onQueue('chat');
+    }
 
     public function handle(
         AgentService $agentService,

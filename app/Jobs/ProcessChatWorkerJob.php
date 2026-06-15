@@ -28,7 +28,11 @@ class ProcessChatWorkerJob implements ShouldQueue
         public int $userId,
         public int $userMessageId,
         public int $assistantMessageId,
-    ) {}
+    ) {
+        // Interactive responses run on a dedicated queue so they aren't starved
+        // behind heavy background jobs on the default queue.
+        $this->onQueue('chat');
+    }
 
     public function tries(): int
     {
@@ -44,8 +48,7 @@ class ProcessChatWorkerJob implements ShouldQueue
         AgentService $agentService,
         ChannelBus $channelBus,
         ChannelRuntimeService $runtimeService,
-    ): void
-    {
+    ): void {
         $chat = Chat::find($this->chatId);
         $user = User::find($this->userId);
         $assistantMessage = ChannelMessage::find($this->assistantMessageId);
@@ -70,10 +73,7 @@ class ProcessChatWorkerJob implements ShouldQueue
         try {
             $conversation = $channelBus->forChat($chat);
 
-            $history = $conversation->messages()
-                ->where('id', '<', $this->userMessageId)
-                ->orderBy('created_at')
-                ->get();
+            $history = $this->loadRecentHistory($conversation);
 
             $userMessage = ChannelMessage::find($this->userMessageId);
             if (! $userMessage) {
@@ -134,6 +134,25 @@ class ProcessChatWorkerJob implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    /**
+     * Load a bounded, recent slice of chat history (mirrors the Telegram worker)
+     * so long-running conversations don't load unbounded history every turn.
+     */
+    private function loadRecentHistory(\App\Models\ChannelConversation $conversation): \Illuminate\Support\Collection
+    {
+        $limit = (int) config('agent.chat.history_limit', 30);
+        $windowHours = (int) config('agent.chat.history_window_hours', 24);
+
+        return $conversation->messages()
+            ->where('id', '<', $this->userMessageId)
+            ->where('created_at', '>=', now()->subHours($windowHours))
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get()
+            ->reverse()
+            ->values();
     }
 
     private function nextBackoffSeconds(int $currentAttempt): int

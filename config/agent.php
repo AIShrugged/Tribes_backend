@@ -117,9 +117,9 @@ return [
     */
 
     'in_run_compaction' => [
-        'enabled'            => false,
-        'threshold'          => 7,
-        'model'              => 'openai/gpt-4.1-mini',
+        'enabled' => false,
+        'threshold' => 7,
+        'model' => 'openai/gpt-4.1-mini',
         'max_summary_tokens' => 800,
     ],
 
@@ -150,6 +150,80 @@ return [
     'chat' => [
         'max_attempts' => 3,
         'backoff_seconds' => [10, 30],
+        // Recent-history window loaded into the interactive web-chat run.
+        // Mirrors the Telegram worker so long chats don't load unbounded history.
+        'history_limit' => 30,
+        'history_window_hours' => 24,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Interactive Run Budget
+    |--------------------------------------------------------------------------
+    |
+    | Wall-clock and per-LLM-call limits for INTERACTIVE agent runs (web chat,
+    | Telegram). Agent-task runs are unaffected and keep the client default.
+    |
+    */
+
+    'run' => [
+        'max_seconds' => (int) env('AGENT_RUN_MAX_SECONDS', 180),
+        'llm_timeout_seconds' => (int) env('AGENT_RUN_LLM_TIMEOUT_SECONDS', 180),
+        // Stop-flag TTL must outlive a full run so /stop stays effective.
+        'stop_flag_ttl_seconds' => (int) env('AGENT_RUN_STOP_FLAG_TTL_SECONDS', 600),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Token Estimation
+    |--------------------------------------------------------------------------
+    |
+    | Rough chars-per-token divisor used for the in-run token budget. Counted
+    | with mb_strlen (characters, not bytes) so Cyrillic isn't over-counted ~2x.
+    |
+    */
+
+    'token_estimation' => [
+        'chars_per_token' => (float) env('AGENT_CHARS_PER_TOKEN', 3.0),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Model Context Limits
+    |--------------------------------------------------------------------------
+    |
+    | Approximate context window (tokens) per model id, used to drive in-run
+    | masking/compaction. Falls back to `default` for unlisted models.
+    |
+    */
+
+    'model_context_limits' => [
+        'default' => 200000,
+        'anthropic/claude-sonnet-4.6' => 200000,
+        'anthropic/claude-sonnet-4-5' => 200000,
+        'openai/gpt-4.1-mini' => 1000000,
+        'openai/gpt-4o-mini' => 128000,
+        'google/gemini-3.1-pro-preview' => 1000000,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tool Router (two-phase tool selection)
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, a cheap pre-pass model picks which tool categories are
+    | relevant to the user's message, and only those (plus the always-on core)
+    | are exposed to the main interactive loop — instead of sending all ~50 tool
+    | schemas on every LLM call. Applies to INTERACTIVE runs only; on any failure
+    | it falls back to the full toolset. Enabled by default — set
+    | AGENT_TOOL_ROUTER_ENABLED=false to turn it off.
+    |
+    */
+
+    'tool_router' => [
+        'enabled' => (bool) env('AGENT_TOOL_ROUTER_ENABLED', true),
+        'model' => env('AGENT_TOOL_ROUTER_MODEL', 'openai/gpt-4.1-mini'),
+        'timeout_seconds' => (int) env('AGENT_TOOL_ROUTER_TIMEOUT_SECONDS', 12),
     ],
 
     /*

@@ -5,6 +5,7 @@ namespace App\Services\Channel\Delivery;
 use App\Enums\ConversationChannelType;
 use App\Models\ChannelMessage;
 use App\Services\Channel\ChannelBus;
+use App\Services\Telegram\TelegramHtmlFormatter;
 use App\Services\Telegram\TelegramMessageSplitter;
 use Telegram\Bot\Api;
 use Telegram\Bot\Objects\Message as TelegramMessage;
@@ -14,6 +15,7 @@ class TelegramDelivery implements ChannelDeliveryInterface
     public function __construct(
         private readonly ChannelBus $channelBus,
         private readonly ?TelegramMessageSplitter $splitter = null,
+        private readonly ?TelegramHtmlFormatter $formatter = null,
     ) {}
 
     public function channelType(): ConversationChannelType
@@ -26,23 +28,27 @@ class TelegramDelivery implements ChannelDeliveryInterface
         $telegram = new Api(config('telegram.bot_token'));
         $baseParams = [
             'chat_id' => $request->conversation->telegram_chat_id,
-            'parse_mode' => 'Markdown',
+            'parse_mode' => 'HTML',
         ];
 
         if ($request->conversation->message_thread_id) {
             $baseParams['message_thread_id'] = $request->conversation->message_thread_id;
         }
 
+        $formatter = $this->formatter ?? app(TelegramHtmlFormatter::class);
+
+        // Split the raw Markdown first, then format each chunk independently, so
+        // an HTML tag can never be torn across a chunk boundary.
         $chunks = ($this->splitter ?? app(TelegramMessageSplitter::class))->split($request->content);
         $total = count($chunks);
         $sentMessages = [];
 
         foreach ($chunks as $index => $chunk) {
-            $text = $total > 1
-                ? '(part '.($index + 1).'/'.$total.')'."\n\n".$chunk
-                : $chunk;
+            $header = $total > 1 ? '(part '.($index + 1).'/'.$total.')'."\n\n" : '';
+            $text = $header.$formatter->toHtml($chunk);
+            $plainFallback = $header.$formatter->toPlainText($chunk);
 
-            $sentMessages[] = $this->sendChunk($telegram, $baseParams, $text);
+            $sentMessages[] = $this->sendChunk($telegram, $baseParams, $text, $plainFallback);
         }
 
         $attributes = $request->attributes;
@@ -74,7 +80,7 @@ class TelegramDelivery implements ChannelDeliveryInterface
     /**
      * @param  array<string, mixed>  $baseParams
      */
-    private function sendChunk(Api $telegram, array $baseParams, string $text): ?TelegramMessage
+    private function sendChunk(Api $telegram, array $baseParams, string $text, ?string $plainFallback = null): ?TelegramMessage
     {
         $params = $baseParams + ['text' => $text];
 
@@ -86,6 +92,7 @@ class TelegramDelivery implements ChannelDeliveryInterface
             }
 
             unset($params['parse_mode']);
+            $params['text'] = $plainFallback ?? $text;
 
             return $telegram->sendMessage($params);
         }
