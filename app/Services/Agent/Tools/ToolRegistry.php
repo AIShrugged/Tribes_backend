@@ -32,6 +32,22 @@ class ToolRegistry
     }
 
     /**
+     * Drop every registered tool whose name isn't in $keepNames. Used by the
+     * two-phase tool router to prune the toolset before exposing it to the LLM.
+     *
+     * @param  array<int, string>  $keepNames
+     */
+    public function keepOnly(array $keepNames): void
+    {
+        $keep = array_flip($keepNames);
+        $this->tools = array_filter(
+            $this->tools,
+            static fn (string $name): bool => isset($keep[$name]),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /**
      * Get tools in OpenAI function calling format
      */
     public function getToolsForLLM(): array

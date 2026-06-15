@@ -15,7 +15,9 @@ class ProcessChatBranchJob implements ShouldQueue
         public int $userId,
         public int $userMessageId,
         public int $assistantMessageId,
-    ) {}
+    ) {
+        $this->onQueue('chat');
+    }
 
     public function handle(ChannelRuntimeService $runtimeService): void
     {

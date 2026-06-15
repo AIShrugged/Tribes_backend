@@ -35,6 +35,11 @@ class ChatAgentServiceTest extends TestCase
     {
         parent::setUp();
 
+        // These tests assert the exact LLM request sequence of the agent loop;
+        // the two-phase tool router (covered by AgentToolRouterTest) would add an
+        // extra pre-pass call, so keep it off here.
+        config(['agent.tool_router.enabled' => false]);
+
         $this->user = User::factory()->create();
 
         // Чистый реестр без реальных инструментов, чтобы не делать реальных запросов

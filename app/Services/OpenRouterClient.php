@@ -10,10 +10,11 @@ use Illuminate\Support\Facades\Log;
 class OpenRouterClient
 {
     private const URL = 'https://openrouter.ai/api/v1/chat/completions';
+
     private const RESPONSE_TIMEOUT_SECONDS = 600;
 
     /**
-     * @param MessageDTO[] $messages
+     * @param  MessageDTO[]  $messages
      */
     public function chat(
         array $messages,
@@ -21,12 +22,13 @@ class OpenRouterClient
         int $maxTokens = 1024,
         bool $forceJsonResponse = false,
         array $extraPayload = [],
+        ?int $timeoutSeconds = null,
     ): string {
         $lastException = null;
 
         foreach ($this->resolveModelCandidates($model) as $candidate) {
             try {
-                return $this->chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse, $extraPayload);
+                return $this->chatOnce($messages, $candidate, $maxTokens, $forceJsonResponse, $extraPayload, $timeoutSeconds);
             } catch (\Throwable $e) {
                 $lastException = $e;
 
@@ -41,7 +43,7 @@ class OpenRouterClient
     }
 
     /**
-     * @param MessageDTO[] $messages
+     * @param  MessageDTO[]  $messages
      */
     private function chatOnce(
         array $messages,
@@ -49,6 +51,7 @@ class OpenRouterClient
         int $maxTokens,
         bool $forceJsonResponse,
         array $extraPayload,
+        ?int $timeoutSeconds = null,
     ): string {
         $payloadMessages = array_map(
             static function (MessageDTO|array $message): array {
@@ -61,7 +64,7 @@ class OpenRouterClient
                 }
 
                 return [
-                    'role'    => $message->role,
+                    'role' => $message->role,
                     'content' => $message->content,
                 ];
             },
@@ -69,8 +72,8 @@ class OpenRouterClient
         );
 
         $data = array_merge($extraPayload, [
-            'model'      => $model,
-            'messages'   => $payloadMessages,
+            'model' => $model,
+            'messages' => $payloadMessages,
             'max_tokens' => $maxTokens,
         ]);
 
@@ -78,7 +81,9 @@ class OpenRouterClient
             $data['response_format'] = ['type' => 'json_object'];
         }
 
-        $options = ['timeout' => self::RESPONSE_TIMEOUT_SECONDS];
+        $options = ['timeout' => $timeoutSeconds !== null && $timeoutSeconds > 0
+            ? $timeoutSeconds
+            : self::RESPONSE_TIMEOUT_SECONDS];
 
         if (config('proxy.enabled')) {
             $options['proxy'] = sprintf(
@@ -91,10 +96,10 @@ class OpenRouterClient
         }
 
         $response = Http::withOptions($options)
-            ->withHeaders(['Authorization' => 'Bearer ' . config('ai.providers.openrouter.api_token')])
+            ->withHeaders(['Authorization' => 'Bearer '.config('ai.providers.openrouter.api_token')])
             ->post(self::URL, $data);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             throw new AppException('Failed to ask AI', 'AI_REQUEST_FAILED');
         }
 
@@ -115,11 +120,10 @@ class OpenRouterClient
      * Chat with tools support (for agent loop)
      * Returns full response including tool calls
      *
-     * @param array $messages - Array of messages (plain arrays with role/content)
-     * @param array|null $tools - Array of tools in OpenAI format
-     * @param string $model
-     * @param int $maxTokens
-     * @param string|null $systemPrompt - System prompt (for Claude models)
+     * @param  array  $messages  - Array of messages (plain arrays with role/content)
+     * @param  array|null  $tools  - Array of tools in OpenAI format
+     * @param  string  $model
+     * @param  string|null  $systemPrompt  - System prompt (for Claude models)
      * @return array - Full API response
      */
     public function chatWithTools(
@@ -129,12 +133,13 @@ class OpenRouterClient
         int $maxTokens = 4096,
         ?string $systemPrompt = null,
         ?array $extraPayload = null,
+        ?int $timeoutSeconds = null,
     ): array {
         $lastException = null;
 
         foreach ($this->resolveModelCandidates($model) as $candidate) {
             try {
-                return $this->chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt, $extraPayload);
+                return $this->chatWithToolsOnce($messages, $tools, $candidate, $maxTokens, $systemPrompt, $extraPayload, $timeoutSeconds);
             } catch (\Throwable $e) {
                 $lastException = $e;
 
@@ -155,11 +160,15 @@ class OpenRouterClient
         int $maxTokens,
         ?string $systemPrompt,
         ?array $extraPayload = null,
+        ?int $timeoutSeconds = null,
     ): array {
+        $timeout = $timeoutSeconds !== null && $timeoutSeconds > 0
+            ? $timeoutSeconds
+            : self::RESPONSE_TIMEOUT_SECONDS;
         // extraPayload first so core params always win (consistent with chatOnce())
         $data = array_merge($extraPayload ?? [], [
-            'model'      => $model,
-            'messages'   => $messages,
+            'model' => $model,
+            'messages' => $messages,
             'max_tokens' => $maxTokens,
         ]);
 
@@ -176,22 +185,22 @@ class OpenRouterClient
             'model' => $model,
             'messages_count' => count($messages),
             'tools_count' => $tools ? count($tools) : 0,
-            'has_system_prompt' => !empty($systemPrompt),
+            'has_system_prompt' => ! empty($systemPrompt),
         ]);
 
-        //TODO: bring back proxy
-        $response = Http::timeout(self::RESPONSE_TIMEOUT_SECONDS)
-            ->connectTimeout(self::RESPONSE_TIMEOUT_SECONDS)
-            ->withHeaders(['Authorization' => 'Bearer ' . config('ai.providers.openrouter.api_token')])
+        // TODO: bring back proxy
+        $response = Http::timeout($timeout)
+            ->connectTimeout($timeout)
+            ->withHeaders(['Authorization' => 'Bearer '.config('ai.providers.openrouter.api_token')])
             ->post(self::URL, $data);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('OpenRouter API error', [
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
 
-            throw new AppException('Failed to ask AI: ' . $response->body(), 'AI_REQUEST_FAILED');
+            throw new AppException('Failed to ask AI: '.$response->body(), 'AI_REQUEST_FAILED');
         }
 
         $body = $response->json();
@@ -214,7 +223,6 @@ class OpenRouterClient
     }
 
     /**
-     * @param string|array $model
      * @return array<int, string>
      */
     private function resolveModelCandidates(string|array $model): array
