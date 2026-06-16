@@ -41,6 +41,8 @@ class IssueRequest extends FormRequest
                 'blocked' => ['nullable', 'boolean'],
                 'exclude_statuses' => ['nullable', 'array'],
                 'exclude_statuses.*' => ['string', Rule::in(self::VALID_STATUSES)],
+                'exclude_types' => ['nullable', 'array'],
+                'exclude_types.*' => ['string', Rule::in(Issue::TYPES)],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -142,6 +144,7 @@ class IssueRequest extends FormRequest
             'due_date_to' => $this->input('due_date_to'),
             'blocked' => $this->boolean('blocked', false),
             'exclude_statuses' => $this->input('exclude_statuses', []),
+            'exclude_types' => $this->input('exclude_types', []),
         ];
     }
 
