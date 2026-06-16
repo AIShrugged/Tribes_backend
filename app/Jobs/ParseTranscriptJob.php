@@ -20,6 +20,7 @@ class ParseTranscriptJob implements ShouldQueue
         public CalendarEvent $calendarEvent,
         private string $url,
     ) {
+        $this->onQueue('heavy');
     }
 
     public function handle(

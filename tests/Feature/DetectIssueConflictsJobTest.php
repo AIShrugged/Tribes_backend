@@ -7,6 +7,7 @@ use App\Jobs\DetectIssueConflictsJob;
 use App\Jobs\NotifyConflictsAuthorJob;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\Team;
@@ -28,7 +29,9 @@ class DetectIssueConflictsJobTest extends TestCase
     {
         $org = Organization::create(['name' => 'JC Org', 'slug' => 'jc-org']);
         $author = User::factory()->create();
-        $team = Team::create(['name' => 'JC Team', 'slug' => 'jc-team', 'organization_id' => $org->id]);
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create(['name' => 'Default Methodology', 'text' => 'Default methodology text', 'scheme' => '{}', 'is_default' => true]);
+        $team = Team::create(['name' => 'JC Team', 'slug' => 'jc-team', 'organization_id' => $org->id, 'methodology_id' => $methodology->id]);
         $source = Source::create([
             'user_id' => $author->id, 'type' => 'google_calendar',
             'external_id' => 'jc-src', 'identity' => 'a@a.com',

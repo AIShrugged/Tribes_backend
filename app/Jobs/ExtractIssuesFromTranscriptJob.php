@@ -21,7 +21,9 @@ class ExtractIssuesFromTranscriptJob implements ShouldQueue
         public CalendarEvent $calendarEvent,
         public Team $team,
         public User $user,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(IssueExtractionService $service): void
     {

@@ -216,6 +216,7 @@ class AgentTaskController extends Controller
     private function managedOrganizationIds(User $user): array
     {
         return $user->organizations()
+            ->wherePivot('role', 'manager')
             ->pluck('organizations.id')
             ->all();
     }

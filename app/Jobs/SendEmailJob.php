@@ -21,6 +21,7 @@ class SendEmailJob implements ShouldQueue
     public function __construct(
         public readonly EmailDTO $emailDto,
     ) {
+        $this->onQueue('notifications');
     }
 
     /**

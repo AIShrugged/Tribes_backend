@@ -31,7 +31,9 @@ class VerifyMeetingArtifactsJob implements ShouldQueue
         public Team $team,
         public User $user,
         public ?int $forceTelegramUserId = null,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(
         MeetingSummaryService $summaryService,

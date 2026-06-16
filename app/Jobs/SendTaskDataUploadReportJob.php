@@ -32,6 +32,7 @@ class SendTaskDataUploadReportJob implements ShouldQueue
         private readonly array $createdIds,
         private readonly array $updatedIds,
     ) {
+        $this->onQueue('notifications');
     }
 
     public function handle(): void

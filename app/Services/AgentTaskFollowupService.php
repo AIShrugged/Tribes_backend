@@ -67,6 +67,7 @@ class AgentTaskFollowupService
             $effectiveExecutionMode,
             $effectiveSandboxProfile,
             $inputPayload,
+            $profileMetadata,
         ): AgentTask {
             $task = AgentTask::create([
                 'user_id' => $parentTask->user_id,

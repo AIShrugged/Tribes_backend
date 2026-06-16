@@ -118,7 +118,10 @@ class CalendarEvent extends Model
 
     public function scopeOwned(Builder $query, int $userId): Builder
     {
-        return $query->whereHas('sources', fn (Builder $q) => $q->where('user_id', $userId));
+        return $query->where(function (Builder $q) use ($userId): void {
+            $q->whereHas('sources', fn (Builder $inner) => $inner->where('user_id', $userId))
+              ->orWhereHas('source', fn (Builder $inner) => $inner->where('user_id', $userId));
+        });
     }
 
     /**

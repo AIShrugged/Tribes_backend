@@ -22,7 +22,9 @@ class DetectIssueConflictsJob implements ShouldQueueAfterCommit
     public function __construct(
         public array $newIssueIds,
         public ?int $detectedInCalendarEventId,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(IssueConflictDetector $detector): void
     {

@@ -21,7 +21,9 @@ class ValidateAutoIssuesContentJob implements ShouldQueueAfterCommit
      */
     public function __construct(
         public array $issueIds,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(IssueContentValidator $validator, IncompleteContentNotifier $notifier): void
     {

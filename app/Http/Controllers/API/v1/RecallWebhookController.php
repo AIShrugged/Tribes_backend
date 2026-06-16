@@ -17,7 +17,7 @@ class RecallWebhookController extends Controller
      */
     public function webhook(Request $request): ApiResponse
     {
-        Log::info('Recall webhook', $request->all());
+        Log::info('Recall webhook received', ['event' => $request->input('event')]);
         RecallWebhookService::handle($request->all());
 
         return ApiResponse::success();

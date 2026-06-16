@@ -12,6 +12,11 @@ class SendDecisionFollowupsJob implements ShouldQueue
 {
     use Dispatchable, Queueable;
 
+    public function __construct()
+    {
+        $this->onQueue('notifications');
+    }
+
     public function handle(DecisionFollowupNotifier $notifier): void
     {
         $delayMinutes = (int) config('decisions.followup.delay_minutes', 120);

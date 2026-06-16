@@ -21,7 +21,9 @@ class SendAgendaNotificationsJob implements ShouldQueue
 
     public function __construct(
         public CalendarEvent $calendarEvent,
-    ) {}
+    ) {
+        $this->onQueue('notifications');
+    }
 
     public function handle(): void
     {

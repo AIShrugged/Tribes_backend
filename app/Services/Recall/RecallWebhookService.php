@@ -2,8 +2,8 @@
 
 namespace App\Services\Recall;
 
-use App\Exceptions\AppException;
 use App\Services\Recall\Handlers\CalendarSyncEventHandler;
+use Illuminate\Support\Facades\Log;
 use App\Services\Recall\Handlers\CalendarUpdateHandler;
 use App\Services\Recall\Handlers\TranscriptDoneHandler;
 use App\Services\Recall\Payloads\CalendarSyncEventPayload;
@@ -32,7 +32,8 @@ class RecallWebhookService
         $eventName = $data['event'];
 
         if (!isset(self::EVENTS[$eventName])) {
-            throw new AppException('No handler for event: ' . $eventName, 'RECALL_WEBHOOK_NO_HANDLER');
+            Log::info('Recall webhook: unknown event, skipping', ['event' => $eventName]);
+            return;
         }
 
         $event = self::EVENTS[$eventName];

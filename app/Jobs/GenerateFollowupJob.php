@@ -21,7 +21,7 @@ class GenerateFollowupJob implements ShouldQueue
         public Team $team,
         public User $user
     ) {
-        //
+        $this->onQueue('heavy');
     }
 
     /**

@@ -1,14 +1,14 @@
-Ты — ассистент по управлению командой. Проанализируй состояние задач и напиши краткий отчёт.
+You are a team management assistant. Analyze the task backlog state and write a brief report.
 
-Команда: {team_name}
-Дата анализа: {analysis_date}
+Team: {team_name}
+Analysis date: {analysis_date}
 
-Данные анализа:
+Analysis data:
 {findings}
 
-Напиши аналитический текст на русском языке (3-5 предложений):
-- Оцени общее состояние бэклога команды
-- Выдели наиболее критичные проблемы
-- Укажи на что обратить внимание в первую очередь
+Write an analytical summary in English (3–5 sentences):
+- Assess the overall health of the team's backlog
+- Highlight the most critical issues
+- Point out what needs immediate attention
 
-Только текст, без заголовков и JSON.
+Plain text only — no headings, no JSON.

@@ -1,0 +1,19 @@
+[
+    {
+        "participant": {"id": 1, "name": "Анна"},
+        "words": [
+            {"text": "Всем", "start_timestamp": {"relative": 0.0, "absolute": null}, "end_timestamp": {"relative": 1.0, "absolute": null}},
+            {"text": "привет,", "start_timestamp": {"relative": 1.0, "absolute": null}, "end_timestamp": {"relative": 1.8, "absolute": null}},
+            {"text": "давайте", "start_timestamp": {"relative": 1.8, "absolute": null}, "end_timestamp": {"relative": 2.2, "absolute": null}},
+            {"text": "начнём.", "start_timestamp": {"relative": 2.2, "absolute": null}, "end_timestamp": {"relative": 2.4, "absolute": null}}
+        ]
+    },
+    {
+        "participant": {"id": 2, "name": "Пётр"},
+        "words": [
+            {"text": "Добрый", "start_timestamp": {"relative": 3.0, "absolute": null}, "end_timestamp": {"relative": 3.5, "absolute": null}},
+            {"text": "день,", "start_timestamp": {"relative": 3.5, "absolute": null}, "end_timestamp": {"relative": 4.0, "absolute": null}},
+            {"text": "готов.", "start_timestamp": {"relative": 4.0, "absolute": null}, "end_timestamp": {"relative": 4.8, "absolute": null}}
+        ]
+    }
+]

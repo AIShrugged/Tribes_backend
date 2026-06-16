@@ -36,6 +36,8 @@ services:
         condition: service_started
     networks:
       - app
+    volumes:
+      - ./.docker/php-fpm-www.conf:/usr/local/etc/php-fpm.d/www.conf:ro
     command: ["backend"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9000"]
@@ -93,6 +95,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["queue-worker"]
     restart: unless-stopped
+    stop_grace_period: 720s
 
   queue-agent:
     build:
@@ -143,6 +146,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["queue-worker"]
     restart: unless-stopped
+    # Agent tasks can run up to 65 min; keep grace period as long as practical
+    stop_grace_period: 900s
 
   queue-chat:
     build:
@@ -188,6 +193,98 @@ services:
       - app
     command: ["queue-worker"]
     restart: unless-stopped
+    stop_grace_period: 720s
+    deploy:
+      replicas: 3
+
+  queue-heavy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www
+    environment:
+      APP_ENV: "${APP_ENV}"
+      APP_DEBUG: "${APP_DEBUG}"
+      APP_KEY: "${APP_KEY}"
+      APP_URL: "${APP_URL}"
+
+      GITHUB_APP_ID: "${GITHUB_APP_ID}"
+      GITHUB_APP_INSTALLATION_ID: "${GITHUB_APP_INSTALLATION_ID}"
+      GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app_private_key.pem
+      GITHUB_APP_PRIVATE_KEY_PEM: "${GITHUB_APP_PRIVATE_KEY_PEM:-}"
+      GITHUB_DEFAULT_OWNER: "${GITHUB_DEFAULT_OWNER}"
+      GITHUB_DEFAULT_REPO: "${GITHUB_DEFAULT_REPO}"
+
+      DB_CONNECTION: pgsql
+      DB_HOST: app-postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: app-redis
+      REDIS_PORT: 6379
+
+      # Transcripts, digests, followups, and other long-running LLM jobs.
+      # Isolated from interactive chat so a transcript burst can't starve users.
+      QUEUE_NAMES: heavy
+    depends_on:
+      app-postgres:
+        condition: service_healthy
+      app-redis:
+        condition: service_started
+    networks:
+      - app
+    command: ["queue-worker"]
+    restart: unless-stopped
+    stop_grace_period: 720s
+
+  queue-notifications:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www
+    environment:
+      APP_ENV: "${APP_ENV}"
+      APP_DEBUG: "${APP_DEBUG}"
+      APP_KEY: "${APP_KEY}"
+      APP_URL: "${APP_URL}"
+
+      GITHUB_APP_ID: "${GITHUB_APP_ID}"
+      GITHUB_APP_INSTALLATION_ID: "${GITHUB_APP_INSTALLATION_ID}"
+      GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app_private_key.pem
+      GITHUB_APP_PRIVATE_KEY_PEM: "${GITHUB_APP_PRIVATE_KEY_PEM:-}"
+      GITHUB_DEFAULT_OWNER: "${GITHUB_DEFAULT_OWNER}"
+      GITHUB_DEFAULT_REPO: "${GITHUB_DEFAULT_REPO}"
+
+      DB_CONNECTION: pgsql
+      DB_HOST: app-postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: app-redis
+      REDIS_PORT: 6379
+
+      # Emails, agenda notifications, conflict notices, and other fast outbound jobs.
+      QUEUE_NAMES: notifications
+    depends_on:
+      app-postgres:
+        condition: service_healthy
+      app-redis:
+        condition: service_started
+    networks:
+      - app
+    command: ["queue-worker"]
+    restart: unless-stopped
+    stop_grace_period: 720s
 
   scheduler:
     build:
@@ -257,6 +354,9 @@ services:
   app-redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     networks:
       - app
 
@@ -282,3 +382,4 @@ networks:
 
 volumes:
   pgdata: null
+  redis-data: null

@@ -166,3 +166,25 @@ Schedule::command('issues:generate-health-reports')
     ->dailyAt('10:00')
     ->name('issues:generate-health-reports')
     ->withoutOverlapping();
+
+// Prune Telescope entries to prevent unbounded table growth
+Schedule::command('telescope:prune --hours=48')
+    ->daily()
+    ->name('telescope:prune')
+    ->withoutOverlapping();
+
+// Monitor queue depths — fires QueueBusy event (logged as error) when a queue
+// exceeds the threshold. Tweak --max values based on observed normal load.
+Schedule::command(
+    'queue:monitor ' .
+    '--queues=chat:50,heavy:30,notifications:100,default:100,agent-tasks:20'
+)
+    ->everyFiveMinutes()
+    ->name('queue:monitor')
+    ->withoutOverlapping();
+
+// Prune failed jobs older than 7 days to keep the table clean
+Schedule::command('queue:prune-failed --hours=168')
+    ->daily()
+    ->name('queue:prune-failed')
+    ->withoutOverlapping();

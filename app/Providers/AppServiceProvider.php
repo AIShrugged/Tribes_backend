@@ -9,8 +9,11 @@ use App\Observers\OrganizationObserver;
 use App\Policies\IssueAttachmentPolicy;
 use App\Policies\IssueHealthReportPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Queue\Events\QueueBusy;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -64,6 +67,15 @@ class AppServiceProvider extends ServiceProvider
                     config('proxy.host'),
                     config('proxy.port')
                 ),
+            ]);
+        });
+
+        // Alert when a queue depth exceeds the threshold set in queue:monitor.
+        Event::listen(QueueBusy::class, function (QueueBusy $event): void {
+            Log::error('Queue backlog exceeds threshold — workers may be stuck or understaffed', [
+                'connection' => $event->connection,
+                'queue'      => $event->queue,
+                'size'       => $event->size,
             ]);
         });
 

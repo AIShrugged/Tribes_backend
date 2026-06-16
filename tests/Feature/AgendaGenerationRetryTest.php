@@ -6,6 +6,8 @@ use App\Enums\AgendaStatus;
 use App\Jobs\GenerateAgendaJob;
 use App\Models\CalendarEvent;
 use App\Models\MeetingAgenda;
+use App\Models\MeetingSummary;
+use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\Team;
@@ -87,10 +89,19 @@ class AgendaGenerationRetryTest extends TestCase
         $user = User::factory()->create();
         $organization->users()->attach($user, ['role' => 'employee']);
 
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create([
+                'name' => 'Default Methodology',
+                'text' => 'Default methodology text',
+                'scheme' => '{}',
+                'is_default' => true,
+            ]);
+
         $team = Team::create([
             'name' => 'Test Team',
             'slug' => 'test-team',
             'organization_id' => $organization->id,
+            'methodology_id' => $methodology->id,
         ]);
         $team->users()->attach($user);
 
@@ -99,6 +110,25 @@ class AgendaGenerationRetryTest extends TestCase
             'type' => 'google_calendar',
             'external_id' => 'test-source-id',
             'identity' => 'test@example.com',
+        ]);
+
+        $previousEvent = CalendarEvent::create([
+            'source_id' => $source->id,
+            'external_id' => 'test-event-id-prev',
+            'platform' => 'google_meet',
+            'title' => 'Test Meeting',
+            'url' => 'https://meet.google.com/test',
+            'description' => 'Previous meeting',
+            'starts_at' => now()->subWeek(),
+            'ends_at' => now()->subWeek()->addHour(),
+            'required_bot' => false,
+        ]);
+
+        MeetingSummary::create([
+            'calendar_event_id' => $previousEvent->id,
+            'status' => 'done',
+            'title' => 'Previous Meeting Summary',
+            'summary' => 'Previous meeting went well.',
         ]);
 
         $event = CalendarEvent::create([

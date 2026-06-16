@@ -23,7 +23,9 @@ class CriticalPathAgentAnalysisJob implements ShouldQueue
     public function __construct(
         public readonly ?int $teamId,
         public readonly ?int $organizationId,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(
         AgentTaskSchedulerService $scheduler,

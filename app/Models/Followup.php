@@ -33,13 +33,7 @@ class Followup extends Model
     public function scopeOwned(Builder $query, int $userId): Builder
     {
         return $query->where(function (Builder $q) use ($userId) {
-            // Own follow-ups (created by this user)
             $q->where('user_id', $userId)
-                // OR follow-ups from teams where user is a direct member
-                ->orWhereHas('team.users', function (Builder $inner) use ($userId) {
-                    $inner->where('users.id', $userId);
-                })
-                // OR follow-ups from org teams where user is a manager
                 ->orWhereHas('team.organization.users', function (Builder $inner) use ($userId) {
                     $inner->where('users.id', $userId)
                         ->where('organization_user.role', 'manager');

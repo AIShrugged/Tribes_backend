@@ -18,7 +18,9 @@ class RebuildCriticalPathJob implements ShouldBeUnique, ShouldQueue
     public function __construct(
         public readonly ?int $teamId,
         public readonly ?int $organizationId,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function uniqueId(): string
     {

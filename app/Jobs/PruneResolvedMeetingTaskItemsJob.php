@@ -15,7 +15,10 @@ class PruneResolvedMeetingTaskItemsJob implements ShouldQueue
 
     public int $backoff = 60;
 
-    public function __construct(private readonly int $organizationId) {}
+    public function __construct(private readonly int $organizationId)
+    {
+        $this->onQueue('notifications');
+    }
 
     public function handle(): void
     {

@@ -22,7 +22,7 @@ class GenerateMethodologySchemeJob implements ShouldQueue
         private Methodology $methodology
     )
     {
-        //
+        $this->onQueue('heavy');
     }
 
     /**

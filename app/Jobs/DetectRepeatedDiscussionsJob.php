@@ -16,7 +16,9 @@ class DetectRepeatedDiscussionsJob implements ShouldQueue
     public function __construct(
         public MeetingSummary $summary,
         public Team $team,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(DetectRepeatedDiscussionsService $service): void
     {

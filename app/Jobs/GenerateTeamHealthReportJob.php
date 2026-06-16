@@ -20,7 +20,10 @@ class GenerateTeamHealthReportJob implements ShouldQueue, ShouldBeUnique
 
     public int $uniqueFor = 3600;
 
-    public function __construct(public int $teamId) {}
+    public function __construct(public int $teamId)
+    {
+        $this->onQueue('heavy');
+    }
 
     public function uniqueId(): string
     {

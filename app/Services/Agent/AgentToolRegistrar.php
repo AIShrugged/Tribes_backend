@@ -64,6 +64,7 @@ use App\Services\Agent\Tools\SetUserFocusTool;
 use App\Services\Agent\Tools\ToolRegistry;
 use App\Services\Agent\Tools\UpdateArtifactTool;
 use App\Services\Agent\Tools\UpdateEntityTool;
+use App\Services\Agent\Tools\RegenerateFollowupTool;
 use App\Services\Agent\Tools\WriteWorkspaceFileTool;
 use App\Services\AgentMemoryLookupService;
 use App\Services\AgentTaskFollowupService;
@@ -180,6 +181,7 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetUserNotificationsTool($user));
         $toolRegistry->register(new GetPendingIssueValidationsTool($user));
         $toolRegistry->register(new AnswerIssueValidationTool($user, $this->issueAgentFlowService));
+        $toolRegistry->register(new RegenerateFollowupTool($user));
 
         if ($sandboxWorkspacePath !== null && $sandboxWorkspacePath !== '') {
             $toolRegistry->register(new GitHubDownloadArchiveTool(

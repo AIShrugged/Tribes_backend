@@ -84,6 +84,7 @@ class IsolatedAgentTaskExecutionFlowTest extends TestCase
             $this->app->make(AgentMemoryIngestionService::class),
             $this->app->make(WorkspaceAccessService::class),
             $this->app->make(WorkspaceService::class),
+            $this->app->make(SandboxRunWorkspaceService::class),
             $this->app->make(AgentTaskFollowupService::class),
         ) extends IsolatedAgentTaskExecutor
         {
@@ -94,6 +95,7 @@ class IsolatedAgentTaskExecutionFlowTest extends TestCase
                 AgentMemoryIngestionService $memoryIngestionService,
                 WorkspaceAccessService $workspaceAccessService,
                 WorkspaceService $workspaceService,
+                SandboxRunWorkspaceService $sandboxRunWorkspaceService,
                 private readonly AgentTaskFollowupService $followupService,
             ) {
                 parent::__construct(
@@ -103,6 +105,7 @@ class IsolatedAgentTaskExecutionFlowTest extends TestCase
                     $memoryIngestionService,
                     $workspaceAccessService,
                     $workspaceService,
+                    $sandboxRunWorkspaceService,
                 );
             }
 
@@ -123,9 +126,11 @@ class IsolatedAgentTaskExecutionFlowTest extends TestCase
                     throw new \RuntimeException('Unexpected follow-up depth for parent task.');
                 }
 
-                $localWorkspacePath = data_get($payload, 'workspaces.0.local_path');
+                $executionWorkspace = collect($payload['workspaces'] ?? [])
+                    ->firstWhere('slug', 'execution-workspace');
+                $localWorkspacePath = data_get($executionWorkspace, 'local_path');
                 if (! is_string($localWorkspacePath) || $localWorkspacePath === '') {
-                    throw new \RuntimeException('Materialized workspace local path is missing from payload.');
+                    throw new \RuntimeException('Execution workspace local path is missing from payload. Workspaces: '.json_encode(array_column($payload['workspaces'] ?? [], 'slug')));
                 }
 
                 File::ensureDirectoryExists(dirname($localWorkspacePath.'/notes/scan.txt'));

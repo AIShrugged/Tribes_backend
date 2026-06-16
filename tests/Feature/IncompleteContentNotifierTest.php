@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Chat;
 use App\Models\Issue;
+use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Team;
 use App\Models\TelegramUser;
@@ -27,10 +28,13 @@ class IncompleteContentNotifierTest extends TestCase
     {
         parent::setUp();
         $this->org = Organization::create(['name' => 'IC Org', 'slug' => 'ic-org']);
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create(['name' => 'Default Methodology', 'text' => 'Default methodology text', 'scheme' => '{}', 'is_default' => true]);
         $this->team = Team::create([
             'name' => 'IC Team',
             'slug' => 'ic-team',
             'organization_id' => $this->org->id,
+            'methodology_id' => $methodology->id,
         ]);
         $this->author = User::factory()->create();
     }

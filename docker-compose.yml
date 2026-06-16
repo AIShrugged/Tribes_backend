@@ -139,8 +139,8 @@ services:
             AGENT_TASK_SANDBOX_DOCKERFILE: deploy/sandbox/python/Dockerfile
             AGENT_TASK_SANDBOX_BUILD_CONTEXT: deploy/sandbox/python
             AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
-            # Single local worker drains all queues; chat first for interactive priority.
-            QUEUE_NAMES: chat,default,agent-tasks
+            # Single local worker drains all queues; order = priority (chat first for interactive).
+            QUEUE_NAMES: chat,notifications,heavy,default,agent-tasks
         depends_on:
             postgres:
                 condition: service_healthy

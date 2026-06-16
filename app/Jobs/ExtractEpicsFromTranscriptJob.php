@@ -27,7 +27,9 @@ class ExtractEpicsFromTranscriptJob implements ShouldQueue, ShouldBeUnique
         public CalendarEvent $event,
         public Team $team,
         public User $user,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function uniqueId(): string
     {
