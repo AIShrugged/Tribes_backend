@@ -421,6 +421,16 @@ class AgendaService
             }
         }
 
+        $openIssues = $issues->filter(fn ($i) => ! in_array($i->status, ['done', 'cancelled']));
+        if ($openIssues->isNotEmpty()) {
+            $parts[] = '';
+            $parts[] = '--- ОТКРЫТЫЕ ЗАДАЧИ КОМАНДЫ ---';
+            foreach ($openIssues as $issue) {
+                $assignee = $issue->assignee_name ?? $issue->assignee?->name ?? null;
+                $parts[] = '• ' . $issue->name . ($assignee ? " ({$assignee})" : '');
+            }
+        }
+
         $parts[] = '';
         $parts[] = 'Сгенерируй JSON со следующими полями:';
         $parts[] = '';

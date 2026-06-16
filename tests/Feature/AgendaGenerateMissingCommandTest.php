@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\CalendarEvent;
 use App\Models\MeetingAgenda;
+use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\User;
@@ -40,6 +41,7 @@ class AgendaGenerateMissingCommandTest extends TestCase
             'platform' => 'google_meet',
             'title' => 'Has agenda',
             'url' => 'https://meet.google.com/has-agenda',
+            'description' => '',
             'starts_at' => now()->addDay(),
             'ends_at' => now()->addDay()->addHour(),
             'required_bot' => false,
@@ -57,6 +59,7 @@ class AgendaGenerateMissingCommandTest extends TestCase
             'platform' => 'google_meet',
             'title' => 'Missing agenda',
             'url' => 'https://meet.google.com/missing-agenda',
+            'description' => '',
             'starts_at' => now()->addDays(2),
             'ends_at' => now()->addDays(2)->addHour(),
             'required_bot' => false,
@@ -104,6 +107,7 @@ class AgendaGenerateMissingCommandTest extends TestCase
             'platform' => 'google_meet',
             'title' => 'Before from date meeting',
             'url' => 'https://meet.google.com/before-from-date',
+            'description' => '',
             'starts_at' => now()->addDays(2)->setHour(10)->setMinute(0),
             'ends_at' => now()->addDays(2)->setHour(11)->setMinute(0),
             'required_bot' => false,
@@ -115,6 +119,7 @@ class AgendaGenerateMissingCommandTest extends TestCase
             'platform' => 'google_meet',
             'title' => 'Target date meeting',
             'url' => 'https://meet.google.com/target-date',
+            'description' => '',
             'starts_at' => now()->addDays(3)->setHour(10)->setMinute(0),
             'ends_at' => now()->addDays(3)->setHour(11)->setMinute(0),
             'required_bot' => false,
@@ -126,6 +131,7 @@ class AgendaGenerateMissingCommandTest extends TestCase
             'platform' => 'google_meet',
             'title' => 'Other date meeting',
             'url' => 'https://meet.google.com/other-date',
+            'description' => '',
             'starts_at' => now()->addDays(4)->setHour(10)->setMinute(0),
             'ends_at' => now()->addDays(4)->setHour(11)->setMinute(0),
             'required_bot' => false,

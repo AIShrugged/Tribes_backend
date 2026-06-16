@@ -13,7 +13,9 @@ class GenerateUpcomingAgendaJob implements ShouldQueue
 
     public function __construct(
         public CalendarEvent $calendarEvent,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(UpcomingAgendaService $service): void
     {

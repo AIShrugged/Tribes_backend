@@ -6,6 +6,7 @@ use App\Models\CalendarEvent;
 use App\Models\Issue;
 use App\Models\IssueConflict;
 use App\Models\MeetingSummary;
+use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\Team;
@@ -31,10 +32,13 @@ class IssueConflictDetectorTest extends TestCase
         parent::setUp();
         $this->org = Organization::create(['name' => 'Conf Org', 'slug' => 'conf-org']);
         $this->author = User::factory()->create();
+        $methodology = Methodology::query()->where('is_default', true)->first()
+            ?? Methodology::create(['name' => 'Default Methodology', 'text' => 'Default methodology text', 'scheme' => '{}', 'is_default' => true]);
         $this->team = Team::create([
             'name' => 'Conf Team',
             'slug' => 'conf-team',
             'organization_id' => $this->org->id,
+            'methodology_id' => $methodology->id,
         ]);
         $this->team->users()->attach($this->author);
 

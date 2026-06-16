@@ -88,9 +88,9 @@ class AgentTaskMutationService
         }
 
         $organization = Organization::query()->findOrFail($organizationId);
-        if (! $user->isOrganizationMember($organization)) {
+        if (! $user->isOrganizationManager($organization)) {
             throw ValidationException::withMessages([
-                'organization_id' => ['Only organization members can manage agent tasks.'],
+                'organization_id' => ['Only organization managers can manage agent tasks.'],
             ]);
         }
 

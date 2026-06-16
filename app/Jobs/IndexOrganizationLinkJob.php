@@ -18,7 +18,10 @@ class IndexOrganizationLinkJob implements ShouldQueue
     public int $timeout = 120;
     public int $tries   = 2;
 
-    public function __construct(private readonly int $linkId) {}
+    public function __construct(private readonly int $linkId)
+    {
+        $this->onQueue('heavy');
+    }
 
     public function handle(OrganizationContextIndexerService $service): void
     {

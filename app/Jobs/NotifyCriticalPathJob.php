@@ -25,7 +25,10 @@ class NotifyCriticalPathJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public readonly int $graphId) {}
+    public function __construct(public readonly int $graphId)
+    {
+        $this->onQueue('notifications');
+    }
 
     public function uniqueId(): string
     {

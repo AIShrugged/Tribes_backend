@@ -15,7 +15,10 @@ class GenerateIssueHealthReportJob implements ShouldQueue
 
     public int $tries = 2;
 
-    public function __construct(public readonly int $teamId) {}
+    public function __construct(public readonly int $teamId)
+    {
+        $this->onQueue('heavy');
+    }
 
     public function handle(IssueHealthAnalysisService $service): void
     {

@@ -33,7 +33,9 @@ class GenerateUserDigestJob implements ShouldQueue, ShouldBeUnique
         public int $organizationId,
         public string $periodType,
         public string $periodStartDate,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function uniqueId(): string
     {

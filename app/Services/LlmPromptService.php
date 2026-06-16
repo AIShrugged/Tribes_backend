@@ -48,7 +48,7 @@ class LlmPromptService
         return $this->render(
             slug: $slug,
             organizationId: $organizationId,
-            fallbackPrompt: view($fallbackView)->render(),
+            fallbackPrompt: view($fallbackView, $variables)->render(),
             variables: $variables,
             name: $name,
         );

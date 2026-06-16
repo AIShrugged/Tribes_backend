@@ -16,7 +16,9 @@ class GenerateAgendaJob implements ShouldQueue, ShouldBeUnique
 
     public function __construct(
         public CalendarEvent $calendarEvent,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function uniqueId(): string
     {

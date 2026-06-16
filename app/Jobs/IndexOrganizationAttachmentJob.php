@@ -18,7 +18,10 @@ class IndexOrganizationAttachmentJob implements ShouldQueue
     public int $timeout = 120;
     public int $tries   = 2;
 
-    public function __construct(private readonly int $attachmentId) {}
+    public function __construct(private readonly int $attachmentId)
+    {
+        $this->onQueue('heavy');
+    }
 
     public function handle(OrganizationContextIndexerService $service): void
     {

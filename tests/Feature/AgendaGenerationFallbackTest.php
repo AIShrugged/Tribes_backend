@@ -5,8 +5,9 @@ namespace Tests\Feature;
 use App\Enums\AgendaStatus;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
-use App\Models\Methodology;
 use App\Models\MeetingAgenda;
+use App\Models\MeetingSummary;
+use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Source;
 use App\Models\Team;
@@ -34,16 +35,16 @@ class AgendaGenerationFallbackTest extends TestCase
             $model = $request->data()['model'] ?? null;
             $modelsCalled[] = $model;
 
-            if ($model === 'google/gemini-3-pro-preview') {
+            if ($model === 'google/gemini-3.1-pro-preview') {
                 return Http::response([
                     'error' => [
-                        'message' => 'No endpoints found for google/gemini-3-pro-preview.',
+                        'message' => 'No endpoints found for google/gemini-3.1-pro-preview.',
                         'code' => 404,
                     ],
                 ], 404);
             }
 
-            if ($model === 'anthropic/claude-3.5-sonnet') {
+            if ($model === 'anthropic/claude-sonnet-4-5') {
                 return Http::response([
                     'choices' => [[
                         'message' => [
@@ -113,12 +114,14 @@ class AgendaGenerationFallbackTest extends TestCase
             ], 200);
         });
 
-        [$user, $event, $organization, $team] = $this->makeEventWithTeam();
+        [$user, $event, $organization, $team, $previousEvent] = $this->makeEventWithTeam();
 
-        $activeIssue = Issue::create([
+        Issue::create([
             'user_id' => $user->id,
             'organization_id' => $organization->id,
             'team_id' => $team->id,
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id' => $previousEvent->id,
             'name' => 'Visible agenda task',
             'type' => 'organization',
             'status' => 'open',
@@ -128,6 +131,8 @@ class AgendaGenerationFallbackTest extends TestCase
             'user_id' => $user->id,
             'organization_id' => $organization->id,
             'team_id' => $team->id,
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id' => $previousEvent->id,
             'name' => 'Deleted agenda task',
             'type' => 'organization',
             'status' => 'open',
@@ -146,7 +151,7 @@ class AgendaGenerationFallbackTest extends TestCase
     }
 
     /**
-     * @return array{0: User, 1: CalendarEvent, 2: Organization, 3: Team}
+     * @return array{0: User, 1: CalendarEvent, 2: Organization, 3: Team, 4: CalendarEvent}
      */
     private function makeEventWithTeam(): array
     {
@@ -181,6 +186,25 @@ class AgendaGenerationFallbackTest extends TestCase
             'identity' => 'test@example.com',
         ]);
 
+        $previousEvent = CalendarEvent::create([
+            'source_id' => $source->id,
+            'external_id' => 'test-event-id-prev',
+            'platform' => 'google_meet',
+            'title' => 'Test Meeting',
+            'url' => 'https://meet.google.com/test',
+            'description' => 'Previous meeting',
+            'starts_at' => now()->subWeek(),
+            'ends_at' => now()->subWeek()->addHour(),
+            'required_bot' => false,
+        ]);
+
+        MeetingSummary::create([
+            'calendar_event_id' => $previousEvent->id,
+            'status' => 'done',
+            'title' => 'Previous Meeting Summary',
+            'summary' => 'Previous meeting went well.',
+        ]);
+
         $event = CalendarEvent::create([
             'source_id' => $source->id,
             'external_id' => 'test-event-id',
@@ -193,6 +217,6 @@ class AgendaGenerationFallbackTest extends TestCase
             'required_bot' => false,
         ]);
 
-        return [$user, $event, $organization, $team];
+        return [$user, $event, $organization, $team, $previousEvent];
     }
 }

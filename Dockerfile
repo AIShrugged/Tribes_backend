@@ -19,6 +19,7 @@ WORKDIR /var/www
 COPY composer.json composer.lock ./
 RUN COMPOSER_MEMORY_LIMIT=-1 composer install \
     --no-interaction \
+    --no-dev \
     --prefer-dist \
     --optimize-autoloader \
     --no-scripts

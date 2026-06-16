@@ -55,6 +55,9 @@ case "$command" in
     php artisan migrate --force --no-interaction
     ensure_workspace_storage
     php artisan scramble:export --path=public/openapi.json --no-interaction || true
+    php artisan config:cache --no-interaction || true
+    php artisan route:cache --no-interaction || true
+    php artisan event:cache --no-interaction || true
     exec php-fpm -R
   ;;
 
@@ -81,7 +84,7 @@ case "$command" in
     trap "" SIGPIPE
     trap stop_worker SIGTERM SIGINT SIGHUP
 
-    exec php artisan queue:work \
+    exec php -d memory_limit=512M artisan queue:work \
       --queue="${queue_names}" \
       --sleep=1 \
       --tries=3 \

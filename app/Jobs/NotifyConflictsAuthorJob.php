@@ -18,7 +18,9 @@ class NotifyConflictsAuthorJob implements ShouldQueueAfterCommit
      */
     public function __construct(
         public array $conflictGroupUuids,
-    ) {}
+    ) {
+        $this->onQueue('notifications');
+    }
 
     public function handle(ConflictAuthorNotifier $notifier): void
     {

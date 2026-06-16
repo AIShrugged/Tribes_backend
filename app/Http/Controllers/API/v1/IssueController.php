@@ -94,6 +94,10 @@ class IssueController extends Controller
             $query->where('status', 'blocked');
         }
 
+        if (! empty($filters['exclude_statuses'])) {
+            $query->whereNotIn('status', $filters['exclude_statuses']);
+        }
+
         // Archived = done AND close_date is 14+ days ago. Mutually exclusive with status filter.
         if ($filters['archived']) {
             $query->where('status', 'done')

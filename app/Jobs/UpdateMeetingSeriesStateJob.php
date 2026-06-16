@@ -13,7 +13,9 @@ class UpdateMeetingSeriesStateJob implements ShouldQueue
 
     public function __construct(
         public MeetingSummary $summary,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(MeetingSeriesStateService $service): void
     {

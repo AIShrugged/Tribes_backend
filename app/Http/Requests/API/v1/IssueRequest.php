@@ -39,6 +39,8 @@ class IssueRequest extends FormRequest
                 'due_date_from' => ['nullable', 'date'],
                 'due_date_to' => ['nullable', 'date'],
                 'blocked' => ['nullable', 'boolean'],
+                'exclude_statuses' => ['nullable', 'array'],
+                'exclude_statuses.*' => ['string', Rule::in(self::VALID_STATUSES)],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -139,6 +141,7 @@ class IssueRequest extends FormRequest
             'due_date_from' => $this->input('due_date_from'),
             'due_date_to' => $this->input('due_date_to'),
             'blocked' => $this->boolean('blocked', false),
+            'exclude_statuses' => $this->input('exclude_statuses', []),
         ];
     }
 

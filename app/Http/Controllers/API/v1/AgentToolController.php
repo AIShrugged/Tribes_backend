@@ -20,11 +20,12 @@ class AgentToolController extends Controller
     {
         $isMemberOfAnyOrganization = $request->user()
             ->organizations()
+            ->wherePivot('role', 'manager')
             ->exists();
 
         if (! $isMemberOfAnyOrganization) {
             throw new AppException(
-                'Only organization members can manage agent tools.',
+                'Only organization managers can manage agent tools.',
                 'AGENT_TOOL_MANAGER_REQUIRED',
                 403,
             );

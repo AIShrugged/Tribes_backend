@@ -18,7 +18,9 @@ class GenerateMeetingTaskReviewJob implements ShouldQueue
     public function __construct(
         private readonly CalendarEvent $calendarEvent,
         private readonly int $organizationId,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(MeetingTaskReviewService $service): void
     {

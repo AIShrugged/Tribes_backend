@@ -16,7 +16,9 @@ class RegenerateFollowupJob implements ShouldQueue
     public function __construct(
         public int $calendarEventId,
         public int $userId,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(FollowupService $service): void
     {

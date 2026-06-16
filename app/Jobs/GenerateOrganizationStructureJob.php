@@ -17,7 +17,9 @@ class GenerateOrganizationStructureJob implements ShouldQueue
 
     public function __construct(
         private readonly int $draftId,
-    ) {}
+    ) {
+        $this->onQueue('heavy');
+    }
 
     public function handle(CombinedOnboardingGenerationService $service): void
     {
