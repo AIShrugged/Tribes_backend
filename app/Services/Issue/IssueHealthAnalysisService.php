@@ -38,6 +38,7 @@ class IssueHealthAnalysisService
                 'ai_summary'   => $aiSummary,
                 'generated_at' => now(),
                 'expires_at'   => now()->addDays(30),
+                'status'       => 'done',
             ]
         );
     }

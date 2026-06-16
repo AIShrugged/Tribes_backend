@@ -17,6 +17,7 @@ class IssueHealthReport extends Model
             'findings'      => 'array',
             'generated_at'  => 'datetime',
             'expires_at'    => 'datetime',
+            'status'        => 'string',
         ];
     }
 

@@ -292,6 +292,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('teams/{team}/dashboard', [TeamDashboardController::class, 'show'])
             ->name('teams.dashboard');
         Route::get('teams/{team}/issue-health', [IssueHealthReportController::class, 'show']);
+        Route::post('teams/{team}/issue-health/refresh', [IssueHealthReportController::class, 'refresh']);
         Route::get('teams/{team}/methodologies/active', [TeamController::class, 'activeMethodology']);
         Route::post('methodologies/assign', [TeamController::class, 'assignMethodologyForTeam']);
 
