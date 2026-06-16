@@ -26,8 +26,8 @@ class IssueRequest extends FormRequest
                 'epic_id' => ['nullable', 'integer', 'exists:issues,id'],
                 'offset' => ['nullable', 'integer', 'min:0'],
                 'page' => ['nullable', 'integer', 'min:1'],
-                'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
-                'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at'])],
+                'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
+                'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at', 'due_date'])],
                 'order' => ['nullable', Rule::in(['asc', 'desc'])],
                 'search' => ['nullable', 'string', 'max:255'],
                 'id_from' => ['nullable', 'integer', 'min:1'],
@@ -35,6 +35,10 @@ class IssueRequest extends FormRequest
                 'archived' => ['nullable', 'boolean'],
                 'exclude_archived' => ['nullable', 'boolean'],
                 'unassigned' => ['nullable', 'boolean'],
+                'overdue' => ['nullable', 'boolean'],
+                'due_date_from' => ['nullable', 'date'],
+                'due_date_to' => ['nullable', 'date'],
+                'blocked' => ['nullable', 'boolean'],
             ],
             'issues.store' => [
                 'name' => ['required', 'string', 'max:255'],
@@ -106,6 +110,10 @@ class IssueRequest extends FormRequest
                 'order' => $this->query('order'),
                 'search' => $this->query('search'),
                 'unassigned' => $this->query('unassigned'),
+                'overdue' => $this->query('overdue'),
+                'due_date_from' => $this->query('due_date_from'),
+                'due_date_to' => $this->query('due_date_to'),
+                'blocked' => $this->query('blocked'),
             ]);
         }
     }
@@ -127,6 +135,10 @@ class IssueRequest extends FormRequest
             'archived' => $this->boolean('archived', false),
             'exclude_archived' => $this->boolean('exclude_archived', false),
             'unassigned' => $this->boolean('unassigned', false),
+            'overdue' => $this->boolean('overdue', false),
+            'due_date_from' => $this->input('due_date_from'),
+            'due_date_to' => $this->input('due_date_to'),
+            'blocked' => $this->boolean('blocked', false),
         ];
     }
 

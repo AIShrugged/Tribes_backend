@@ -76,6 +76,24 @@ class IssueController extends Controller
             $query->where('id', '<=', $filters['id_to']);
         }
 
+        if ($filters['overdue']) {
+            $query->whereNotNull('due_date')
+                ->where('due_date', '<', today()->toDateString())
+                ->whereNotIn('status', ['done', 'closed', 'cancelled']);
+        }
+
+        if ($filters['due_date_from']) {
+            $query->where('due_date', '>=', $filters['due_date_from']);
+        }
+
+        if ($filters['due_date_to']) {
+            $query->where('due_date', '<=', $filters['due_date_to']);
+        }
+
+        if ($filters['blocked']) {
+            $query->where('status', 'blocked');
+        }
+
         // Archived = done AND close_date is 14+ days ago. Mutually exclusive with status filter.
         if ($filters['archived']) {
             $query->where('status', 'done')
