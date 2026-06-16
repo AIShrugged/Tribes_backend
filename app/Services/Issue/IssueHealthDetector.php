@@ -96,6 +96,51 @@ class IssueHealthDetector
         ];
     }
 
+    public function computeLiveCounts(Team $team): array
+    {
+        $today = today();
+        $staleThreshold = now()->subDays(self::PRIORITY_IGNORED_DAYS);
+
+        return [
+            'overdue' => Issue::query()
+                ->where('team_id', $team->id)
+                ->whereNotNull('due_date')
+                ->where('due_date', '<', $today->toDateString())
+                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->withoutTrashed()
+                ->count(),
+
+            'due_today' => Issue::query()
+                ->where('team_id', $team->id)
+                ->where('due_date', $today->toDateString())
+                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->withoutTrashed()
+                ->count(),
+
+            'due_this_week' => Issue::query()
+                ->where('team_id', $team->id)
+                ->whereNotNull('due_date')
+                ->whereBetween('due_date', [
+                    $today->copy()->addDay()->toDateString(),
+                    $today->copy()->addDays(7)->toDateString(),
+                ])
+                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->withoutTrashed()
+                ->count(),
+
+            'critical_ignored' => Issue::query()
+                ->where('team_id', $team->id)
+                ->whereIn('status', self::ACTIVE_STATUSES)
+                ->where('priority', '>=', Issue::PRIORITY_CRITICAL)
+                ->withoutTrashed()
+                ->where(function ($q) use ($staleThreshold): void {
+                    $q->where('updated_at', '<', $staleThreshold)
+                        ->whereDoesntHave('allComments', fn ($q) => $q->where('created_at', '>=', $staleThreshold));
+                })
+                ->count(),
+        ];
+    }
+
     public function hasProblems(array $findings): bool
     {
         return $findings['counts']['overdue'] > 0
