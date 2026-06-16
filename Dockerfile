@@ -37,6 +37,8 @@ RUN php artisan package:discover --ansi || true
 # Сборка ассетов (если Vite)
 RUN npm run build || true
 
+COPY --chown=www-data:www-data .docker/php-fpm-www.conf /usr/local/etc/php-fpm.d/www.conf
+
 RUN mkdir -p storage bootstrap/cache \
   && chown -R www-data:www-data storage bootstrap/cache
 
