@@ -16,13 +16,14 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 
 # Composer deps (кешируется) — НО без artisan scripts
+ARG INSTALL_DEV_DEPS=false
+
 COPY composer.json composer.lock ./
-RUN COMPOSER_MEMORY_LIMIT=-1 composer install \
-    --no-interaction \
-    --no-dev \
-    --prefer-dist \
-    --optimize-autoloader \
-    --no-scripts
+RUN if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
+      COMPOSER_MEMORY_LIMIT=-1 composer install --no-interaction --prefer-dist --optimize-autoloader --no-scripts; \
+    else \
+      COMPOSER_MEMORY_LIMIT=-1 composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader --no-scripts; \
+    fi
 
 # NPM deps (кешируется)
 COPY package.json package-lock.json* ./
