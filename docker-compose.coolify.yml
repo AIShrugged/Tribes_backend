@@ -38,8 +38,6 @@ services:
         condition: service_healthy
       app-redis:
         condition: service_started
-    volumes:
-      - ./.docker/php-fpm-www.conf:/usr/local/etc/php-fpm.d/www.conf:ro
     command: ["backend"]
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9000"]

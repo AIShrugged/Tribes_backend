@@ -24,6 +24,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        if (class_exists(\Laravel\Telescope\TelescopeApplicationServiceProvider::class)) {
+            $this->app->register(\App\Providers\TelescopeServiceProvider::class);
+        }
+
         // Register Email Provider
         $this->app->singleton(\App\Contracts\EmailProviderInterface::class, function ($app) {
             $provider = config('email.default_provider');
