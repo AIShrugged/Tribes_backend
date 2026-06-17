@@ -26,6 +26,7 @@ use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ParticipantController;
 use App\Http\Controllers\API\v1\ProfileController;
 use App\Http\Controllers\API\v1\OrganizationController;
+use App\Http\Controllers\API\v1\CommitReportController;
 use App\Http\Controllers\API\v1\OrganizationDecisionController;
 use App\Http\Controllers\API\v1\OrganizationLlmPromptController;
 use App\Http\Controllers\API\v1\RecallWebhookController;
@@ -334,6 +335,9 @@ Route::group(['prefix' => 'v1'], function () {
         Route::patch('organizations/{organization}/llm-prompts/{llmPrompt}', [OrganizationLlmPromptController::class, 'update']);
         Route::post('organizations/{organization}/llm-prompts/{llmPrompt}/reset', [OrganizationLlmPromptController::class, 'reset']);
         Route::post('organizations/{organization}/llm-prompts/seed', [OrganizationLlmPromptController::class, 'seed']);
+
+        Route::get('organizations/{organization}/commit-reports', [CommitReportController::class, 'index']);
+        Route::get('organizations/{organization}/commit-reports/{commitReport}', [CommitReportController::class, 'show']);
         Route::post('organizations/{organization}/generate-structure', [OnboardingController::class, 'generate'])
             ->middleware('throttle:10,1')
             ->name('organizations.generate-structure');

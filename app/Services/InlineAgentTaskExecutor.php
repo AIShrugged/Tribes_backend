@@ -32,6 +32,10 @@ class InlineAgentTaskExecutor
             new AgentRunOptions(
                 outputMode: OutputMode::from($task->output_mode),
                 taskType: AgentTaskType::from($task->agent_task_type),
+                organizationId: $task->organization_id,
+                teamId: $task->team_id,
+                agentTaskRunId: $run->id,
+                allowedTools: $task->effectiveAllowedTools(),
                 conversationKey: 'agent-task:'.$task->id,
                 systemPromptExtension: $context['system_prompt_extension'],
                 progressCallback: function (string $stage, array $context = []) use ($run) {

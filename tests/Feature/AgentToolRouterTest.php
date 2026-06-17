@@ -62,4 +62,49 @@ class AgentToolRouterTest extends TestCase
 
         $this->assertNull(app(AgentToolRouter::class)->selectToolNames('hello'));
     }
+
+    #[Test]
+    public function code_changes_category_surfaces_the_read_only_git_tools(): void
+    {
+        config(['agent.tool_router.enabled' => true]);
+
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'choices' => [[
+                    'message' => ['role' => 'assistant', 'content' => '{"categories": ["code_changes"]}'],
+                    'finish_reason' => 'stop',
+                ]],
+            ], 200),
+        ]);
+
+        $names = app(AgentToolRouter::class)->selectToolNames('what changed in the backend repo yesterday?');
+
+        $this->assertIsArray($names);
+        foreach ([
+            'github_list_commits', 'github_get_commit', 'github_get_repository',
+            'get_last_commit_report', 'get_issue_candidates', 'search_issues_by_text', 'get_issue_detail',
+        ] as $tool) {
+            $this->assertContains($tool, $names, "code_changes must surface {$tool}");
+        }
+        // The autonomous-write tools are in no category — never routed to interactive chat.
+        $this->assertNotContains('save_commit_report', $names);
+        $this->assertNotContains('update_commit_report_item', $names);
+    }
+
+    #[Test]
+    public function autonomous_write_tools_belong_to_no_router_category(): void
+    {
+        // Even if the router selected EVERY category, the autonomous-write tools never appear,
+        // because they map to no category. The router-null fallback is closed separately by
+        // AgentService forgetting them on every interactive run.
+        $categories = (new \ReflectionClass(AgentToolRouter::class))->getConstant('CATEGORIES');
+
+        $allCategoryTools = [];
+        foreach ($categories as $meta) {
+            $allCategoryTools = array_merge($allCategoryTools, $meta['tools']);
+        }
+
+        $this->assertNotContains('save_commit_report', $allCategoryTools);
+        $this->assertNotContains('update_commit_report_item', $allCategoryTools);
+    }
 }

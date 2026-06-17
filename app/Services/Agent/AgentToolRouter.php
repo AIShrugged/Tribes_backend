@@ -58,6 +58,10 @@ class AgentToolRouter
             'description' => 'GitHub: repositories, branches, files, pull requests.',
             'tools' => ['github_get_branch', 'github_get_repository', 'github_get_tree', 'github_get_file_contents', 'github_create_branch', 'github_create_or_update_file', 'github_create_pull_request', 'github_get_pull_request_comments'],
         ],
+        'code_changes' => [
+            'description' => 'Git commits and the engineering changelog: what changed/shipped/was added or fixed in a code repository over a period, recent commits, commit details, the last saved changelog report, and whether a tracker task/issue exists for a given commit.',
+            'tools' => ['github_list_commits', 'github_get_commit', 'github_get_repository', 'get_last_commit_report', 'get_issue_candidates', 'search_issues_by_text', 'get_issue_detail'],
+        ],
         'memory_decisions' => [
             'description' => 'Team decisions and organizational memory: save/search decisions and facts.',
             'tools' => ['save_team_decision', 'search_team_decisions', 'query_db'],

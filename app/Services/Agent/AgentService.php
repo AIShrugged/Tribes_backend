@@ -147,7 +147,7 @@ class AgentService
         $mode = $options->outputMode;
         $systemPromptExtension = $options->systemPromptExtension;
 
-        $this->registerDefaultTools($user, $channel, $options->organizationId, $options->enableSqlTool);
+        $this->registerDefaultTools($user, $channel, $options->organizationId, $options->enableSqlTool, $options->teamId, $options->agentTaskRunId);
 
         if ($directMessageResponse = $this->tryHandleDirectMessageCommand($user, $content, $options)) {
             $this->logAgentRunCompleted($user, $options, $directMessageResponse, 0);
@@ -205,10 +205,28 @@ class AgentService
         // categories relevant to this message so we don't send ~50 tool schemas
         // on every LLM call. Returns null (keep everything) on any failure.
         if ($options->taskType === AgentTaskType::INTERACTIVE) {
+            // Per-run reset of the interactive issue-search budget (keyed under runId=0) so the
+            // static counter doesn't leak across chat turns in a long-lived worker process.
+            \App\Services\Agent\Support\AgentRunToolBudget::reset(0);
+
             $selectedTools = app(AgentToolRouter::class)->selectToolNames($content);
             if ($selectedTools !== null) {
                 $this->toolRegistry->keepOnly($selectedTools);
             }
+            // Autonomous-write commit-report tools are never reachable from interactive chat,
+            // even when the router falls back to the full toolset (selectToolNames returns null).
+            $this->toolRegistry->forget(['save_commit_report', 'update_commit_report_item']);
+        } elseif (! empty($options->allowedTools)) {
+            // Non-interactive (agent-task) runs honor the task's allowed_tools as a HARD
+            // allowlist — matching the ISOLATED path (AgentTaskToolExecutor::makeRegistry).
+            // Without this an inline background run is offered the full ~50-tool set.
+            $this->toolRegistry->keepOnly($options->allowedTools);
+        } else {
+            // No explicit allowlist (null or hard-empty []): keep the framework's full-toolset
+            // default, but NEVER offer the autonomous commit-report WRITE tools to a run that did
+            // not explicitly request them. The autonomous reporter/reviewer pass their tools via
+            // allowed_tools and so take the keepOnly branch above.
+            $this->toolRegistry->forget(['save_commit_report', 'update_commit_report_item']);
         }
 
         // Get available tools
@@ -545,9 +563,9 @@ class AgentService
         return "✅ Сообщение «{$message}» отправлено {$recipientName} в {$channelLabel}.";
     }
 
-    private function registerDefaultTools(User $user, ?string $channel, ?int $organizationId = null, bool $enableSqlTool = true): void
+    private function registerDefaultTools(User $user, ?string $channel, ?int $organizationId = null, bool $enableSqlTool = true, ?int $teamId = null, ?int $agentTaskRunId = null): void
     {
-        $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel, organizationId: $organizationId, enableSqlTool: $enableSqlTool);
+        $this->toolRegistrar->registerDefaults($this->toolRegistry, $user, $channel, organizationId: $organizationId, teamId: $teamId, enableSqlTool: $enableSqlTool, agentTaskRunId: $agentTaskRunId);
     }
 
     private function logToolActivity(User $user, AgentRunOptions $options, string $toolName, array $toolArgs, mixed $toolResult): void

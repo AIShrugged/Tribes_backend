@@ -53,6 +53,38 @@ class GitHubApiClient
         return $this->get("/repos/{$owner}/{$repo}/contents/".ltrim($path, '/'), $query);
     }
 
+    /**
+     * Metadata-only commit list (the list endpoint carries no per-file patch).
+     * since/until are ISO-8601 UTC and filter by committer date.
+     */
+    public function listCommits(
+        string $owner,
+        string $repo,
+        ?string $sha = null,
+        ?string $since = null,
+        ?string $until = null,
+        ?string $author = null,
+        int $perPage = 30,
+        int $page = 1,
+    ): array {
+        $query = array_filter([
+            'sha' => $sha,
+            'since' => $since,
+            'until' => $until,
+            'author' => $author,
+            'per_page' => $perPage,
+            'page' => $page,
+        ], static fn ($value) => $value !== null && $value !== '');
+
+        return $this->get("/repos/{$owner}/{$repo}/commits", $query);
+    }
+
+    /** Single commit incl. "stats" and "files" (each file may carry "patch"). */
+    public function getCommit(string $owner, string $repo, string $ref): array
+    {
+        return $this->get("/repos/{$owner}/{$repo}/commits/".rawurlencode($ref));
+    }
+
     public function createBranch(string $owner, string $repo, string $branch, string $sha): array
     {
         return $this->post("/repos/{$owner}/{$repo}/git/refs", [

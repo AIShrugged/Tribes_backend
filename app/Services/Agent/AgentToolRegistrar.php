@@ -49,6 +49,14 @@ use App\Services\Agent\Tools\GitHubGetFileContentsTool;
 use App\Services\Agent\Tools\GitHubGetPullRequestCommentsTool;
 use App\Services\Agent\Tools\GitHubGetRepositoryTool;
 use App\Services\Agent\Tools\GitHubGetTreeTool;
+use App\Services\Agent\Tools\GitHubListCommitsTool;
+use App\Services\Agent\Tools\GitHubGetCommitTool;
+use App\Services\Agent\Tools\GetLastCommitReportTool;
+use App\Services\Agent\Tools\SaveCommitReportTool;
+use App\Services\Agent\Tools\GetIssueCandidatesTool;
+use App\Services\Agent\Tools\SearchIssuesByTextTool;
+use App\Services\Agent\Tools\GetIssueDetailTool;
+use App\Services\Agent\Tools\UpdateCommitReportItemTool;
 use App\Services\Agent\Tools\ListWorkspaceFilesTool;
 use App\Services\Agent\Tools\ListWorkspacesTool;
 use App\Services\Agent\Tools\MoveWorkspaceFileTool;
@@ -72,6 +80,7 @@ use App\Services\Artifact\ArtifactStateService;
 use App\Services\Channel\ChannelRuntimeService;
 use App\Services\Channel\UserChannelTargetResolver;
 use App\Services\CriticalPath\CriticalPathService;
+use App\Services\CommitReport\CommitReportService;
 use App\Services\GitHub\GitHubApiClient;
 use App\Services\IssueAgentFlowService;
 use App\Services\JsonSchemaValidationService;
@@ -110,6 +119,7 @@ class AgentToolRegistrar
         ?int $organizationId = null,
         ?int $teamId = null,
         bool $enableSqlTool = true,
+        ?int $agentTaskRunId = null,
     ): void {
         Auth::setUser($user);
 
@@ -139,6 +149,11 @@ class AgentToolRegistrar
         $toolRegistry->register(new GitHubGetRepositoryTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetTreeTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubGetFileContentsTool($this->gitHubApiClient));
+        $toolRegistry->register(new GitHubListCommitsTool($this->gitHubApiClient));
+        $toolRegistry->register(new GitHubGetCommitTool($this->gitHubApiClient));
+        $toolRegistry->register(new GetLastCommitReportTool(app(CommitReportService::class)));
+        $toolRegistry->register(new SaveCommitReportTool(app(CommitReportService::class), $organizationId, $teamId, $agentTaskRunId));
+        $toolRegistry->register(new UpdateCommitReportItemTool(app(CommitReportService::class), $organizationId));
         $toolRegistry->register(new GitHubCreateBranchTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubCreateOrUpdateFileTool($this->gitHubApiClient));
         $toolRegistry->register(new GitHubCreatePullRequestTool($this->gitHubApiClient));
@@ -175,6 +190,9 @@ class AgentToolRegistrar
         $toolRegistry->register(new GetMeetingAgendaTool);
         $toolRegistry->register(new GetMeetingTasksTool($user, $organizationId, $teamId));
         $toolRegistry->register(new GetOpenIssuesTool($user, $organizationId, $teamId));
+        $toolRegistry->register(new GetIssueCandidatesTool($user, $organizationId, $teamId));
+        $toolRegistry->register(new SearchIssuesByTextTool($user, $organizationId, $teamId, $agentTaskRunId));
+        $toolRegistry->register(new GetIssueDetailTool($user, $organizationId, $teamId));
         $toolRegistry->register(new GetDailyTaskDigestTool($user, $organizationId));
         $toolRegistry->register(new GetWeeklyTaskDigestTool($user, $organizationId));
         $toolRegistry->register(new GetUserNotificationsTool($user));

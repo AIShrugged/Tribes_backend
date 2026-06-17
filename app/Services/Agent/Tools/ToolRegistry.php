@@ -48,6 +48,20 @@ class ToolRegistry
     }
 
     /**
+     * Drop the named tools from the registry (no-op for names not present).
+     * Mirrors keepOnly()'s mutation contract — used to hard-exclude autonomous-only
+     * write tools from interactive runs even when the router falls back to the full set.
+     *
+     * @param  array<int, string>  $names
+     */
+    public function forget(array $names): void
+    {
+        foreach ($names as $name) {
+            unset($this->tools[$name]);
+        }
+    }
+
+    /**
      * Get tools in OpenAI function calling format
      */
     public function getToolsForLLM(): array

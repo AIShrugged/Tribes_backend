@@ -374,7 +374,67 @@ class ChatAgentServiceTest extends TestCase
         $this->assertStringContainsString('Open issues', $capturedMessages[2]['content']);
     }
 
+    #[Test]
+    public function a_non_interactive_run_with_an_empty_allowlist_never_exposes_commit_report_write_tools(): void
+    {
+        $captured = [];
+        Http::fake(function ($request) use (&$captured) {
+            $captured = $request->data()['tools'] ?? [];
+
+            return Http::response($this->makeTextResponse('OK'), 200);
+        });
+
+        foreach (['save_commit_report', 'update_commit_report_item', 'get_open_issues'] as $name) {
+            $this->toolRegistry->register($this->stubTool($name));
+        }
+
+        $this->makeService()->run(
+            $this->user,
+            new Collection,
+            'do a background thing',
+            new \App\Services\Agent\AgentRunOptions(
+                taskType: \App\Enums\AgentTaskType::BACKGROUND,
+                allowedTools: [],
+            ),
+        );
+
+        $names = array_map(static fn ($t) => $t['function']['name'] ?? null, $captured);
+        // a non-write tool survives — the run is NOT pruned to nothing (distinguishes from keepOnly([])) ...
+        $this->assertContains('get_open_issues', $names);
+        // ... but the autonomous-write commit-report tools are dropped on any run that didn't request them.
+        $this->assertNotContains('save_commit_report', $names);
+        $this->assertNotContains('update_commit_report_item', $names);
+    }
+
     // --- Вспомогательные методы ---
+
+    private function stubTool(string $name): ToolInterface
+    {
+        return new class($name) implements ToolInterface
+        {
+            public function __construct(private string $name) {}
+
+            public function getName(): string
+            {
+                return $this->name;
+            }
+
+            public function getDescription(): string
+            {
+                return 'stub';
+            }
+
+            public function getParameters(): array
+            {
+                return ['type' => 'object', 'properties' => []];
+            }
+
+            public function execute(?array $parameters): mixed
+            {
+                return null;
+            }
+        };
+    }
 
     private function makeService(): AgentService
     {

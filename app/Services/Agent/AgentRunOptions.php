@@ -20,5 +20,8 @@ class AgentRunOptions
         public readonly bool $enableSqlTool = true,
         public readonly int $maxTokens = 4096,
         public readonly bool $enableThinking = false,
+        public readonly ?int $teamId = null,
+        public readonly ?int $agentTaskRunId = null,
+        public readonly ?array $allowedTools = null,
     ) {}
 }

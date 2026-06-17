@@ -257,4 +257,25 @@ return [
         'sandbox_memory' => env('AGENT_TASK_SANDBOX_MEMORY', '2g'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Commit Report (changelog agent)
+    |--------------------------------------------------------------------------
+    |
+    | Pass-2 fan-out depth/cap and the Pass-1 issue-search call budget.
+    |
+    */
+
+    'commit_report' => [
+        'review' => [
+            'max_subruns_per_report' => (int) env('COMMIT_REPORT_REVIEW_MAX_SUBRUNS', 30),
+            'sub_run_max_attempts' => (int) env('COMMIT_REPORT_REVIEW_MAX_ATTEMPTS', 2),
+            // Under QUEUE_CONNECTION=sync, dispatch would re-enter inline sub-runs synchronously.
+            'skip_under_sync' => (bool) env('COMMIT_REPORT_REVIEW_SKIP_UNDER_SYNC', true),
+        ],
+        'match' => [
+            'search_budget_per_run' => (int) env('COMMIT_REPORT_SEARCH_BUDGET', 8),
+        ],
+    ],
+
 ];
