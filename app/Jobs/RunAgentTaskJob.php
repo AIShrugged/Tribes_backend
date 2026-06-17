@@ -16,6 +16,8 @@ use App\Services\InlineAgentTaskExecutor;
 use App\Services\IsolatedAgentTaskExecutor;
 use App\Services\PaperclipAgentTaskExecutor;
 use App\Jobs\CheckPaperclipIssueStatusJob;
+use App\Services\CommitReport\CommitReportService;
+use App\Services\CommitReport\CommitReviewFanoutService;
 use App\Services\SandboxRunWorkspaceService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -93,6 +95,10 @@ class RunAgentTaskJob implements ShouldQueue
             'last_error' => null,
         ]);
 
+        // Each attempt starts from a clean per-(run,tool) call budget so a queue retry in a
+        // long-lived worker isn't starved by the previous attempt's counters (e.g. search_issues).
+        \App\Services\Agent\Support\AgentRunToolBudget::reset($run->id);
+
         try {
             if ($task->isPaperclip()) {
                 $paperclipExecutor->dispatch($task, $run);
@@ -119,6 +125,18 @@ class RunAgentTaskJob implements ShouldQueue
             ]);
 
             $this->saveTestResults($run, $sandboxRunWorkspaceService);
+
+            // Pass-2 fan-out: dispatch per-commit review sub-runs (no-op unless this is the
+            // daily commit-report task). Never let a fan-out hiccup fail the completed run.
+            try {
+                app(CommitReviewFanoutService::class)->maybeDispatch($task, $run);
+            } catch (\Throwable $fanoutException) {
+                Log::warning('Commit-review fan-out failed after task completion', [
+                    'agent_task_id' => $task->id,
+                    'agent_task_run_id' => $run->id,
+                    'error' => $fanoutException->getMessage(),
+                ]);
+            }
 
             $nextRunAt = $task->nextRunFrom($run->scheduled_for ?? now());
 
@@ -200,6 +218,16 @@ class RunAgentTaskJob implements ShouldQueue
         ]);
 
         $sandboxRunWorkspaceService->cleanup($run);
+
+        // A dead Pass-2 review sub-run flips ONLY its own item to failed (guarded so a real
+        // review is never demoted); the parent report + siblings are untouched.
+        if (($task->metadata['kind'] ?? null) === 'commit_review') {
+            $reportId = (int) ($task->input_payload['commit_report_id'] ?? 0);
+            $sha = (string) ($task->input_payload['sha'] ?? '');
+            if ($reportId > 0 && $sha !== '') {
+                app(CommitReportService::class)->markItemReviewFailed($reportId, $sha);
+            }
+        }
 
         $flowProgressService->handleTaskFailed($task, $run);
     }

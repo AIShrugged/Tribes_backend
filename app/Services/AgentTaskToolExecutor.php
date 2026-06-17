@@ -65,6 +65,7 @@ class AgentTaskToolExecutor
             $preserveSandboxDependencies,
             $task->organization_id,
             $task->team_id,
+            agentTaskRunId: $run?->id,
         );
         $this->toolRegistrar->registerAgentTaskTools($registry, $task, $run);
 
