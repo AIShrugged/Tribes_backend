@@ -33,7 +33,7 @@ class IssueStatsService
 
         // Use range condition (not whereDate) so the index is used
         $overdue = (clone $base)
-            ->where('status', '!=', 'done')
+            ->whereNotIn('status', ['done', 'closed', 'cancelled'])
             ->whereNotNull('due_date')
             ->where('due_date', '<', $todayStart)
             ->count();
@@ -166,7 +166,7 @@ class IssueStatsService
         Carbon $yesterdayEnd,
     ): int {
         $overdueBase = (clone $base)
-            ->where('status', '!=', 'done')
+            ->whereNotIn('status', ['done', 'closed', 'cancelled'])
             ->whereNotNull('due_date')
             ->where('due_date', '<', $todayStart);
 
