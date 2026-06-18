@@ -21,7 +21,8 @@ services:
         volumes:
             - .:/var/www
             - /var/run/docker.sock:/var/run/docker.sock
-            #- .docker/php-fpm.conf:/usr/local/etc/php-fpm.conf            
+            - ./.docker/php-uploads.ini:/usr/local/etc/php/conf.d/zz-uploads.ini:ro
+            #- .docker/php-fpm.conf:/usr/local/etc/php-fpm.conf
         depends_on:
             - postgres
         networks:
