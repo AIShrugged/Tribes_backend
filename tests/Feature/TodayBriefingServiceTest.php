@@ -264,6 +264,71 @@ class TodayBriefingServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_carries_updated_tasks_from_previous_meeting_to_scheduled_meeting(): void
+    {
+        $url = 'https://meet.google.com/series-' . uniqid();
+
+        // Previous meeting in the series (already happened, earlier in time).
+        $prev = $this->createEvent([
+            'url' => $url,
+            'starts_at' => Carbon::today()->setHour(10),
+            'ends_at' => Carbon::today()->setHour(11),
+        ]);
+
+        // Task created on the previous meeting → carried into `tasks`.
+        Issue::create([
+            'name' => 'Created on prev meeting',
+            'status' => 'open',
+            'sourceable_type' => CalendarEvent::class,
+            'sourceable_id' => $prev->id,
+            'user_id' => $this->user->id,
+        ]);
+
+        // Pre-existing issue the previous meeting augmented via a merge comment → `updated_tasks`.
+        $updated = Issue::create([
+            'name' => 'Updated on prev meeting',
+            'status' => 'in_progress',
+            'sourceable_type' => null,
+            'sourceable_id' => null,
+            'user_id' => $this->user->id,
+        ]);
+        IssueComment::create([
+            'issue_id' => $updated->id,
+            'user_id' => $this->user->id,
+            'parent_id' => null,
+            'calendar_event_id' => $prev->id,
+            'content' => '**Обновление по встрече:** сдвинули срок.',
+        ]);
+
+        // Scheduled (future) meeting in the same series — the one we query.
+        $this->createEvent([
+            'url' => $url,
+            'starts_at' => Carbon::tomorrow()->setHour(10),
+            'ends_at' => Carbon::tomorrow()->setHour(11),
+        ]);
+
+        $briefing = $this->service->getBriefing($this->user, Carbon::tomorrow());
+        $eventDTO = $briefing->events[0];
+
+        $this->assertEquals('scheduled', $eventDTO->meeting_state);
+        $this->assertEqualsCanonicalizing(
+            ['Created on prev meeting'],
+            collect($eventDTO->tasks)->pluck('name')->all(),
+        );
+        $this->assertEqualsCanonicalizing(
+            ['Updated on prev meeting'],
+            collect($eventDTO->updated_tasks)->pluck('name')->all(),
+        );
+        // Update context (the merge comment) resolves against the PREVIOUS meeting's id.
+        $this->assertEquals(
+            '**Обновление по встрече:** сдвинули срок.',
+            $eventDTO->updated_tasks[0]->context,
+        );
+        // Carried updated task stays out of the readiness totals.
+        $this->assertEquals(1, $eventDTO->total_tasks_count);
+    }
+
+    #[Test]
     public function it_classifies_issue_that_is_both_new_and_commented_as_new_only(): void
     {
         // De-dup guard: an issue sourced from THIS meeting that also got a merge comment for

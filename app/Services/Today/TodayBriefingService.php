@@ -205,10 +205,13 @@ class TodayBriefingService
         }
 
         // Ready meeting: show tasks created on this meeting
-        // Future/waiting meeting: show open tasks from previous meeting in series
+        // Future/waiting meeting: show open + updated tasks from previous meeting in series
         $updatedTasks = collect();
         $doneReviewTasks = collect();
         $doneNotesMap = collect();
+        // Event whose merge comments describe the "updated" tasks. For a ready meeting it's
+        // this meeting; for a scheduled/waiting meeting it's the previous meeting in the series.
+        $updateContextEventId = $event->id;
         if ($meetingState === 'ready') {
             $allTasks = Issue::withoutTrashed()
                 ->forMeeting($event->id)
@@ -268,6 +271,19 @@ class TodayBriefingService
                 $totalTasks = $allPrevTasks->count();
                 $doneTasks = $allPrevTasks->where('status', 'done')->count();
                 $prevTasks = $allPrevTasks;
+
+                // Pre-existing issues the previous meeting augmented via a merge comment —
+                // carried forward so the scheduled meeting's agenda shows what changed last
+                // sync (mirrors the "ready" branch). The merge comment is stamped with the
+                // PREVIOUS event id, so update context (who/what) resolves against $prevEvent.
+                $updateContextEventId = $prevEvent->id;
+                $updatedTasks = Issue::withoutTrashed()
+                    ->updatedForMeeting($prevEvent->id)
+                    ->when($organizationId !== null, fn ($q) => $q->inOrganization($organizationId))
+                    ->whereNotIn('status', ['cancelled'])
+                    ->whereNotIn('id', $allPrevTasks->pluck('id'))
+                    ->with(['assignee', 'issueType', 'comments'])
+                    ->get();
             }
         }
 
@@ -288,7 +304,7 @@ class TodayBriefingService
             tasks: $prevTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i))->values()->all(),
             total_tasks_count: $totalTasks,
             done_tasks_count: $doneTasks,
-            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, $event->id))->values()->all(),
+            updated_tasks: $updatedTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, $updateContextEventId))->values()->all(),
             done_tasks: $doneReviewTasks->map(fn(Issue $i) => $this->buildMeetingTaskDTO($i, null, $doneNotesMap[$i->id] ?? null))->values()->all(),
             agenda_content: $agendaContent,
         );
