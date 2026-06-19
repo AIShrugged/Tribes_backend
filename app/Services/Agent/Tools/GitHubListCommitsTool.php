@@ -148,7 +148,9 @@ class GitHubListCommitsTool extends AbstractAgentTool
         if (preg_match('/^(fix|bugfix|hotfix)(\(|!|:)/', $first)) {
             return 'fixed';
         }
-        if (preg_match('/^(chore|docs|style|ci|build|test|refactor|perf)(\(|!|:)/', $first)) {
+        // NOTE: 'refactor' is deliberately NOT skipped — a refactor touches code and may change
+        // behavior, so it falls through to 'ambiguous' and gets evaluated against the diff.
+        if (preg_match('/^(chore|docs|style|ci|build|test|perf)(\(|!|:)/', $first)) {
             return 'skip';
         }
 

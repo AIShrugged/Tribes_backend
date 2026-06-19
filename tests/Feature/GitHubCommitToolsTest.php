@@ -51,13 +51,14 @@ class GitHubCommitToolsTest extends TestCase
             ['sha' => $this->sha('c'), 'commit' => ['message' => 'chore: bump deps', 'author' => ['name' => 'Carol', 'date' => '2026-06-15T10:00:00Z']], 'author' => ['login' => 'carol'], 'parents' => [['sha' => 'p3']]],
             ['sha' => $this->sha('d'), 'commit' => ['message' => 'Merge pull request #1', 'author' => ['name' => 'Dan', 'date' => '2026-06-15T11:00:00Z']], 'author' => ['login' => 'dan'], 'parents' => [['sha' => 'p4'], ['sha' => 'p5']]],
             ['sha' => $this->sha('e'), 'commit' => ['message' => 'random change', 'author' => ['name' => 'Bot', 'date' => '2026-06-15T12:00:00Z']], 'author' => ['login' => 'dependabot[bot]'], 'parents' => [['sha' => 'p6']]],
+            ['sha' => $this->sha('f'), 'commit' => ['message' => 'refactor: extract service', 'author' => ['name' => 'Frank', 'date' => '2026-06-15T13:00:00Z']], 'author' => ['login' => 'frank'], 'parents' => [['sha' => 'p7']]],
         ]);
 
         $tool = new GitHubListCommitsTool(app(GitHubApiClient::class));
         $result = $tool->execute(['owner' => 'o', 'repo' => 'r', 'branch' => 'dev', 'per_page' => 50]);
 
         $this->assertTrue($result['success']);
-        $this->assertSame(5, $result['count']);
+        $this->assertSame(6, $result['count']);
         $this->assertFalse($result['has_more']);
 
         foreach ($result['commits'] as $row) {
@@ -70,6 +71,7 @@ class GitHubCommitToolsTest extends TestCase
         $this->assertSame('added', $byHint[$this->sha('a')]['prefix_hint']);
         $this->assertSame('fixed', $byHint[$this->sha('b')]['prefix_hint']);
         $this->assertSame('skip', $byHint[$this->sha('c')]['prefix_hint']);
+        $this->assertSame('ambiguous', $byHint[$this->sha('f')]['prefix_hint']); // refactor is now evaluated, not skipped
         $this->assertTrue($byHint[$this->sha('d')]['is_merge']);
         $this->assertTrue($byHint[$this->sha('e')]['is_bot']);
         $this->assertFalse($byHint[$this->sha('a')]['is_merge']);
