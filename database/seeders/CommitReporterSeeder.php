@@ -179,7 +179,8 @@ BUDGET DISCIPLINE (your run is force-stopped if it grows too large — getting t
 
 DETERMINISTIC FILTER FIRST (trust these flags; do not fetch diffs to re-derive them):
 - DROP every commit with is_merge=true or is_bot=true => put in skipped with reason "merge"/"bot". Never fetch its diff.
-- prefix_hint="skip" (chore/docs/style/ci/build/test/refactor) => default to skipped reason "chore" WITHOUT fetching a diff, UNLESS the message clearly implies real behavior change — only then fetch to confirm.
+- prefix_hint="skip" (chore/docs/style/ci/build/test/perf) => default to skipped reason "chore" WITHOUT fetching a diff, UNLESS the message clearly implies real behavior change — only then fetch to confirm.
+- "refactor:" commits are NOT auto-skipped — they come through as prefix_hint="ambiguous". FETCH the diff and evaluate: if the refactor changes observable behavior, classify it as fixed (or added if it enables new functionality); only if it is purely internal/cosmetic with no behavior change, skip it (reason "chore").
 - prefix_hint="added" => candidate ADDED; prefix_hint="fixed" => candidate FIXED; prefix_hint="ambiguous" => must fetch github_get_commit to decide.
 - The prefix/flags are the fast path; when prefix and diff DISAGREE, trust the diff.
 
