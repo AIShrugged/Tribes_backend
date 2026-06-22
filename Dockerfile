@@ -40,7 +40,20 @@ RUN npm run build || true
 
 COPY --chown=www-data:www-data .docker/php-fpm-www.conf /usr/local/etc/php-fpm.d/www.conf
 
-RUN mkdir -p storage bootstrap/cache \
+# The storage/framework/* and storage/app/* runtime dirs are excluded from the
+# build context by .dockerignore (avoids "permission denied" on 0700 subdirs and
+# keeps runtime data out of the image). They must still EXIST in the image, or
+# Laravel's view compiler gets an empty compiled path → "Please provide a valid
+# cache path" 500 on every Blade render (incl. "/", which the nginx healthcheck hits).
+RUN mkdir -p \
+      storage/framework/cache/data \
+      storage/framework/sessions \
+      storage/framework/views \
+      storage/framework/testing \
+      storage/app/public \
+      storage/app/private \
+      storage/logs \
+      bootstrap/cache \
   && chown -R www-data:www-data storage bootstrap/cache
 
 COPY --chmod=755 ./docker-php-entrypoint /var/www/docker-php-entrypoint
