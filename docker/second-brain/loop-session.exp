@@ -1,0 +1,36 @@
+#!/usr/bin/env expect -f
+#
+# Launches an interactive Claude Code session in a pseudo-TTY and starts the
+# built-in `/loop dynamic` skill so the loop runs INSIDE Claude (self-paced).
+#
+# First-run gates (onboarding/theme/trust/MCP-approval) are removed by the config
+# pre-seed in entrypoint.sh; permissions come from the seeded settings.json in
+# default mode, so there is no Bypass-Permissions warning and no per-tool prompt.
+#
+# IMPORTANT: the command is TYPED slowly (send -s) rather than sent as one chunk,
+# otherwise the TUI treats it as a paste — the leading "/" is not recognized as a
+# slash command and the trailing newline does not submit. Enter is sent as a
+# separate keystroke after a short pause.
+
+set task [string trim [exec cat /brain/brain-prompt.md]]
+set send_slow {1 .03}
+
+spawn claude --mcp-config /brain/.mcp.json --strict-mcp-config --add-dir /state
+
+# Wait until the UI is quiet (ready); answer a stray MCP-approval gate if seen.
+set timeout 25
+expect {
+    -re "(?i)new mcp server" { send -- "2\r"; exp_continue }
+    timeout {}
+    eof { exit 1 }
+}
+
+# Type the slash command slowly so it registers as a command…
+send -s -- "/loop dynamic $task"
+sleep 2
+# …then submit with a separate Enter.
+send -- "\r"
+
+# Keep the session alive.
+set timeout -1
+expect eof

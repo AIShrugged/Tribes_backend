@@ -55,6 +55,8 @@ abstract class AbstractAgentTool extends Tool implements ToolInterface
                 'integer' => $schema->integer(),
                 'number'  => $schema->number(),
                 'boolean' => $schema->boolean(),
+                'object'  => $schema->object(),
+                'array'   => $schema->array(),
                 default   => $schema->string(),
             };
 

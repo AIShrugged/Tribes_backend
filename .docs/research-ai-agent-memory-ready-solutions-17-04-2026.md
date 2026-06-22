@@ -1,7 +1,7 @@
 # Research: Готовые решения для памяти ИИ-агентов
 
 **Дата**: 17.04.2026  
-**Контекст**: Spodial HR Backend — Laravel 12 / PHP 8.2+, Telegram-агент, Wanda-бот, транскрипции встреч
+**Контекст**: TribesMCP Backend — Laravel 12 / PHP 8.2+, Telegram-агент, Wanda-бот, транскрипции встреч
 
 ---
 

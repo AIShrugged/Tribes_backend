@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tribesmcp": {
+      "type": "http",
+      "url": "http://nginx/mcp",
+      "headers": {
+        "Authorization": "Bearer ${TRIBESMCP_TOKEN}"
+      }
+    }
+  }
+}

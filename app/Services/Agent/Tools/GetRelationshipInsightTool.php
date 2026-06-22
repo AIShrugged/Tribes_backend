@@ -5,10 +5,13 @@ namespace App\Services\Agent\Tools;
 use App\Models\Channel;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 use App\Services\Insight\InsightRetrievalService;
 
 class GetRelationshipInsightTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'get_relationship_insight';
@@ -62,6 +65,11 @@ class GetRelationshipInsightTool extends AbstractAgentTool
                 'success' => false,
                 'error' => 'Could not resolve insight profiles for both people. Provide valid email_a/email_b or user_id_a/user_id_b.',
             ];
+        }
+
+        if ($this->isMcpRequest()
+            && (! $this->assertCanAccessProfile($profileIdA) || ! $this->assertCanAccessProfile($profileIdB))) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 
         $retrievalService = app(InsightRetrievalService::class);

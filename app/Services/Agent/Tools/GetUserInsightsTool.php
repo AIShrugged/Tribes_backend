@@ -5,10 +5,13 @@ namespace App\Services\Agent\Tools;
 use App\Models\Channel;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 use App\Services\Insight\InsightRetrievalService;
 
 class GetUserInsightsTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'get_user_insights';
@@ -79,6 +82,10 @@ class GetUserInsightsTool extends AbstractAgentTool
                 'data' => null,
                 'message' => 'No insight profile found for this user',
             ];
+        }
+
+        if ($this->isMcpRequest() && ! $this->assertCanAccessProfile($profile->id)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 
         $retrievalService = app(InsightRetrievalService::class);

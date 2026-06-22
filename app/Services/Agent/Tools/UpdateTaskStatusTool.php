@@ -3,7 +3,7 @@
 namespace App\Services\Agent\Tools;
 
 use App\Enums\MeetingTaskStatus;
-use App\Models\Issue;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 /**
  * Updates the status of an existing task.
@@ -16,6 +16,8 @@ use App\Models\Issue;
  */
 class UpdateTaskStatusTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'update_task_status';
@@ -56,7 +58,7 @@ class UpdateTaskStatusTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'task_id and status are required'];
         }
 
-        $issue = Issue::find($taskId);
+        $issue = $this->assertCanAccessIssue((int) $taskId);
         if (! $issue) {
             return ['success' => false, 'error' => "Task #{$taskId} not found"];
         }

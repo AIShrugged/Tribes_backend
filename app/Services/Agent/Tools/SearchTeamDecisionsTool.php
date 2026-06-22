@@ -4,10 +4,12 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\Decision;
 use App\Models\Team;
-use Illuminate\Support\Facades\Auth;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class SearchTeamDecisionsTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'search_team_decisions';
@@ -43,7 +45,11 @@ class SearchTeamDecisionsTool extends AbstractAgentTool
                 ],
                 'limit' => [
                     'type'        => 'integer',
-                    'description' => 'Maximum number of results (default: 10, max: 50).',
+                    'description' => 'Maximum number of results per page (default: 10, max: 50).',
+                ],
+                'offset' => [
+                    'type'        => 'integer',
+                    'description' => 'How many results to skip (pagination). Use with "total"/"has_more"/"next_offset" in the response to page through ALL decisions. Defaults to 0.',
                 ],
             ],
         ];
@@ -57,19 +63,20 @@ class SearchTeamDecisionsTool extends AbstractAgentTool
         $query      = trim($parameters['query'] ?? '');
         $sourceType = $parameters['source_type'] ?? null;
         $limit      = min((int) ($parameters['limit'] ?? 10), 50);
+        $offset     = max(0, (int) ($parameters['offset'] ?? 0));
 
         if (! $teamId) {
             return ['success' => false, 'error' => 'team_id is required.'];
         }
 
-        $userId = Auth::id();
-        if (! $userId) {
+        $user = $this->currentUser();
+        if (! $user) {
             return ['success' => false, 'error' => 'Not authenticated.'];
         }
 
-        // Security: verify caller is a member of the team
+        // Security: verify caller may read the team (direct member or org manager)
         $team = Team::find((int) $teamId);
-        if (! $team || ! $team->users()->where('users.id', $userId)->exists()) {
+        if (! $team || ! $user->isTeamMember($team)) {
             return ['success' => false, 'error' => 'Team not found.'];
         }
 
@@ -88,7 +95,11 @@ class SearchTeamDecisionsTool extends AbstractAgentTool
             );
         }
 
-        $decisions = $dbQuery->limit($limit)->get();
+        $total = (clone $dbQuery)->count();
+
+        $decisions = $dbQuery->offset($offset)->limit($limit)->get();
+
+        $hasMore = ($offset + $decisions->count()) < $total;
 
         $items = $decisions->map(fn ($d) => [
             'id'          => $d->id,
@@ -105,11 +116,15 @@ class SearchTeamDecisionsTool extends AbstractAgentTool
         ])->values()->all();
 
         return [
-            'success'    => true,
-            'team_id'    => $teamId,
-            'team_name'  => $team->name,
-            'total'      => count($items),
-            'decisions'  => $items,
+            'success'      => true,
+            'team_id'      => $teamId,
+            'team_name'    => $team->name,
+            'count'        => count($items),
+            'total'        => $total,
+            'offset'       => $offset,
+            'has_more'     => $hasMore,
+            'next_offset'  => $hasMore ? $offset + $decisions->count() : null,
+            'decisions'    => $items,
         ];
     }
 }

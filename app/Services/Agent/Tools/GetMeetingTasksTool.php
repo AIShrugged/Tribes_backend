@@ -22,6 +22,8 @@ use Illuminate\Support\Carbon;
  */
 class GetMeetingTasksTool extends AbstractAgentTool
 {
+    use \App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
+
     public function __construct(
         private readonly ?User $user = null,
         private readonly ?int $organizationId = null,
@@ -213,8 +215,21 @@ class GetMeetingTasksTool extends AbstractAgentTool
 
     private function resolveTenantScope(mixed $orgId, mixed $teamId): array
     {
+        // Resolve the acting user: a real injected user (internal agent path) or
+        // the authenticated Sanctum user (MCP path). Null only when invoked with
+        // no user context at all (internal/system callers) — membership checks
+        // are then skipped, preserving prior behaviour; the MCP route always has
+        // an authenticated user so it is always enforced.
+        $user = $this->currentUser($this->user);
+
         $orgId = $orgId !== null && $orgId !== '' ? (int) $orgId : $this->organizationId;
         $teamId = $teamId !== null && $teamId !== '' ? (int) $teamId : $this->teamId;
+
+        // Default to the acting user's organization when nothing was provided
+        // (e.g. an MCP service user scoped to a single org).
+        if ($orgId === null && $teamId === null && $user !== null) {
+            $orgId = $this->currentOrganizationId($user);
+        }
 
         if ($orgId === null && $teamId === null) {
             return [
@@ -235,12 +250,12 @@ class GetMeetingTasksTool extends AbstractAgentTool
 
             $orgId ??= (int) $team->organization_id;
 
-            if ($this->user !== null && ! $this->user->isTeamMember($team)) {
+            if ($user !== null && ! $user->isTeamMember($team)) {
                 return ['success' => false, 'error' => 'You do not have access to this team.'];
             }
         }
 
-        if ($orgId !== null && $this->user !== null && ! $this->user->isOrganizationMember($orgId)) {
+        if ($orgId !== null && $user !== null && ! $user->isOrganizationMember($orgId)) {
             return ['success' => false, 'error' => 'You do not have access to this organization.'];
         }
 

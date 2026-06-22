@@ -3,11 +3,14 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\CalendarEvent;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Auth;
 
 class SearchMeetingsTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'search_meetings';
@@ -48,7 +51,11 @@ class SearchMeetingsTool extends AbstractAgentTool
                 ],
                 'limit' => [
                     'type' => 'integer',
-                    'description' => 'Maximum number of results to return (default: 10, max: 50)',
+                    'description' => 'Maximum number of results per page (default: 10, max: 50)',
+                ],
+                'offset' => [
+                    'type' => 'integer',
+                    'description' => 'How many meetings to skip (pagination). Use with "total"/"has_more"/"next_offset" in the response to page through ALL meetings. Defaults to 0.',
                 ],
             ],
             'required' => [],
@@ -60,7 +67,23 @@ class SearchMeetingsTool extends AbstractAgentTool
         // Handle null parameters
         $parameters = $parameters ?? [];
 
-        $query = CalendarEvent::query()->owned(Auth::id())->with('participants');
+        $user = $this->currentUser();
+        if (! $user) {
+            return ['success' => false, 'error' => 'Not authenticated.'];
+        }
+
+        $orgIds = $this->currentOrganizationIds($user);
+
+        // Scope to the acting user's own meetings PLUS any meeting visible to one
+        // of their organizations (a per-org service user owns no meetings itself).
+        $query = CalendarEvent::query()
+            ->where(function (Builder $scope) use ($user, $orgIds): void {
+                $scope->owned($user->id);
+                foreach ($orgIds as $orgId) {
+                    $scope->orWhere(fn (Builder $inner) => $inner->visibleToOrganization($orgId));
+                }
+            })
+            ->with('participants');
 
         if (!empty($parameters['query'])) {
             $query->where('title', 'ilike', '%' . $parameters['query'] . '%');
@@ -108,12 +131,21 @@ class SearchMeetingsTool extends AbstractAgentTool
         }
 
         $limit = min((int) ($parameters['limit'] ?? 10), 50);
+        $offset = max(0, (int) ($parameters['offset'] ?? 0));
+
+        $total = (clone $query)->count();
         // Sort ascending (chronological) so "first/second meeting" references work naturally
-        $events = $query->orderBy('starts_at', 'asc')->limit($limit)->get();
+        $events = $query->orderBy('starts_at', 'asc')->offset($offset)->limit($limit)->get();
+
+        $hasMore = ($offset + $events->count()) < $total;
 
         return [
             'success' => true,
             'count' => $events->count(),
+            'total' => $total,
+            'offset' => $offset,
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $events->count() : null,
             'meetings' => $events->map(fn($event) => [
                 'id' => $event->id,
                 'title' => $event->title,

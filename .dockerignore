@@ -16,3 +16,14 @@ README.md
 Dockerfile
 docker-compose.yml
 composer-setup.php
+
+# Runtime data — provided at runtime via the bind mount, never needed in the
+# image build context. Excluding it also avoids "permission denied" on build
+# (e.g. agent/paperclip dirs under storage/app/private are created mode 0700).
+storage/app/private
+storage/app/public
+storage/logs
+storage/framework/cache
+storage/framework/sessions
+storage/framework/views
+storage/framework/testing

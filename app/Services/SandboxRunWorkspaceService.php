@@ -9,9 +9,9 @@ class SandboxRunWorkspaceService
 {
     public function root(): string
     {
-        $root = trim((string) config('agent.agent_tasks.sandbox_run_root', sys_get_temp_dir().'/spodial-sandbox-runs'));
+        $root = trim((string) config('agent.agent_tasks.sandbox_run_root', sys_get_temp_dir().'/tribesmcp-sandbox-runs'));
 
-        return $root !== '' ? rtrim($root, '/') : sys_get_temp_dir().'/spodial-sandbox-runs';
+        return $root !== '' ? rtrim($root, '/') : sys_get_temp_dir().'/tribesmcp-sandbox-runs';
     }
 
     public function pathForRun(AgentTaskRun|int $run): string

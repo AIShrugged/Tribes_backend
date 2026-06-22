@@ -8,10 +8,10 @@ use App\Models\ChannelMessage;
 use App\Models\Issue;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 use App\Services\Issue\IssueAutoPipelineDispatcher;
 use App\Services\TenantScopeValidator;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -19,6 +19,8 @@ use Illuminate\Validation\ValidationException;
  */
 class CreateIssueTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     private const SOURCEABLE_MAP = [
         'calendar_event' => CalendarEvent::class,
         'channel_message' => ChannelMessage::class,
@@ -150,7 +152,7 @@ class CreateIssueTool extends AbstractAgentTool
 
         $organizationId = isset($parameters['organization_id'])
             ? (int) $parameters['organization_id']
-            : $this->defaultOrganizationId;
+            : ($this->defaultOrganizationId ?? $this->currentOrganizationId($user));
         $teamId = array_key_exists('team_id', $parameters)
             ? ($parameters['team_id'] !== null ? (int) $parameters['team_id'] : null)
             : $this->defaultTeamId;
@@ -228,9 +230,7 @@ class CreateIssueTool extends AbstractAgentTool
 
     private function resolveCurrentUser(): ?User
     {
-        $user = $this->user ?? Auth::user();
-
-        return $user instanceof User ? $user : null;
+        return $this->currentUser($this->user);
     }
 
     private function resolveAssigneeId(array $parameters): ?int

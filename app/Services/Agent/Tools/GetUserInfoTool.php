@@ -5,9 +5,12 @@ namespace App\Services\Agent\Tools;
 use App\Models\Participant;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class GetUserInfoTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     private const NAME_NORMALIZATION_SQL = "regexp_replace(replace(lower(name), 'ё', 'е'), '\\s+', ' ', 'g')";
 
     public function getName(): string
@@ -58,6 +61,15 @@ class GetUserInfoTool extends AbstractAgentTool
         }
 
         $query = User::query()->with(['organizations', 'teams', 'profiles.channel']);
+
+        // Over MCP, restrict lookups to people in the caller's organization(s).
+        if ($this->isMcpRequest()) {
+            $orgIds = $this->currentOrganizationIds();
+            if (empty($orgIds)) {
+                return ['success' => false, 'error' => 'Not authenticated.'];
+            }
+            $query->whereHas('organizations', fn ($q) => $q->whereIn('organizations.id', $orgIds));
+        }
 
         // Exact lookups — return single user
         if ($userId) {
@@ -113,6 +125,11 @@ class GetUserInfoTool extends AbstractAgentTool
                     'email' => $u->email,
                 ])->toArray(),
             ];
+        }
+
+        // Over MCP, do not fall back to the (org-unbounded) participant search.
+        if ($this->isMcpRequest()) {
+            return ['success' => false, 'error' => "No users found matching name '{$name}' in your organization"];
         }
 
         // Fallback: search participants by name → resolve profiles

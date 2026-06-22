@@ -4,11 +4,14 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\OrganizationContext;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class GetOrganizationContextTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function __construct(
-        private readonly User $user,
+        private readonly ?User $user = null,
         private readonly ?int $organizationId = null,
     ) {
         parent::__construct();
@@ -42,13 +45,18 @@ class GetOrganizationContextTool extends AbstractAgentTool
 
     public function execute(?array $parameters): mixed
     {
-        $orgId = (int) ($parameters['organization_id'] ?? $this->organizationId ?? 0);
+        $user = $this->currentUser($this->user);
+        if (! $user) {
+            return ['success' => false, 'error' => 'Not authenticated.'];
+        }
+
+        $orgId = (int) ($parameters['organization_id'] ?? $this->organizationId ?? $this->currentOrganizationId($user) ?? 0);
 
         if (!$orgId) {
             return ['success' => false, 'error' => 'organization_id is required'];
         }
 
-        $orgIds = $this->user->organizations()->pluck('organizations.id');
+        $orgIds = $user->organizations()->pluck('organizations.id');
         if (!$orgIds->contains($orgId)) {
             return ['success' => false, 'error' => 'Organization not found or access denied'];
         }

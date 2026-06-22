@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#
+# Durable "loop dynamic" wrapper for the second-brain sidecar.
+# Each cycle invokes Claude Code headless for ONE pass; the agent decides the
+# next wake-up via a trailing `NEXT_DELAY_SECONDS=<n>` line, which we clamp to
+# [BRAIN_MIN_DELAY, BRAIN_MAX_DELAY]. Cross-cycle memory lives in /state (the
+# agent reads/writes /state/seen.json + findings files), so cycles are stateless
+# and survive restarts.
+
+set -uo pipefail
+
+STATE_DIR=/state
+PROMPT_FILE=/brain/brain-prompt.md
+LOG="$STATE_DIR/brain.log"
+
+MIN_DELAY="${BRAIN_MIN_DELAY:-1800}"
+MAX_DELAY="${BRAIN_MAX_DELAY:-86400}"
+MAX_TURNS="${BRAIN_MAX_TURNS:-40}"
+# Backend API base for posting the reasoning log (brain_events).
+BRAIN_API_URL="${BRAIN_API_URL:-http://nginx/api/v1}"
+
+mkdir -p "$STATE_DIR"
+
+# Auth: prefer the Claude subscription token (no API key needed). Generate it on
+# a machine logged into your Claude Pro/Max account with `claude setup-token`
+# (valid ~1 year) and pass it as CLAUDE_CODE_OAUTH_TOKEN. An ANTHROPIC_API_KEY,
+# if set, takes precedence over the subscription token — so when it is empty
+# (compose passes "" by default) we unset it to let the subscription token win.
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  unset ANTHROPIC_API_KEY
+fi
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "[brain] FATAL: no Claude auth. Set CLAUDE_CODE_OAUTH_TOKEN (from 'claude setup-token', uses your Pro/Max subscription) or ANTHROPIC_API_KEY." | tee -a "$LOG"
+  exit 1
+fi
+if [ -z "${TRIBESMCP_TOKEN:-}" ]; then
+  echo "[brain] FATAL: TRIBESMCP_TOKEN is not set" | tee -a "$LOG"
+  exit 1
+fi
+
+# Tool allow-list. update_task_status is destructive: only allow it when the
+# operator explicitly opts in; otherwise it is disallowed (suggest-only).
+ALLOWED="mcp__tribesmcp,Read,Write,Bash(git:*),Bash(gh:*),Bash(ls:*),Bash(cat:*),Bash(rg:*)"
+DISALLOWED_ARGS=()
+if [ "${BRAIN_ALLOW_STATUS_WRITES:-false}" != "true" ]; then
+  DISALLOWED_ARGS=(--disallowedTools "mcp__tribesmcp__update_task_status")
+fi
+
+log() { echo "[brain] $(date -u +%FT%TZ) $*" | tee -a "$LOG"; }
+
+clamp() {
+  local v="$1"
+  [ "$v" -lt "$MIN_DELAY" ] && v="$MIN_DELAY"
+  [ "$v" -gt "$MAX_DELAY" ] && v="$MAX_DELAY"
+  echo "$v"
+}
+
+new_uuid() { cat /proc/sys/kernel/random/uuid 2>/dev/null || date -u +%s%N; }
+
+# Normalize the Claude stream-json transcript into brain_events and POST them to
+# the backend so the cycle's reasoning, tool calls, results and summary are
+# persisted in the DB (table brain_events).
+post_events() {
+  local run="$1" stream="$2" events body http
+  [ -s "$stream" ] || return 0
+
+  events=$(jq -cs '
+    [ .[]
+      | if .type=="assistant" then ( .message.content[]? |
+            if   .type=="text"     then {type:"reasoning", content:(.text // "")}
+            elif .type=="thinking" then {type:"thinking",  content:(.thinking // "")}
+            elif .type=="tool_use" then {type:"tool_call", tool_name:.name, payload:.input}
+            else empty end)
+        elif .type=="user" then ( .message.content[]? |
+            if .type=="tool_result" then {type:"tool_result",
+              content:(( if (.content|type)=="array" then (.content|map(.text? // (.|tostring))|join("\n")) else (.content|tostring) end )[0:20000]),
+              payload:{tool_use_id:.tool_use_id, is_error:(.is_error // false)}}
+            else empty end)
+        elif .type=="result" then {type:"cycle_summary", content:(.result // null),
+              payload:{is_error:.is_error, num_turns:.num_turns, duration_ms:.duration_ms, total_cost_usd:.total_cost_usd, session_id:.session_id}}
+        elif .type=="system" then {type:"cycle_start", payload:{subtype:.subtype, model:.model}}
+        else empty end ]' "$stream" 2>/dev/null)
+
+  if [ -z "$events" ] || [ "$events" = "[]" ]; then
+    log "brain-log: no events parsed from stream; skipping"
+    return 0
+  fi
+
+  body=$(jq -cn --arg run "$run" --argjson events "$events" '{run_uuid:$run, events:$events}')
+  http=$(printf '%s' "$body" | curl -s -m 45 -o /dev/null -w "%{http_code}" -X POST "$BRAIN_API_URL/brain/events" \
+      -H "Authorization: Bearer $TRIBESMCP_TOKEN" -H "Content-Type: application/json" -H "Accept: application/json" \
+      --data-binary @-)
+  log "brain-log: posted $(printf '%s' "$events" | jq 'length') events (http $http)"
+}
+
+log "second-brain starting (min=${MIN_DELAY}s max=${MAX_DELAY}s status_writes=${BRAIN_ALLOW_STATUS_WRITES:-false})"
+
+while true; do
+  RUN_UUID="$(new_uuid)"
+  log "cycle start (run $RUN_UUID)"
+  STREAM="$STATE_DIR/stream-$RUN_UUID.jsonl"
+
+  # stream-json + --verbose emits the full transcript (reasoning, tool calls,
+  # tool results, final result) as JSONL, which we persist to brain_events.
+  claude -p "$(cat "$PROMPT_FILE")" \
+      --mcp-config /brain/.mcp.json \
+      --strict-mcp-config \
+      --allowedTools "$ALLOWED" \
+      "${DISALLOWED_ARGS[@]}" \
+      --add-dir "$STATE_DIR" \
+      --max-turns "$MAX_TURNS" \
+      --output-format stream-json --verbose > "$STREAM" 2>>"$LOG"
+  STATUS=$?
+
+  # Persist the transcript even on failure (captures partial reasoning/errors).
+  post_events "$RUN_UUID" "$STREAM" || true
+
+  if [ $STATUS -ne 0 ]; then
+    log "claude exited with code $STATUS; backing off ${MIN_DELAY}s"
+    rm -f "$STREAM"
+    sleep "$MIN_DELAY"
+    continue
+  fi
+
+  RESULT=$(jq -rs 'map(select(.type=="result")) | last | .result // empty' "$STREAM" 2>/dev/null)
+  rm -f "$STREAM"
+
+  if [ -z "$RESULT" ]; then
+    log "empty result; backing off ${MIN_DELAY}s"
+    sleep "$MIN_DELAY"
+    continue
+  fi
+
+  printf '%s\n' "$RESULT" >> "$LOG"
+
+  REQUESTED=$(printf '%s' "$RESULT" | grep -oE 'NEXT_DELAY_SECONDS=[0-9]+' | tail -1 | cut -d= -f2)
+  if [ -z "$REQUESTED" ]; then
+    log "no NEXT_DELAY_SECONDS in result; defaulting to MAX (${MAX_DELAY}s)"
+    REQUESTED="$MAX_DELAY"
+  fi
+
+  DELAY=$(clamp "$REQUESTED")
+  log "cycle done; requested=${REQUESTED}s sleeping=${DELAY}s"
+  sleep "$DELAY"
+done

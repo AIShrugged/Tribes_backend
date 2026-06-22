@@ -14,10 +14,12 @@ use App\Models\InsightProfileHistory;
 use App\Models\InsightSource;
 use App\Models\Issue;
 use App\Models\MeetingSummary;
+use App\Models\OrganizationLink;
 use App\Models\Participant;
 use App\Models\Profile;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 use App\Services\AgentMemoryLookupService;
 use App\Services\Insight\InsightRetrievalService;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -26,15 +28,73 @@ use Illuminate\Support\Facades\Auth;
 
 class QueryTribesDataTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     private const NAME_SQL = "regexp_replace(replace(lower(name), 'ё', 'е'), '\\s+', ' ', 'g')";
 
+    private bool $actingUserResolved = false;
+
+    private ?User $actingUserCache = null;
+
+    private bool $orgResolved = false;
+
+    private ?int $orgCache = null;
+
     public function __construct(
-        private readonly User $user,
-        private readonly AgentMemoryLookupService $memoryLookupService,
-        private readonly ?int $organizationId = null,
+        private readonly ?User $injectedUser = null,
+        private readonly ?AgentMemoryLookupService $memoryLookupService = null,
+        private readonly ?int $injectedOrganizationId = null,
         private readonly ?int $teamId = null,
     ) {
         parent::__construct();
+    }
+
+    /**
+     * Acting user: the injected user (internal agent path) or the authenticated
+     * Sanctum user (MCP path). Memoized.
+     */
+    private function actingUser(): ?User
+    {
+        if (! $this->actingUserResolved) {
+            $this->actingUserCache = $this->currentUser($this->injectedUser);
+            $this->actingUserResolved = true;
+        }
+
+        return $this->actingUserCache;
+    }
+
+    /**
+     * Effective organization scope. On the MCP path (no injected user) it
+     * defaults to the authenticated service user's single organization; on the
+     * internal path it stays exactly as injected (preserving the existing
+     * "explicit scope required" contract).
+     */
+    private function effectiveOrganizationId(): ?int
+    {
+        if (! $this->orgResolved) {
+            $orgId = $this->injectedOrganizationId;
+            if ($orgId === null && $this->injectedUser === null) {
+                $orgId = $this->currentOrganizationId($this->actingUser());
+            }
+            $this->orgCache = $orgId;
+            $this->orgResolved = true;
+        }
+
+        return $this->orgCache;
+    }
+
+    /**
+     * Over MCP, deny reading insights/facts about a person outside the acting
+     * user's organization. On the internal path (injected user) behaviour is
+     * unchanged.
+     */
+    private function mcpProfileBlocked(?int $profileId): bool
+    {
+        if ($this->injectedUser !== null) {
+            return false; // internal agent path — unchanged
+        }
+
+        return $profileId === null || ! $this->assertCanAccessProfile((int) $profileId);
     }
 
     public function getName(): string
@@ -47,9 +107,11 @@ class QueryTribesDataTool extends AbstractAgentTool
         return 'Universal read-only access to all database entities. '
             .'Set entity to choose what to query, then pass entity-specific filters. '
             .'Entities: current_user, users, tasks, meetings, meeting_summary, '
-            .'team_members, teams, organizations, followups, extracted_facts, '
+            .'team_members, teams, organizations, organization_links, followups, extracted_facts, '
             .'user_insights, insight_history, relationships, short_term_memory, '
-            .'messages (type=direct|general), agent_memories.';
+            .'messages (type=direct|general), agent_memories. '
+            .'organization_links returns the org\'s external links (e.g. GitHub repos) to inspect with git/gh '
+            .'and compare against tasks/decisions.';
     }
 
     public function getParameters(): array
@@ -62,7 +124,7 @@ class QueryTribesDataTool extends AbstractAgentTool
                     'type' => 'string',
                     'enum' => [
                         'current_user', 'users', 'tasks', 'meetings', 'meeting_summary',
-                        'team_members', 'teams', 'organizations', 'followups',
+                        'team_members', 'teams', 'organizations', 'organization_links', 'followups',
                         'extracted_facts', 'user_insights', 'insight_history',
                         'relationships', 'short_term_memory', 'messages', 'agent_memories',
                     ],
@@ -130,7 +192,11 @@ class QueryTribesDataTool extends AbstractAgentTool
                 ],
                 'limit' => [
                     'type' => 'integer',
-                    'description' => 'Max results (default 20, max 200).',
+                    'description' => 'Max results per page (default 20, max 200).',
+                ],
+                'offset' => [
+                    'type' => 'integer',
+                    'description' => 'How many results to skip (pagination for tasks/meetings). Use with "total"/"has_more"/"next_offset" in the response to page through ALL results. Defaults to 0.',
                 ],
             ],
         ];
@@ -138,20 +204,26 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     public function execute(?array $parameters): mixed
     {
+        if ($this->actingUser() === null) {
+            return ['success' => false, 'error' => 'Not authenticated.'];
+        }
+
         $filters = $parameters['filters'] ?? [];
         $limit = min((int) ($parameters['limit'] ?? 20), 200);
+        $offset = max(0, (int) ($parameters['offset'] ?? 0));
         $entity = (string) ($parameters['entity'] ?? '');
         $filters = $this->applyConversationScope($entity, is_array($filters) ? $filters : []);
 
         return match ($entity) {
             'current_user' => $this->queryCurrentUser(),
             'users' => $this->queryUsers($filters, $limit),
-            'tasks' => $this->queryTasks($filters, $limit),
-            'meetings' => $this->queryMeetings($filters, $limit),
+            'tasks' => $this->queryTasks($filters, $limit, $offset),
+            'meetings' => $this->queryMeetings($filters, $limit, $offset),
             'meeting_summary' => $this->queryMeetingSummary($filters),
             'team_members' => $this->queryTeamMembers($filters),
             'teams' => $this->queryTeams($filters),
             'organizations' => $this->queryOrganizations(),
+            'organization_links' => $this->queryOrganizationLinks($filters),
             'followups' => $this->queryFollowups($filters),
             'extracted_facts' => $this->queryExtractedFacts($filters),
             'user_insights' => $this->queryUserInsights($filters),
@@ -166,12 +238,12 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function applyConversationScope(string $entity, array $filters): array
     {
-        if ($this->organizationId === null) {
+        if ($this->effectiveOrganizationId() === null) {
             return $filters;
         }
 
-        if (in_array($entity, ['tasks', 'meetings', 'teams', 'team_members'], true)) {
-            $filters['organization_id'] = $this->organizationId;
+        if (in_array($entity, ['tasks', 'meetings', 'teams', 'team_members', 'organization_links'], true)) {
+            $filters['organization_id'] = $this->effectiveOrganizationId();
         }
 
         if ($this->teamId !== null && in_array($entity, ['tasks', 'team_members'], true)) {
@@ -186,14 +258,14 @@ class QueryTribesDataTool extends AbstractAgentTool
     private function queryCurrentUser(): array
     {
         $user = User::with([
-            'organizations' => fn ($q) => $this->organizationId !== null
-                ? $q->where('organizations.id', $this->organizationId)
+            'organizations' => fn ($q) => $this->effectiveOrganizationId() !== null
+                ? $q->where('organizations.id', $this->effectiveOrganizationId())
                 : $q,
-            'teams' => fn ($q) => $this->organizationId !== null
-                ? $q->where('teams.organization_id', $this->organizationId)
+            'teams' => fn ($q) => $this->effectiveOrganizationId() !== null
+                ? $q->where('teams.organization_id', $this->effectiveOrganizationId())
                 : $q,
             'profiles.channel',
-        ])->find($this->user->id);
+        ])->find($this->actingUser()->id);
         if (! $user) {
             return ['success' => false, 'error' => 'Current user not found'];
         }
@@ -243,8 +315,8 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         $query = User::query()->with(['organizations', 'teams', 'profiles.channel']);
-        if ($this->organizationId !== null) {
-            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $this->organizationId));
+        if ($this->effectiveOrganizationId() !== null) {
+            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $this->effectiveOrganizationId()));
         }
 
         if ($userId) {
@@ -327,7 +399,7 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     // ── tasks ─────────────────────────────────────────────────────────────────
 
-    private function queryTasks(array $filters, int $limit): array
+    private function queryTasks(array $filters, int $limit, int $offset = 0): array
     {
         $scope = $this->validateTaskTenantScope($filters);
         if ($scope['success'] === false) {
@@ -389,9 +461,21 @@ class QueryTribesDataTool extends AbstractAgentTool
             $query->where('created_at', '>=', $this->parseDateBoundary($filters['created_after'], endOfDay: false));
         }
 
-        $tasks = $query->orderByRaw('due_date ASC NULLS LAST')->limit($limit)->get();
+        $total = (clone $query)->count();
+        $tasks = $query->orderByRaw('due_date ASC NULLS LAST')->offset($offset)->limit($limit)->get();
+        $hasMore = ($offset + $tasks->count()) < $total;
         if ($tasks->isEmpty()) {
-            return ['success' => true, 'tasks_count' => 0, 'message' => 'No tasks found matching the filters.'];
+            return [
+                'success' => true,
+                'tasks_count' => 0,
+                'total' => $total,
+                'offset' => $offset,
+                'has_more' => $hasMore,
+                'next_offset' => $hasMore ? $offset + $tasks->count() : null,
+                'message' => $total > 0
+                    ? 'No tasks on this page; offset is past the end. Lower the offset.'
+                    : 'No tasks found matching the filters.',
+            ];
         }
 
         $now = Carbon::now();
@@ -413,6 +497,10 @@ class QueryTribesDataTool extends AbstractAgentTool
         return [
             'success' => true,
             'tasks_count' => $tasks->count(),
+            'total' => $total,
+            'offset' => $offset,
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $tasks->count() : null,
             'tasks' => $tasks->map(function ($t) use ($now, $assigneeProfileIds, $sourceMeetings) {
                 return [
                 'id' => $t->id,
@@ -483,12 +571,12 @@ class QueryTribesDataTool extends AbstractAgentTool
 
             $orgId ??= (int) $team->organization_id;
 
-            if (! $this->user->isTeamMember($team)) {
+            if (! $this->actingUser()->isTeamMember($team)) {
                 return ['success' => false, 'error' => 'You do not have access to this team.'];
             }
         }
 
-        if ($orgId !== null && ! $this->user->isOrganizationMember($orgId)) {
+        if ($orgId !== null && ! $this->actingUser()->isOrganizationMember($orgId)) {
             return ['success' => false, 'error' => 'You do not have access to this organization.'];
         }
 
@@ -501,7 +589,7 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     // ── meetings ──────────────────────────────────────────────────────────────
 
-    private function queryMeetings(array $filters, int $limit): array
+    private function queryMeetings(array $filters, int $limit, int $offset = 0): array
     {
         $userId = Auth::id();
 
@@ -544,11 +632,17 @@ class QueryTribesDataTool extends AbstractAgentTool
             }
         }
 
-        $events = $query->orderBy('starts_at', 'asc')->limit($limit)->get();
+        $total = (clone $query)->count();
+        $events = $query->orderBy('starts_at', 'asc')->offset($offset)->limit($limit)->get();
+        $hasMore = ($offset + $events->count()) < $total;
 
         return [
             'success' => true,
             'count' => $events->count(),
+            'total' => $total,
+            'offset' => $offset,
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $events->count() : null,
             'meetings' => $events->map(fn ($e) => [
                 'id' => $e->id,
                 'title' => $e->title,
@@ -687,7 +781,7 @@ class QueryTribesDataTool extends AbstractAgentTool
         if (! $organizationId) {
             return ['success' => false, 'error' => 'organization_id is required for teams query'];
         }
-        if (! $this->user->isOrganizationMember($organizationId)) {
+        if (! $this->actingUser()->isOrganizationMember($organizationId)) {
             return ['success' => false, 'error' => 'You are not a member of this organization.'];
         }
 
@@ -707,10 +801,10 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryOrganizations(): array
     {
-        $organizations = $this->user->organizations()
+        $organizations = $this->actingUser()->organizations()
             ->when(
-                $this->organizationId !== null,
-                fn ($q) => $q->where('organizations.id', $this->organizationId)
+                $this->effectiveOrganizationId() !== null,
+                fn ($q) => $q->where('organizations.id', $this->effectiveOrganizationId())
             )
             ->get(['organizations.id', 'organizations.name']);
 
@@ -720,6 +814,41 @@ class QueryTribesDataTool extends AbstractAgentTool
                 'id' => $org->id,
                 'name' => $org->name,
             ])->values()->toArray(),
+        ];
+    }
+
+    // ── organization_links ────────────────────────────────────────────────────
+
+    private function queryOrganizationLinks(array $filters): array
+    {
+        $orgId = isset($filters['organization_id']) && $filters['organization_id'] !== ''
+            ? (int) $filters['organization_id']
+            : $this->effectiveOrganizationId();
+
+        if ($orgId === null) {
+            return ['success' => false, 'error' => 'organization_id is required for organization_links'];
+        }
+        if (! $this->actingUser()->isOrganizationMember($orgId)) {
+            return ['success' => false, 'error' => 'You are not a member of this organization.'];
+        }
+
+        $links = OrganizationLink::with('context')
+            ->where('organization_id', $orgId)
+            ->orderBy('id')
+            ->get();
+
+        return [
+            'success' => true,
+            'organization_id' => $orgId,
+            'count' => $links->count(),
+            '_hint' => 'Inspect each url with git/gh (merged PRs, recent commits) and compare against open tasks/decisions to find done-but-open work or lost agreements.',
+            'links' => $links->map(fn (OrganizationLink $l) => [
+                'id' => $l->id,
+                'url' => $l->url,
+                'indexed_context' => $l->context?->text ? mb_substr($l->context->text, 0, 1000) : null,
+                'indexed_at' => $l->context?->indexed_at ? Carbon::parse($l->context->indexed_at)->toIso8601String() : null,
+                'created_at' => $l->created_at?->toIso8601String(),
+            ])->values()->all(),
         ];
     }
 
@@ -775,6 +904,9 @@ class QueryTribesDataTool extends AbstractAgentTool
         $profileId = $filters['profile_id'] ?? null;
         if (! $profileId) {
             return ['success' => false, 'error' => 'profile_id is required for extracted_facts'];
+        }
+        if ($this->mcpProfileBlocked((int) $profileId)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 
         $sourcesQuery = InsightSource::where('profile_id', $profileId);
@@ -853,6 +985,9 @@ class QueryTribesDataTool extends AbstractAgentTool
         if (! $profile) {
             return ['success' => true, 'data' => null, 'message' => 'No insight profile found for this user'];
         }
+        if ($this->mcpProfileBlocked($profile->id)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
+        }
 
         return ['success' => true, 'data' => app(InsightRetrievalService::class)->getFullProfile($profile->id)];
     }
@@ -867,6 +1002,9 @@ class QueryTribesDataTool extends AbstractAgentTool
 
         if (! $profileId) {
             return ['success' => false, 'error' => 'profile_id is required for insight_history'];
+        }
+        if ($this->mcpProfileBlocked((int) $profileId)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 
         $insightProfileIds = InsightProfile::where('profile_id', $profileId)
@@ -910,6 +1048,9 @@ class QueryTribesDataTool extends AbstractAgentTool
         if (! $profileIdA || ! $profileIdB) {
             return ['success' => false, 'error' => 'Could not resolve insight profiles. Provide email_a/email_b or user_id_a/user_id_b.'];
         }
+        if ($this->mcpProfileBlocked($profileIdA) || $this->mcpProfileBlocked($profileIdB)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
+        }
 
         $relationship = app(InsightRetrievalService::class)->getRelationship($profileIdA, $profileIdB);
         if (! $relationship) {
@@ -939,6 +1080,9 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         $profile = $this->resolveProfile($user);
+        if ($profile && $this->mcpProfileBlocked($profile->id)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
+        }
         $shortTerm = $profile ? app(InsightRetrievalService::class)->getShortTermContext($profile->id) : [];
 
         return [
@@ -963,7 +1107,7 @@ class QueryTribesDataTool extends AbstractAgentTool
         $msgLimit = max(1, min($limit, 100));
         $convType = $filters['type'] ?? 'direct';
 
-        if ($convType === 'direct' && $user->id !== $this->user->id) {
+        if ($convType === 'direct' && $user->id !== $this->actingUser()->id) {
             return [
                 'success' => false,
                 'error' => 'Direct/private messages are only visible to their owner.',
@@ -987,8 +1131,8 @@ class QueryTribesDataTool extends AbstractAgentTool
                     ->havingRaw("COUNT(*) {$operator} ?", [$value]);
             });
 
-        if ($this->organizationId !== null && $convType === 'general') {
-            $query->whereHas('conversation', fn ($q) => $q->where('organization_id', $this->organizationId));
+        if ($this->effectiveOrganizationId() !== null && $convType === 'general') {
+            $query->whereHas('conversation', fn ($q) => $q->where('organization_id', $this->effectiveOrganizationId()));
         }
 
         if (! empty($filters['since'])) {
@@ -1047,7 +1191,8 @@ class QueryTribesDataTool extends AbstractAgentTool
     private function queryAgentMemories(array $filters, int $limit): array
     {
         try {
-            $memories = $this->memoryLookupService->searchAccessibleMemories($this->user->id, $filters, $limit);
+            $memoryLookup = $this->memoryLookupService ?? app(AgentMemoryLookupService::class);
+            $memories = $memoryLookup->searchAccessibleMemories($this->actingUser()->id, $filters, $limit);
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
@@ -1083,10 +1228,10 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         // Tenant isolation: only expose orgs/teams the requesting user also belongs to
-        $requestingOrgIds = $this->user->organizations()
+        $requestingOrgIds = $this->actingUser()->organizations()
             ->when(
-                $this->organizationId !== null,
-                fn ($q) => $q->where('organizations.id', $this->organizationId)
+                $this->effectiveOrganizationId() !== null,
+                fn ($q) => $q->where('organizations.id', $this->effectiveOrganizationId())
             )
             ->pluck('organizations.id')
             ->toArray();
