@@ -324,8 +324,15 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         $query = User::query()->with(['organizations', 'teams', 'profiles.channel']);
-        if ($this->effectiveOrganizationId() !== null) {
-            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $this->effectiveOrganizationId()));
+        // Always scope to a tenant — never search the global users table. With an explicit
+        // org, use it; otherwise restrict to the ACTING user's accessible organizations
+        // (fail-closed: no orgs → no results, rather than leaking users of other tenants).
+        $scopeOrgId = $this->effectiveOrganizationId();
+        if ($scopeOrgId !== null) {
+            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $scopeOrgId));
+        } else {
+            $actorOrgIds = $this->actingUser()?->organizations()->pluck('organizations.id')->all() ?? [];
+            $query->whereHas('organizations', fn ($q) => $q->whereIn('organizations.id', $actorOrgIds));
         }
 
         if ($userId) {
@@ -348,17 +355,35 @@ class QueryTribesDataTool extends AbstractAgentTool
                 : ['success' => false, 'error' => 'User not found'];
         }
 
-        $escaped = preg_quote($name, '/');
-        $users = (clone $query)
-            ->whereRaw(self::NAME_SQL.' ~* ?', ['\\m'.$escaped.'\\M'])
-            ->limit($limit)
-            ->get();
+        // Match across scripts: also try the Cyrillic→Latin transliteration so a query like
+        // "Иван" finds a user stored as "Ivan". NAME_SQL lowercases the stored name, and
+        // NameNormalizer::normalize() lowercases + transliterates the search term.
+        $terms = array_values(array_unique(array_filter([
+            $name,
+            \App\Support\NameNormalizer::normalize($name),
+        ], fn ($t) => $t !== '')));
 
-        if ($users->isEmpty()) {
+        $users = collect();
+        foreach ($terms as $term) {
             $users = (clone $query)
-                ->whereRaw(self::NAME_SQL.' LIKE ?', ['%'.$name.'%'])
+                ->whereRaw(self::NAME_SQL.' ~* ?', ['\\m'.preg_quote($term, '/').'\\M'])
                 ->limit($limit)
                 ->get();
+            if ($users->isNotEmpty()) {
+                break;
+            }
+        }
+
+        if ($users->isEmpty()) {
+            foreach ($terms as $term) {
+                $users = (clone $query)
+                    ->whereRaw(self::NAME_SQL.' LIKE ?', ['%'.$term.'%'])
+                    ->limit($limit)
+                    ->get();
+                if ($users->isNotEmpty()) {
+                    break;
+                }
+            }
         }
 
         if ($users->isNotEmpty()) {
