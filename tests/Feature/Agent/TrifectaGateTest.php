@@ -121,16 +121,39 @@ class TrifectaGateTest extends TestCase
         $this->assertFalse($sender->executed, 'High-impact tool after reading untrusted content must be blocked');
     }
 
+    #[Test]
+    public function high_impact_tool_runs_in_a_tainted_autonomous_run(): void
+    {
+        $tool = $this->highImpactSpy('send_thing');
+        $this->toolRegistry->register($tool);
+
+        $n = 0;
+        Http::fake(function ($request) use (&$n) {
+            $n++;
+            if ($n === 1) {
+                return Http::response($this->toolCall('send_thing'), 200);
+            }
+
+            return Http::response($this->text('ок'), 200);
+        });
+
+        // Autonomous (BACKGROUND) run: the gate must NOT block — there is no human to
+        // confirm; autonomous trust comes from the pre-approved allowed_tools list.
+        $this->runAgent('сделай', untrustedInput: true, taskType: AgentTaskType::BACKGROUND);
+
+        $this->assertTrue($tool->executed, 'High-impact tool must run in an autonomous run (not gated)');
+    }
+
     // --- helpers ---
 
-    private function runAgent(string $content, bool $untrustedInput): string
+    private function runAgent(string $content, bool $untrustedInput, AgentTaskType $taskType = AgentTaskType::INTERACTIVE): string
     {
         return $this->app->make(AgentService::class)->run(
             $this->user,
             new Collection,
             $content,
             new AgentRunOptions(
-                taskType: AgentTaskType::INTERACTIVE,
+                taskType: $taskType,
                 untrustedInput: $untrustedInput,
             ),
         );

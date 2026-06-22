@@ -139,6 +139,38 @@ class CommandRunnerTest extends TestCase
     }
 
     #[Test]
+    public function it_rejects_reassigning_to_a_user_in_another_actor_org_but_not_the_issues_org(): void
+    {
+        [$userA, $orgA] = $this->userInOrg('A');
+
+        // actorA also belongs to a second org; the candidate is in THAT org, not the issue's org.
+        $orgC = Organization::create(['name' => 'Org C', 'slug' => 'org-c-'.uniqid()]);
+        $orgC->users()->attach($userA->id, ['role' => 'employee']);
+        $candidate = User::factory()->create();
+        $orgC->users()->attach($candidate->id, ['role' => 'employee']);
+
+        $issue = $this->makeIssue($orgA, $userA, 'task', 'open'); // issue lives in orgA
+
+        // Old behaviour (shares-an-org-with-actor) would ALLOW this; the fix scopes to the issue's org.
+        $this->expectException(CommandAuthorizationException::class);
+        $this->runner()->run(new ReassignIssueCommand($issue->id, $candidate->id), $userA);
+    }
+
+    #[Test]
+    public function it_allows_reassigning_to_a_user_in_the_issues_organization(): void
+    {
+        [$userA, $orgA] = $this->userInOrg('A');
+        $teammate = User::factory()->create();
+        $orgA->users()->attach($teammate->id, ['role' => 'employee']);
+
+        $issue = $this->makeIssue($orgA, $userA, 'task', 'open');
+
+        $this->runner()->run(new ReassignIssueCommand($issue->id, $teammate->id), $userA);
+
+        $this->assertSame($teammate->id, $issue->fresh()->assignee_id);
+    }
+
+    #[Test]
     public function it_updates_fields_and_the_inverse_restores_them(): void
     {
         [$userA, $orgA] = $this->userInOrg('A');

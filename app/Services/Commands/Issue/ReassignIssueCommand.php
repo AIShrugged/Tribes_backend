@@ -32,15 +32,28 @@ class ReassignIssueCommand implements CommandInterface
         }
 
         if ($this->assigneeId !== null && $this->assigneeId !== $actor->id) {
-            $orgIds = $actor->organizations()->pluck('organizations.id');
-            $accessible = User::query()
-                ->whereKey($this->assigneeId)
-                ->whereHas('organizations', fn ($q) => $q->whereIn('organizations.id', $orgIds))
-                ->exists();
+            $assigneeQuery = User::query()->whereKey($this->assigneeId);
 
-            if (! $accessible) {
+            if ($issue->organization_id !== null || $issue->team_id !== null) {
+                // The new assignee must belong to the TASK's organization or team — not merely
+                // any org the actor happens to share — so they can actually see the task.
+                $assigneeQuery->where(function ($q) use ($issue) {
+                    if ($issue->organization_id !== null) {
+                        $q->whereHas('organizations', fn ($o) => $o->where('organizations.id', $issue->organization_id));
+                    }
+                    if ($issue->team_id !== null) {
+                        $q->orWhereHas('teams', fn ($t) => $t->where('teams.id', $issue->team_id));
+                    }
+                });
+            } else {
+                // Legacy personal task (no org/team): fall back to "shares an org with the actor".
+                $orgIds = $actor->organizations()->pluck('organizations.id');
+                $assigneeQuery->whereHas('organizations', fn ($o) => $o->whereIn('organizations.id', $orgIds));
+            }
+
+            if (! $assigneeQuery->exists()) {
                 throw new CommandAuthorizationException(
-                    "Пользователь #{$this->assigneeId} недоступен (не состоит в ваших организациях) — нельзя назначить."
+                    "Пользователь #{$this->assigneeId} не входит в организацию/команду задачи — нельзя назначить."
                 );
             }
         }

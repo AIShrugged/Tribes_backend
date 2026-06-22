@@ -24,18 +24,30 @@ class CommandRunner
 
         $result = DB::transaction(static fn (): CommandResult => $command->execute());
 
-        AgentCommandAudit::create([
-            'actor_id' => $actor->id,
-            'organization_id' => $actor->organizations()->value('organizations.id'),
-            'command_type' => $result->name,
-            'target_type' => $result->targetType,
-            'target_id' => $result->targetId,
-            'snapshot' => $result->snapshot,
-            'inverse_payload' => $result->inversePayload,
-            'tainted' => $tainted,
-            'status' => 'committed',
-            'summary' => $result->summary,
-        ]);
+        // The mutation has already committed. A failure to write the audit row must NOT
+        // surface as a command failure (that would imply the mutation didn't happen) — log
+        // it and move on so the result reflects the committed state.
+        try {
+            AgentCommandAudit::create([
+                'actor_id' => $actor->id,
+                'organization_id' => $actor->organizations()->value('organizations.id'),
+                'command_type' => $result->name,
+                'target_type' => $result->targetType,
+                'target_id' => $result->targetId,
+                'snapshot' => $result->snapshot,
+                'inverse_payload' => $result->inversePayload,
+                'tainted' => $tainted,
+                'status' => 'committed',
+                'summary' => $result->summary,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Agent command audit write failed', [
+                'command_type' => $result->name,
+                'target_type' => $result->targetType,
+                'target_id' => $result->targetId,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $result;
     }

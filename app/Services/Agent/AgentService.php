@@ -368,6 +368,15 @@ class AgentService
                         'count' => count($assistantMessage['tool_calls']),
                     ]);
 
+                    // Run untrusted-content readers first so the taint flag is set before any
+                    // high-impact tool in the SAME batch is evaluated (lethal-trifecta ordering).
+                    usort($assistantMessage['tool_calls'], function ($a, $b): int {
+                        $aUntrusted = $this->toolRegistry->get($a['function']['name'] ?? '') instanceof \App\Services\Agent\Tools\Contracts\ReturnsUntrustedContent;
+                        $bUntrusted = $this->toolRegistry->get($b['function']['name'] ?? '') instanceof \App\Services\Agent\Tools\Contracts\ReturnsUntrustedContent;
+
+                        return ($bUntrusted ? 1 : 0) <=> ($aUntrusted ? 1 : 0);
+                    });
+
                     // Execute each tool call
                     foreach ($assistantMessage['tool_calls'] as $toolCall) {
                         // Honor /stop between tools so long multi-tool iterations can be
@@ -402,9 +411,11 @@ class AgentService
                                 'success' => false,
                                 'error' => "Tool '{$toolName}' not found",
                             ];
-                        } elseif ($tainted && $tool instanceof \App\Services\Agent\Tools\Contracts\HighImpactAgentTool) {
-                            // Lethal-trifecta gate: untrusted content was read this run, so a
-                            // high-impact (outbound/mutation) action must not run automatically.
+                        } elseif ($tainted && $isInteractive && $tool instanceof \App\Services\Agent\Tools\Contracts\HighImpactAgentTool) {
+                            // Lethal-trifecta gate (INTERACTIVE runs only): untrusted content was read
+                            // this run, so a high-impact (outbound/mutation) action must not run
+                            // automatically. Autonomous runs are NOT gated here — they have no human to
+                            // confirm and rely on their pre-approved allowed_tools allow-list instead.
                             Log::warning('High-impact tool blocked in tainted run', [
                                 'tool' => $toolName,
                                 'user_id' => $user->id,

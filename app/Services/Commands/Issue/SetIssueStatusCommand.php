@@ -55,11 +55,16 @@ class SetIssueStatusCommand implements CommandInterface
         $issue = $this->issue ?? throw new \LogicException('authorize() must run before execute()');
 
         $oldStatus = $issue->status;
+        $oldCloseDate = $issue->close_date; // captured for the audit snapshot (see note below)
         $issue->update(['status' => $this->status]); // Eloquent → IssueObserver fires.
 
         // reopen creates a downstream AgentTask (irreversible), so it cannot be undone.
         $invertible = $this->status !== MeetingTaskStatus::REOPEN->value;
 
+        // NOTE on undo + close_date: the inverse restores `status`; `close_date` is a DERIVED
+        // column recomputed by Issue::booted() from the status, so undoing a close correctly
+        // clears it. The exact prior timestamp is kept in `snapshot.close_date` for audit /
+        // manual recovery (the rare done→open→done case would otherwise reset it to now()).
         return new CommandResult(
             name: 'set_issue_status',
             targetType: 'issue',
@@ -70,7 +75,7 @@ class SetIssueStatusCommand implements CommandInterface
                 'old_status' => $oldStatus,
                 'new_status' => $issue->status,
             ],
-            snapshot: ['status' => $oldStatus],
+            snapshot: ['status' => $oldStatus, 'close_date' => $oldCloseDate?->toIso8601String()],
             inversePayload: $invertible
                 ? ['command' => 'set_issue_status', 'issue_id' => $issue->id, 'status' => $oldStatus]
                 : null,
