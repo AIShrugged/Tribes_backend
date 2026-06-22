@@ -26,6 +26,8 @@ Thumbs.db
 /public/vendor/scribe
 /public/openapi.json
 CLAUDE.md
+# ...but the second-brain sidecar needs its CLAUDE.md in the build context (Docker COPY).
+!docker/second-brain/CLAUDE.md
 .claude
 .claude/*
 secrets
