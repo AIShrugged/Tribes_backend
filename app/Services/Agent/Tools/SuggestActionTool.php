@@ -27,6 +27,8 @@ class SuggestActionTool extends AbstractAgentTool
         return 'Propose an action for a human to approve (the brain does NOT change data itself). '
             .'key=create_issue → payload {name, type, description?, team_id?, assignee_id?, due_date? (YYYY-MM-DD), source_type? (calendar_event), source_id?}. '
             .'key=update_task_status → payload {issue_id, status (open|in_progress|paused|review|reopen|done)}. '
+            .'key=add_comment → payload {issue_id, comment}. Use this INSTEAD of create_issue when a task '
+            .'for the same thing ALREADY EXISTS and you only have something to add (new info, a decision, a link). '
             .'Always pass a deterministic dedupe_key so re-runs do not create duplicates '
             .'(e.g. "lost:decision:228:premoderation-show-task-id" or "stalled:issue:533" or "close:issue:951"). '
             .'Include title (short), reasoning (why), and evidence (ids/quotes).';
@@ -147,6 +149,9 @@ class SuggestActionTool extends AbstractAgentTool
                 : null,
             BrainSuggestion::KEY_UPDATE_TASK_STATUS => (empty($payload['issue_id']) || trim((string) ($payload['status'] ?? '')) === '')
                 ? 'update_task_status payload requires issue_id and status'
+                : null,
+            BrainSuggestion::KEY_ADD_COMMENT => (empty($payload['issue_id']) || trim((string) ($payload['comment'] ?? '')) === '')
+                ? 'add_comment payload requires issue_id and comment'
                 : null,
             default => 'Unsupported key',
         };

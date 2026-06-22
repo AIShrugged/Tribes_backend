@@ -111,6 +111,55 @@ class BrainSuggestionTest extends TestCase
     }
 
     #[Test]
+    public function approving_an_add_comment_suggestion_adds_a_comment_to_the_issue(): void
+    {
+        [$user, $org] = $this->managerFor('A');
+        $issue = Issue::create([
+            'user_id' => $user->id,
+            'organization_id' => $org->id,
+            'name' => 'Existing task',
+            'type' => Issue::TYPE_ORGANIZATION,
+            'status' => 'open',
+        ]);
+        $suggestion = $this->suggestion($org, 'add_comment', [
+            'issue_id' => $issue->id,
+            'comment' => 'На встрече 12.06 договорились добавить сюда премодерацию.',
+        ]);
+
+        Sanctum::actingAs($user, ['*']);
+        $this->postJson("/api/v1/brain/suggestions/{$suggestion->id}/approve")->assertOk();
+
+        $this->assertDatabaseHas('issue_comments', [
+            'issue_id' => $issue->id,
+            'user_id' => $user->id,
+            'content' => 'На встрече 12.06 договорились добавить сюда премодерацию.',
+        ]);
+        $this->assertSame(BrainSuggestion::STATUS_APPLIED, $suggestion->fresh()->status);
+    }
+
+    #[Test]
+    public function approving_an_add_comment_for_a_foreign_issue_fails_safe(): void
+    {
+        [$userA, $orgA] = $this->managerFor('A');
+        [$userB, $orgB] = $this->managerFor('B');
+        $foreignIssue = Issue::create([
+            'user_id' => $userB->id,
+            'organization_id' => $orgB->id,
+            'name' => 'Other org task',
+            'type' => Issue::TYPE_ORGANIZATION,
+            'status' => 'open',
+        ]);
+        // A suggestion in org A that points at org B's issue must not write across tenants.
+        $suggestion = $this->suggestion($orgA, 'add_comment', ['issue_id' => $foreignIssue->id, 'comment' => 'leak?']);
+
+        Sanctum::actingAs($userA, ['*']);
+        $this->postJson("/api/v1/brain/suggestions/{$suggestion->id}/approve")->assertStatus(422);
+
+        $this->assertDatabaseMissing('issue_comments', ['issue_id' => $foreignIssue->id, 'content' => 'leak?']);
+        $this->assertSame(BrainSuggestion::STATUS_FAILED, $suggestion->fresh()->status);
+    }
+
+    #[Test]
     public function a_manager_cannot_approve_another_organizations_suggestion(): void
     {
         [$userA] = $this->managerFor('A');

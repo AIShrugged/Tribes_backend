@@ -7,6 +7,7 @@ use App\Exceptions\AppException;
 use App\Models\BrainSuggestion;
 use App\Models\CalendarEvent;
 use App\Models\Issue;
+use App\Models\IssueComment;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Issue\IssueAutoPipelineDispatcher;
@@ -39,8 +40,38 @@ class SuggestionApplier
         return match ($suggestion->key) {
             BrainSuggestion::KEY_CREATE_ISSUE => $this->applyCreateIssue($suggestion, $payload, $approver),
             BrainSuggestion::KEY_UPDATE_TASK_STATUS => $this->applyUpdateTaskStatus($suggestion, $payload),
+            BrainSuggestion::KEY_ADD_COMMENT => $this->applyAddComment($suggestion, $payload, $approver),
             default => throw new AppException("Unknown suggestion key '{$suggestion->key}'.", 'BRAIN_SUGGESTION_KEY', 422),
         };
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function applyAddComment(BrainSuggestion $suggestion, array $payload, User $approver): array
+    {
+        $organizationId = (int) $suggestion->organization_id;
+
+        $issueId = (int) ($payload['issue_id'] ?? 0);
+        $content = trim((string) ($payload['comment'] ?? ''));
+
+        if ($issueId <= 0) {
+            $this->fail('add_comment: issue_id is required.');
+        }
+        if ($content === '') {
+            $this->fail('add_comment: comment is empty.');
+        }
+
+        $issue = Issue::query()->withoutTrashed()->inOrganization($organizationId)->find($issueId);
+        if (! $issue) {
+            $this->fail("add_comment: issue #{$issueId} not found in the organization.");
+        }
+
+        $comment = IssueComment::create([
+            'issue_id' => $issue->id,
+            'user_id' => $approver->id,
+            'content' => $content,
+        ]);
+
+        return ['issue_id' => $issue->id, 'comment_id' => $comment->id];
     }
 
     /** @param array<string, mixed> $payload */

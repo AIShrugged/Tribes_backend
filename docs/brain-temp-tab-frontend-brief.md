@@ -44,7 +44,7 @@ List endpoints return `data` as an array and put the **total count in the `Items
 ### 3.1 List suggestions
 `GET /api/v1/brain/suggestions`
 Query params (all optional): `status` (default `pending`; pass `all` for every status),
-`key` (`create_issue` | `update_task_status`), `organization_id`, `per_page` (default 50, max 200), `page`.
+`key` (`create_issue` | `update_task_status` | `add_comment`), `organization_id`, `per_page` (default 50, max 200), `page`.
 
 `data[]` item:
 ```jsonc
@@ -74,6 +74,9 @@ Query params (all optional): `status` (default `pending`; pass `all` for every s
   → preview: **«Создать задачу: “{name}” ({type})»**.
 - `key="update_task_status"` → `{ issue_id, status }`
   → preview: **«Задача #{issue_id} → статус “{status}”»**.
+- `key="add_comment"` → `{ issue_id, comment }`
+  → preview: **«Комментарий к задаче #{issue_id}: “{comment}”»**. The brain proposes this on an
+  EXISTING task (instead of a duplicate) when it has something to add.
 
 ### 3.2 Approve a suggestion
 `POST /api/v1/brain/suggestions/{id}/approve` (no body)
@@ -81,6 +84,7 @@ Query params (all optional): `status` (default `pending`; pass `all` for every s
   `applied_result`:
   - create_issue → `{ "issue_id": 962, "name": "…" }`
   - update_task_status → `{ "issue_id": 951, "old_status": "open", "new_status": "done" }`
+  - add_comment → `{ "issue_id": 951, "comment_id": 1203 }`
 - **422** `success:false` — the action could not be applied (stale/invalid); `data` = suggestion now
   `status:"failed"`, `failure_reason` explains why. Show the reason; the brain will re-propose a fresh one.
 - **409** — already resolved (someone approved/rejected it); refresh the row.
@@ -119,7 +123,7 @@ Render grouped by `run_uuid` (one group = one loop pass), ordered by `seq`/`crea
 **A) Предложения (default)**
 - Header: count of pending; filter by `status` (Ожидают / Применённые / Отклонённые / Все) and by `key`.
 - A list of **suggestion cards**. Each card:
-  - Badge for `key` (Создание задачи / Смена статуса) + a status badge (pending/applied/rejected/failed).
+  - Badge for `key` (Создание задачи / Смена статуса / Комментарий) + a status badge (pending/applied/rejected/failed).
   - **Title** + a **“what will happen” preview** built from `payload` (section 3.1).
   - Collapsible **reasoning** + **evidence** (link `meeting_id`/`issue_id`/`decision_id` to existing app pages if routes exist) + confidence as a small meter/percent.
   - For `pending`: **[Подтвердить]** (primary) and **[Отклонить]** (secondary).
