@@ -3,9 +3,12 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\MeetingSummary;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class GetMeetingSummaryTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'get_meeting_summary';
@@ -40,6 +43,13 @@ class GetMeetingSummaryTool extends AbstractAgentTool
             return [
                 'success' => false,
                 'error'   => 'calendar_event_id is required',
+            ];
+        }
+
+        if (! $this->assertCanAccessMeeting((int) $eventId)) {
+            return [
+                'success' => false,
+                'error'   => 'Meeting not found or not accessible.',
             ];
         }
 

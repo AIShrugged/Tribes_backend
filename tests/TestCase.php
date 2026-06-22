@@ -20,6 +20,7 @@ abstract class TestCase extends BaseTestCase
 
     protected function setUp(): void
     {
+        $this->guardAgainstNonTestDatabase();
         $this->ensureTestingDatabaseExists();
 
         parent::setUp();
@@ -249,6 +250,41 @@ abstract class TestCase extends BaseTestCase
         }
 
         return json_encode(new \stdClass());
+    }
+
+    /**
+     * Safety net: RefreshDatabase runs migrate:fresh on the CONFIGURED database.
+     * A stale config cache (bootstrap/cache/config.php) makes that the real DEV
+     * database instead of the phpunit-forced test DB, which silently wipes dev
+     * data. Abort loudly before any migration if the configured DB is not the
+     * expected test DB. (Use `composer test` — it clears the config cache first.)
+     */
+    private function guardAgainstNonTestDatabase(): void
+    {
+        // Runs BEFORE the app boots, so read the cached config FILE directly
+        // (config()/the container are not available yet) and compare against the
+        // phpunit-forced test DB from env. A stale cache would make
+        // RefreshDatabase migrate:fresh the real dev database — abort loudly.
+        if ((string) env('DB_CONNECTION') !== 'pgsql') {
+            return;
+        }
+
+        $cacheFile = __DIR__.'/../bootstrap/cache/config.php';
+        if (! is_file($cacheFile)) {
+            return; // no cache → config is built from env at boot → safe
+        }
+
+        $cached = @include $cacheFile;
+        $configured = $cached['database']['connections']['pgsql']['database'] ?? null;
+        $expected = (string) env('DB_DATABASE', '');
+
+        if ($configured !== null && $configured !== $expected) {
+            throw new \RuntimeException(
+                "Refusing to run tests: cached config DB [{$configured}] != test DB [{$expected}]. "
+                .'A stale config cache would wipe a non-test database. Run '
+                .'`php artisan config:clear` (or use `composer test`) before running tests.'
+            );
+        }
     }
 
     private function ensureTestingDatabaseExists(): void

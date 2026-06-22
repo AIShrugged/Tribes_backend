@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  */
 class GetOpenIssuesTool extends AbstractAgentTool
 {
+    use \App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
+
     public function __construct(
         private readonly ?User $user = null,
         private readonly ?int $organizationId = null,
@@ -75,7 +77,11 @@ class GetOpenIssuesTool extends AbstractAgentTool
                 ],
                 'limit' => [
                     'type'        => 'integer',
-                    'description' => 'Optional: max number of issues to return. Defaults to 50.',
+                    'description' => 'Optional: max number of issues to return per page. Defaults to 50, max 200.',
+                ],
+                'offset' => [
+                    'type'        => 'integer',
+                    'description' => 'Optional: how many issues to skip (pagination). Use with the "total"/"has_more"/"next_offset" fields in the response to page through ALL results. Defaults to 0.',
                 ],
             ],
             'required' => [],
@@ -93,6 +99,7 @@ class GetOpenIssuesTool extends AbstractAgentTool
         $createdBefore = $parameters['created_before'] ?? null;
         $createdAfter  = $parameters['created_after'] ?? null;
         $limit        = min((int) ($parameters['limit'] ?? 50), 200);
+        $offset       = max(0, (int) ($parameters['offset'] ?? 0));
 
         $statusesRaw = $parameters['statuses'] ?? 'open,in_progress';
         $statuses    = array_filter(array_map('trim', explode(',', $statusesRaw)));
@@ -138,16 +145,27 @@ class GetOpenIssuesTool extends AbstractAgentTool
             $query->where('created_at', '>=', $this->parseDateBoundary($createdAfter, endOfDay: false));
         }
 
+        $total = (clone $query)->count();
+
         $issues = $query
             ->orderByRaw('updated_at ASC NULLS LAST')
+            ->offset($offset)
             ->limit($limit)
             ->get();
+
+        $hasMore = ($offset + $issues->count()) < $total;
 
         if ($issues->isEmpty()) {
             return [
                 'success'      => true,
                 'issues_count' => 0,
-                'message'      => 'No open issues found matching the filters.',
+                'total'        => $total,
+                'offset'       => $offset,
+                'has_more'     => $hasMore,
+                'next_offset'  => $hasMore ? $offset + $issues->count() : null,
+                'message'      => $total > 0
+                    ? 'No issues on this page; offset is past the end. Lower the offset.'
+                    : 'No open issues found matching the filters.',
             ];
         }
 
@@ -156,6 +174,10 @@ class GetOpenIssuesTool extends AbstractAgentTool
         return [
             'success'      => true,
             'issues_count' => $issues->count(),
+            'total'        => $total,
+            'offset'       => $offset,
+            'has_more'     => $hasMore,
+            'next_offset'  => $hasMore ? $offset + $issues->count() : null,
             'issues'       => $issues->map(fn ($issue) => [
                 'id'                => $issue->id,
                 'name'              => $issue->name,
@@ -189,8 +211,21 @@ class GetOpenIssuesTool extends AbstractAgentTool
 
     private function resolveTenantScope(mixed $orgId, mixed $teamId): array
     {
+        // Resolve the acting user: a real injected user (internal agent path) or
+        // the authenticated Sanctum user (MCP path). Null only when invoked with
+        // no user context at all (internal/system callers) — membership checks
+        // are then skipped, preserving prior behaviour; the MCP route always has
+        // an authenticated user so it is always enforced.
+        $user = $this->currentUser($this->user);
+
         $orgId = $orgId !== null && $orgId !== '' ? (int) $orgId : $this->organizationId;
         $teamId = $teamId !== null && $teamId !== '' ? (int) $teamId : $this->teamId;
+
+        // Default to the acting user's organization when nothing was provided
+        // (e.g. an MCP service user scoped to a single org).
+        if ($orgId === null && $teamId === null && $user !== null) {
+            $orgId = $this->currentOrganizationId($user);
+        }
 
         if ($orgId === null && $teamId === null) {
             return [
@@ -211,12 +246,12 @@ class GetOpenIssuesTool extends AbstractAgentTool
 
             $orgId ??= (int) $team->organization_id;
 
-            if ($this->user !== null && ! $this->user->isTeamMember($team)) {
+            if ($user !== null && ! $user->isTeamMember($team)) {
                 return ['success' => false, 'error' => 'You do not have access to this team.'];
             }
         }
 
-        if ($orgId !== null && $this->user !== null && ! $this->user->isOrganizationMember($orgId)) {
+        if ($orgId !== null && $user !== null && ! $user->isOrganizationMember($orgId)) {
             return ['success' => false, 'error' => 'You do not have access to this organization.'];
         }
 

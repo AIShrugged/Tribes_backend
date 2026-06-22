@@ -4,9 +4,12 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class GetTeamMembersTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function __construct(
         private readonly ?User $user = null,
         private readonly ?int $organizationId = null,
@@ -58,10 +61,17 @@ class GetTeamMembersTool extends AbstractAgentTool
             ];
         }
 
+        $user = $this->currentUser($this->user);
+        if (! $user) {
+            return ['success' => false, 'error' => 'Not authenticated.'];
+        }
+
+        $orgScope = $this->organizationId ?? $this->currentOrganizationId($user);
+
         $query = Team::query()->with(['users', 'organization']);
 
-        if ($this->organizationId !== null) {
-            $query->where('organization_id', $this->organizationId);
+        if ($orgScope !== null) {
+            $query->where('organization_id', $orgScope);
         }
 
         if ($this->teamId !== null) {
@@ -77,8 +87,8 @@ class GetTeamMembersTool extends AbstractAgentTool
         if (! $team) {
             $suggestions = Team::query()
                 ->when(
-                    $this->organizationId !== null,
-                    fn ($q) => $q->where('organization_id', $this->organizationId)
+                    $orgScope !== null,
+                    fn ($q) => $q->where('organization_id', $orgScope)
                 )
                 ->where('name', 'ilike', '%' . mb_substr($teamName ?? '', 0, 3) . '%')
                 ->limit(5)
@@ -92,7 +102,7 @@ class GetTeamMembersTool extends AbstractAgentTool
             ];
         }
 
-        if ($this->user !== null && ! $this->user->isTeamMember($team) && ! $this->user->isOrganizationManager($team->organization_id)) {
+        if (! $user->isTeamMember($team) && ! $user->isOrganizationManager($team->organization_id)) {
             return [
                 'success' => false,
                 'error' => 'Team not found or access denied',

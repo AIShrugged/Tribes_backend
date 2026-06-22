@@ -4,11 +4,14 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\AgentActivityLog;
 use App\Models\CalendarEvent;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 use App\Services\OpenRouterClient;
 use Illuminate\Support\Facades\Log;
 
 class GetTranscriptTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     /** Max transcript chars before delegating to sub-agent summarization */
     private const SUB_AGENT_THRESHOLD = 10000;
 
@@ -69,6 +72,13 @@ class GetTranscriptTool extends AbstractAgentTool
             return [
                 'success' => false,
                 'error' => '⛔️ User confirmation required. You must ask the user for permission before accessing the full transcript. Explain why you need it (e.g., "insights are insufficient" or "need exact quotes") and wait for explicit approval. If approved, call this tool again with user_confirmed=true.',
+            ];
+        }
+
+        if (! $this->assertCanAccessMeeting((int) $calendarEventId)) {
+            return [
+                'success' => false,
+                'error' => 'Calendar event not found',
             ];
         }
 

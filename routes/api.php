@@ -10,6 +10,8 @@ use App\Http\Controllers\API\v1\AgentProfileController;
 use App\Http\Controllers\API\v1\AgentTaskController;
 use App\Http\Controllers\API\v1\AgentToolController;
 use App\Http\Controllers\API\v1\BotController;
+use App\Http\Controllers\API\v1\BrainEventController;
+use App\Http\Controllers\API\v1\BrainSuggestionController;
 use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
 use App\Http\Controllers\API\v1\OrganizationCalendarController;
@@ -108,6 +110,10 @@ Route::group(['prefix' => 'v1'], function () {
 
     // Telegram bot webhook
     Route::post('telegram/webhook', [TelegramBotController::class, 'webhook']);
+
+    // Second-brain reasoning/activity log — written by the sidecar (token with `mcp` ability).
+    Route::post('brain/events', [BrainEventController::class, 'store'])
+        ->middleware(['auth:sanctum', 'abilities:mcp']);
 
     Route::post('internal/agent-task-runs/{run}/tool-calls', [SandboxToolGatewayController::class, 'store']);
     Route::post('internal/agent-task-runs/{run}/llm-completions', [SandboxToolGatewayController::class, 'complete']);
@@ -386,6 +392,14 @@ Route::group(['prefix' => 'v1'], function () {
         Route::post('agent-profiles/{agentProfile}/prompt-versions/{version}/restore', [AgentProfileController::class, 'restorePromptVersion']);
 
         // Agent tasks
+        // Second-brain reasoning/activity log (managers).
+        Route::get('brain/events', [BrainEventController::class, 'index']);
+
+        // Second-brain action proposals — human-in-the-loop approve/reject (managers).
+        Route::get('brain/suggestions', [BrainSuggestionController::class, 'index']);
+        Route::post('brain/suggestions/{suggestion}/approve', [BrainSuggestionController::class, 'approve']);
+        Route::post('brain/suggestions/{suggestion}/reject', [BrainSuggestionController::class, 'reject']);
+
         Route::get('agent-tasks', [AgentTaskController::class, 'index']);
         Route::post('agent-tasks', [AgentTaskController::class, 'store']);
         Route::get('agent-tasks/meta', [AgentTaskController::class, 'meta']);

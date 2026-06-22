@@ -4,6 +4,7 @@ namespace App\Services\Agent\Tools;
 
 use App\Models\InsightProfile;
 use App\Models\InsightProfileHistory;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 /**
  * Retrieves the version history of a person's insight profile to track changes over time.
@@ -18,6 +19,8 @@ use App\Models\InsightProfileHistory;
  */
 class GetInsightProfileHistoryTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'get_insight_profile_history';
@@ -64,6 +67,10 @@ class GetInsightProfileHistoryTool extends AbstractAgentTool
                 'success' => false,
                 'error'   => 'profile_id is required',
             ];
+        }
+
+        if ($this->isMcpRequest() && ! $this->assertCanAccessProfile((int) $profileId)) {
+            return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 
         // Find insight_profile_ids for this person (optionally filtered by category)

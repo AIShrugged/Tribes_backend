@@ -65,6 +65,11 @@ class CalendarEvent extends Model
         return $this->hasMany(Followup::class);
     }
 
+    public function transcriptUploads(): HasMany
+    {
+        return $this->hasMany(TranscriptUpload::class);
+    }
+
     public function meetingSummary(): HasOne
     {
         return $this->hasOne(MeetingSummary::class);
@@ -121,6 +126,22 @@ class CalendarEvent extends Model
         return $query->where(function (Builder $q) use ($userId): void {
             $q->whereHas('sources', fn (Builder $inner) => $inner->where('user_id', $userId))
               ->orWhereHas('source', fn (Builder $inner) => $inner->where('user_id', $userId));
+        });
+    }
+
+    /**
+     * Events reachable by an organization. A meeting has no direct organization_id,
+     * so we reach it through any of: a transcript upload tagged with the org, a
+     * connected calendar source belonging to the org, or a generated followup
+     * whose team belongs to the org. Used to scope MCP reads to a tenant.
+     */
+    public function scopeVisibleToOrganization(Builder $query, int $organizationId): Builder
+    {
+        return $query->where(function (Builder $q) use ($organizationId): void {
+            $q->whereHas('transcriptUploads', fn (Builder $u) => $u->where('organization_id', $organizationId))
+              ->orWhereHas('sources', fn (Builder $s) => $s->where('organization_id', $organizationId))
+              ->orWhereHas('source', fn (Builder $s) => $s->where('organization_id', $organizationId))
+              ->orWhereHas('followups.team', fn (Builder $t) => $t->where('organization_id', $organizationId));
         });
     }
 

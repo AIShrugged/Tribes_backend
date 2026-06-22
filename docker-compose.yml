@@ -199,9 +199,39 @@ services:
         restart: unless-stopped
         networks:
             - app
+
+    # Autonomous "second brain" sidecar: Claude Code headless in a self-paced
+    # loop, reaching the HR backend over MCP (http://nginx/mcp) and GitHub via gh.
+    # Provision TRIBESMCP_TOKEN with: docker compose exec backend php artisan brain:issue-token <org-id>
+    second-brain:
+        build:
+            context: ./docker/second-brain
+        container_name: second-brain
+        restart: unless-stopped
+        profiles: ["brain"]
+        depends_on:
+            - nginx
+        networks:
+            - app
+        environment:
+            # Auth: use ONE of these. CLAUDE_CODE_OAUTH_TOKEN uses your Claude
+            # Pro/Max subscription (no API key) — generate with `claude setup-token`.
+            CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+            ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+            # The organization is determined by TRIBESMCP_TOKEN's service user — no separate org id needed.
+            TRIBESMCP_TOKEN: ${TRIBESMCP_TOKEN}
+            GITHUB_TOKEN: ${BRAIN_GITHUB_TOKEN:-}
+            # The loop itself is driven by Claude's built-in /loop dynamic (self-paced);
+            # this only controls how fast the watchdog relaunches a dead session.
+            BRAIN_SESSION_RESTART_DELAY: ${BRAIN_SESSION_RESTART_DELAY:-60}
+            BRAIN_ALLOW_STATUS_WRITES: ${BRAIN_ALLOW_STATUS_WRITES:-false}
+        volumes:
+            - second-brain-state:/state
+
 networks:
     app:
 
 volumes:
     pgdata:
     minio-data:
+    second-brain-state:

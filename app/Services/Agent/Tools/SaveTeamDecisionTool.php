@@ -5,11 +5,12 @@ namespace App\Services\Agent\Tools;
 use App\Enums\DecisionSourceType;
 use App\Models\Decision;
 use App\Models\Team;
-use App\Models\User;
-use Illuminate\Support\Facades\Auth;
+use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class SaveTeamDecisionTool extends AbstractAgentTool
 {
+    use InteractsWithMcpTenant;
+
     public function getName(): string
     {
         return 'save_team_decision';
@@ -57,14 +58,15 @@ class SaveTeamDecisionTool extends AbstractAgentTool
             return ['success' => false, 'error' => 'team_id and text are required.'];
         }
 
-        $userId = Auth::id();
-        if (! $userId) {
+        $user = $this->currentUser();
+        if (! $user) {
             return ['success' => false, 'error' => 'Not authenticated.'];
         }
+        $userId = $user->id;
 
-        // Security: verify caller is a member of the team
+        // Security: verify caller may act on the team (direct member or org manager)
         $team = Team::find((int) $teamId);
-        if (! $team || ! $team->users()->where('users.id', $userId)->exists()) {
+        if (! $team || ! $user->isTeamMember($team)) {
             return ['success' => false, 'error' => 'Team not found.'];
         }
 
@@ -74,8 +76,6 @@ class SaveTeamDecisionTool extends AbstractAgentTool
         if (mb_strlen($text) < 3) {
             return ['success' => false, 'error' => 'Decision text is too short.'];
         }
-
-        $user = User::find($userId);
 
         $decision = Decision::create([
             'team_id'         => $team->id,

@@ -779,7 +779,7 @@ AgentToolTest (unit):
 - `IssueAssigned` event + `CheckFocusAlignmentListener implements ShouldQueue`
 - `MemberFocusTool` с `Gate::authorize('view', $profile)` через `ProfilePolicy`
 - `PRIORITIES` context type для ранжированного списка (pivot table `user_priority_issues`, не JSON)
-- `HrServer` MCP: добавить `get_member_focus`
+- `TribesMcpServer` MCP: добавить `get_member_focus`
 - Telegram `/focus @user`
 
 ---
