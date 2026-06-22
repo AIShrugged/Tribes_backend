@@ -26,10 +26,12 @@ class BrainSuggestion extends Model
     /** Action keys the brain may propose (must have a handler in SuggestionApplier). */
     public const KEY_CREATE_ISSUE = 'create_issue';
     public const KEY_UPDATE_TASK_STATUS = 'update_task_status';
+    public const KEY_ADD_COMMENT = 'add_comment';
 
     public const KEYS = [
         self::KEY_CREATE_ISSUE,
         self::KEY_UPDATE_TASK_STATUS,
+        self::KEY_ADD_COMMENT,
     ];
 
     protected $guarded = [];
