@@ -360,8 +360,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      # nginx's healthcheck hits "/" which has no route (404) → it is reported
+      # unhealthy even though it proxies /api fine. Wait only for it to START,
+      # never for "healthy", or it blocks the whole deploy.
       nginx:
-        condition: service_healthy
+        condition: service_started
     environment:
       # Auth — set ONE in Coolify env. CLAUDE_CODE_OAUTH_TOKEN uses a Claude
       # Pro/Max subscription (no API key); ANTHROPIC_API_KEY uses the API (billed).
