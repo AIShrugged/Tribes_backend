@@ -32,6 +32,13 @@ class AgentToolRouter
         'get_current_user',
         'create_artifact',
         'update_artifact',
+        // Core task mutations: keep them available regardless of which category the
+        // router guesses, so "reassign these to Ivan" / "close it" never falls through
+        // to "I can only read" when the request doesn't read as tasks_issues. They are
+        // authorized + audited + taint-gated, so always exposing them is safe.
+        'set_task_status',
+        'reassign_task',
+        'update_task_fields',
     ];
 
     /**
