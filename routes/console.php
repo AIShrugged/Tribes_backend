@@ -188,3 +188,9 @@ Schedule::command('queue:prune-failed --hours=168')
     ->daily()
     ->name('queue:prune-failed')
     ->withoutOverlapping();
+
+// Purge agent-command undo snapshots after 7 days (keeps the audit record itself)
+Schedule::command('agent:purge-command-undo --days=7')
+    ->daily()
+    ->name('agent:purge-command-undo')
+    ->withoutOverlapping();

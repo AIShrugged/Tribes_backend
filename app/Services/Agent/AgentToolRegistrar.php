@@ -124,12 +124,29 @@ class AgentToolRegistrar
     ): void {
         Auth::setUser($user);
 
-        $toolRegistry->register(new QueryTribesDataTool($user, $this->agentMemoryLookupService, $organizationId, $teamId));
+        // Stage 1 surface-cutover: `query_data` is the single agent read tool. It serves
+        // catalogued entities via the structured-query compiler and delegates the rest to
+        // the legacy QueryTribesDataTool (no regression). QueryTribesDataTool is no longer
+        // registered directly on the agent surface; entities migrate into the catalog over time.
+        $legacyQuery = new QueryTribesDataTool($user, $this->agentMemoryLookupService, $organizationId, $teamId);
+        $toolRegistry->register(new \App\Services\Agent\Tools\StructuredQueryTool(
+            $user,
+            app(\App\Services\Agent\Query\StructuredQueryCompiler::class),
+            app(\App\Services\Agent\Catalog\CatalogService::class),
+            $legacyQuery,
+        ));
+        $toolRegistry->register(new \App\Services\Agent\Tools\DescribeEntityTool(
+            app(\App\Services\Agent\Catalog\CatalogService::class),
+        ));
         $toolRegistry->register(new GetOrganizationContextTool($user, $organizationId));
         $toolRegistry->register(new SaveTeamDecisionTool());
         $toolRegistry->register(new SearchTeamDecisionsTool());
         $toolRegistry->register(new CreateEntityTool($user, $this->tenantScopeValidator, $this->schemaValidationService, $organizationId, $teamId));
         $toolRegistry->register(new UpdateEntityTool($user, $this->agentTaskMutationService, $this->tenantScopeValidator, $channel ?? 'web', $organizationId, $teamId));
+        // Stage 2 command-layer mutations (audited, reversible, high-impact → taint-gated).
+        $toolRegistry->register(new \App\Services\Agent\Tools\SetTaskStatusTool($user, app(\App\Services\Commands\CommandRunner::class)));
+        $toolRegistry->register(new \App\Services\Agent\Tools\ReassignTaskTool($user, app(\App\Services\Commands\CommandRunner::class)));
+        $toolRegistry->register(new \App\Services\Agent\Tools\UpdateTaskFieldsTool($user, app(\App\Services\Commands\CommandRunner::class)));
         $toolRegistry->register(new GetTranscriptTool);
         if ($enableSqlTool) {
             $toolRegistry->register(new ExecuteSqlQueryTool($user->id));

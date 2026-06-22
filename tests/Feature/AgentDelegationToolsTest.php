@@ -223,16 +223,17 @@ class AgentDelegationToolsTest extends TestCase
             'organization_id' => $foreignOrganization->id,
         ]);
 
-        $registry = new ToolRegistry;
-        $this->app->make(AgentToolRegistrar::class)->registerDefaults(
-            $registry,
+        // query_db is no longer registered on the agent surface (Stage 1 cutover to
+        // query_data). QueryTribesDataTool remains the fallback/MCP read tool, so this
+        // exercises it directly with the same conversation org/team scope.
+        $tool = new \App\Services\Agent\Tools\QueryTribesDataTool(
             $user,
-            'web',
-            organizationId: $organization->id,
-            teamId: $team->id,
+            $this->app->make(\App\Services\AgentMemoryLookupService::class),
+            $organization->id,
+            $team->id,
         );
 
-        $result = $registry->get('query_db')?->execute([
+        $result = $tool->execute([
             'entity' => 'tasks',
             'filters' => [
                 'organization_id' => $foreignOrganization->id,

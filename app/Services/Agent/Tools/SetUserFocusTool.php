@@ -25,7 +25,7 @@ class SetUserFocusTool implements ToolInterface
         return 'Save or update what the user is currently focused on — their top priority, sprint theme, or stated goal. '
              . 'Call when the user explicitly states their focus ("I\'m focused on X", "my priority is Y", "focusing on Z until date"). '
              . 'Do NOT infer focus from task patterns — only call when the user has communicated clearly. '
-             . 'When the user names specific tasks, ALWAYS pass their numeric IDs in `issue_ids` (look them up via get_tasks/query_db if needed). '
+             . 'When the user names specific tasks, ALWAYS pass their numeric IDs in `issue_ids` (look them up via query_data if needed). '
              . 'The saved focus is injected automatically into future sessions; only call when focus changes.';
     }
 

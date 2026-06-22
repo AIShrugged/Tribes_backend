@@ -5,11 +5,12 @@ namespace App\Services\Agent\Tools;
 use App\Enums\ConversationChannelType;
 use App\Models\User;
 use App\Services\Channel\ChannelRuntimeService;
+use App\Services\Agent\Tools\Contracts\HighImpactAgentTool;
 use App\Services\Channel\UserChannelTargetResolver;
 use App\Support\NameNormalizer;
 use Illuminate\Database\Eloquent\Builder;
 
-class SendUserMessageTool extends AbstractAgentTool
+class SendUserMessageTool extends AbstractAgentTool implements HighImpactAgentTool
 {
     public function __construct(
         private readonly User $user,

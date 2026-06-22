@@ -21,6 +21,8 @@ class AgentToolRouter
      */
     private const ALWAYS_ON = [
         'query_db',
+        'query_data',
+        'describe_entity',
         'execute_sql_query',
         'get_organization_context',
         'get_user_info',
@@ -44,7 +46,7 @@ class AgentToolRouter
         ],
         'tasks_issues' => [
             'description' => 'Tasks/issues: list, create, update, daily plan, critical path, digests, validations.',
-            'tools' => ['get_open_issues', 'get_focused_issues', 'build_daily_plan', 'get_critical_path', 'get_daily_task_digest', 'get_weekly_task_digest', 'get_pending_issue_validations', 'answer_issue_validation', 'create_entity', 'update_entity', 'get_meeting_tasks'],
+            'tools' => ['get_open_issues', 'get_focused_issues', 'build_daily_plan', 'get_critical_path', 'get_daily_task_digest', 'get_weekly_task_digest', 'get_pending_issue_validations', 'answer_issue_validation', 'create_entity', 'update_entity', 'set_task_status', 'reassign_task', 'update_task_fields', 'get_meeting_tasks'],
         ],
         'meetings' => [
             'description' => 'Meetings: transcripts, agendas, meeting tasks.',

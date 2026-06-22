@@ -40,6 +40,20 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private ?int $orgCache = null;
 
+    /** Entities this tool can query. Exposed so the structured-query surface can merge enums. */
+    public const ENTITIES = [
+        'current_user', 'users', 'tasks', 'meetings', 'meeting_summary',
+        'team_members', 'teams', 'organizations', 'organization_links', 'followups',
+        'extracted_facts', 'user_insights', 'insight_history',
+        'relationships', 'short_term_memory', 'messages', 'agent_memories',
+    ];
+
+    /** @return list<string> */
+    public function supportedEntities(): array
+    {
+        return self::ENTITIES;
+    }
+
     public function __construct(
         private readonly ?User $injectedUser = null,
         private readonly ?AgentMemoryLookupService $memoryLookupService = null,
@@ -122,12 +136,7 @@ class QueryTribesDataTool extends AbstractAgentTool
             'properties' => [
                 'entity' => [
                     'type' => 'string',
-                    'enum' => [
-                        'current_user', 'users', 'tasks', 'meetings', 'meeting_summary',
-                        'team_members', 'teams', 'organizations', 'organization_links', 'followups',
-                        'extracted_facts', 'user_insights', 'insight_history',
-                        'relationships', 'short_term_memory', 'messages', 'agent_memories',
-                    ],
+                    'enum' => self::ENTITIES,
                     'description' => 'Type of data to query.',
                 ],
                 'filters' => [

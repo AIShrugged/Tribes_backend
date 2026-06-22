@@ -31,12 +31,12 @@ return [
         'channels',
         'meeting_summaries',
         'issues',
-        'insight_sources',
-        'insight_items',
-        'insight_profiles',
-        'insight_profile_history',
-        'insight_relationships',
-        'insight_short_term',
+        // insight_* tables removed from raw-SQL access (Stage 0 hardening): they hold
+        // PII / psychological profiles. The agent reads insights only via dedicated,
+        // tenant-scoped tools (get_user_insights, get_insight_profile_history,
+        // get_relationship_insight, get_user_short_term_memory). Comprehensive raw-SQL
+        // scoping for the remaining tables is superseded by the Stage 1 structured-query
+        // layer + TenantScopeGate.
     ],
 
     /*
