@@ -43,4 +43,35 @@ class MeetingsQueryScopingTest extends TestCase
             'org-scoped meetings query must not raise a SQL error: '.($result['error'] ?? '')
         );
     }
+
+    #[Test]
+    public function it_rejects_an_unsupported_meeting_filter_instead_of_silently_dropping_it(): void
+    {
+        $user = User::factory()->create();
+        $org = Organization::create(['name' => 'Org', 'slug' => 'org-'.uniqid()]);
+        $org->users()->attach($user->id, ['role' => 'manager']);
+        $this->actingAs($user);
+
+        // "status" is not a meetings filter — previously dropped silently (→ wrong results).
+        $result = (new QueryTribesDataTool($user, null, $org->id, null))
+            ->execute(['entity' => 'meetings', 'filters' => ['status' => 'completed']]);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('Unsupported', $result['error']);
+        $this->assertStringContainsString('status', $result['error']);
+    }
+
+    #[Test]
+    public function it_accepts_the_order_filter_for_latest_first(): void
+    {
+        $user = User::factory()->create();
+        $org = Organization::create(['name' => 'Org', 'slug' => 'org-'.uniqid()]);
+        $org->users()->attach($user->id, ['role' => 'manager']);
+        $this->actingAs($user);
+
+        $result = (new QueryTribesDataTool($user, null, $org->id, null))
+            ->execute(['entity' => 'meetings', 'filters' => ['order' => 'starts_at_desc'], 'limit' => 3]);
+
+        $this->assertTrue($result['success'], $result['error'] ?? '');
+    }
 }

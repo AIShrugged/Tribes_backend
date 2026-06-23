@@ -165,6 +165,7 @@ class QueryTribesDataTool extends AbstractAgentTool
                         'participant_name' => ['type' => 'string',  'description' => 'Filter meetings by participant name.'],
                         'start_date' => ['type' => 'string',  'description' => 'Meetings starting on/after (YYYY-MM-DD or ISO).'],
                         'end_date' => ['type' => 'string',  'description' => 'Meetings starting on/before (YYYY-MM-DD or ISO).'],
+                        'order' => ['type' => 'string', 'enum' => ['starts_at_asc', 'starts_at_desc'], 'description' => 'Meeting sort order. Use starts_at_desc for the most recent meeting first.'],
                         // insights
                         'category' => [
                             'type' => 'string',
@@ -625,6 +626,20 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryMeetings(array $filters, int $limit, int $offset = 0): array
     {
+        // Reject filters this entity does not honor — otherwise they are silently dropped and
+        // the agent gets a result that doesn't match its intent (e.g. asking "completed" and
+        // receiving future meetings). organization_id is injected by applyConversationScope.
+        $supported = ['organization_id', 'query', 'user_id', 'participant_name', 'start_date', 'end_date', 'order'];
+        $unknown = array_diff(array_keys($filters), $supported);
+        if ($unknown !== []) {
+            return [
+                'success' => false,
+                'error' => 'Unsupported filter(s) for meetings: '.implode(', ', $unknown)
+                    .'. Supported: '.implode(', ', $supported)
+                    .'. Use start_date/end_date for time and order=starts_at_desc for the latest meeting.',
+            ];
+        }
+
         $userId = Auth::id();
 
         $query = CalendarEvent::query()
@@ -669,8 +684,9 @@ class QueryTribesDataTool extends AbstractAgentTool
             }
         }
 
+        $direction = (($filters['order'] ?? null) === 'starts_at_desc') ? 'desc' : 'asc';
         $total = (clone $query)->count();
-        $events = $query->orderBy('starts_at', 'asc')->offset($offset)->limit($limit)->get();
+        $events = $query->orderBy('starts_at', $direction)->offset($offset)->limit($limit)->get();
         $hasMore = ($offset + $events->count()) < $total;
 
         return [
