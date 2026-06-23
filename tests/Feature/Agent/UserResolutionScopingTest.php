@@ -4,6 +4,7 @@ namespace Tests\Feature\Agent;
 
 use App\Models\Organization;
 use App\Models\User;
+use App\Services\Agent\Tools\GetUserInfoTool;
 use App\Services\Agent\Tools\QueryTribesDataTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -56,6 +57,23 @@ class UserResolutionScopingTest extends TestCase
         // The cross-org "Дмитрий Иванов" must NEVER surface.
         $this->assertStringNotContainsString('Дмитрий', json_encode($result, JSON_UNESCAPED_UNICODE));
         $this->assertNotContains($dmitry->id, $ids, 'Cross-tenant user must not be returned');
+    }
+
+    #[Test]
+    public function get_user_info_does_not_leak_users_from_other_organizations(): void
+    {
+        [$actor, $orgA] = $this->userInOrg('A');
+        [, $orgB] = $this->userInOrg('B');
+        $foreign = User::factory()->create(['name' => 'Foreign Person', 'email' => 'foreign.person@x.test']);
+        $orgB->users()->attach($foreign->id, ['role' => 'employee']);
+        $this->actingAs($actor);
+
+        $byEmail = (new GetUserInfoTool)->execute(['email' => 'foreign.person@x.test']);
+        $this->assertFalse($byEmail['success'], 'must not resolve a foreign-org user by email');
+
+        $byName = (new GetUserInfoTool)->execute(['name' => 'Foreign Person']);
+        $this->assertFalse($byName['success'], 'must not resolve a foreign-org user by name');
+        $this->assertStringNotContainsString('foreign.person@x.test', json_encode($byName, JSON_UNESCAPED_UNICODE));
     }
 
     /** @return array{0: User, 1: Organization} */

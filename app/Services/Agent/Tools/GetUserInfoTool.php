@@ -2,7 +2,6 @@
 
 namespace App\Services\Agent\Tools;
 
-use App\Models\Participant;
 use App\Models\Profile;
 use App\Models\User;
 use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
@@ -62,14 +61,14 @@ class GetUserInfoTool extends AbstractAgentTool
 
         $query = User::query()->with(['organizations', 'teams', 'profiles.channel']);
 
-        // Over MCP, restrict lookups to people in the caller's organization(s).
-        if ($this->isMcpRequest()) {
-            $orgIds = $this->currentOrganizationIds();
-            if (empty($orgIds)) {
-                return ['success' => false, 'error' => 'Not authenticated.'];
-            }
-            $query->whereHas('organizations', fn ($q) => $q->whereIn('organizations.id', $orgIds));
+        // Always restrict lookups to people who share an organization with the acting user —
+        // never the global users table. Otherwise a user from a foreign organization (whom the
+        // caller cannot otherwise access) leaks via name/email lookup. Fail closed.
+        $orgIds = $this->currentOrganizationIds();
+        if (empty($orgIds)) {
+            return ['success' => false, 'error' => 'Not authenticated.'];
         }
+        $query->whereHas('organizations', fn ($q) => $q->whereIn('organizations.id', $orgIds));
 
         // Exact lookups — return single user
         if ($userId) {
@@ -127,61 +126,10 @@ class GetUserInfoTool extends AbstractAgentTool
             ];
         }
 
-        // Over MCP, do not fall back to the (org-unbounded) participant search.
-        if ($this->isMcpRequest()) {
-            return ['success' => false, 'error' => "No users found matching name '{$name}' in your organization"];
-        }
-
-        // Fallback: search participants by name → resolve profiles
-        $profileIds = Participant::whereRaw(
-            "regexp_replace(replace(lower(name), 'ё', 'е'), '\\s+', ' ', 'g') LIKE ?",
-            ['%'.$name.'%']
-        )
-            ->whereNotNull('profile_id')
-            ->pluck('profile_id')
-            ->unique()
-            ->values();
-
-        if ($profileIds->isEmpty()) {
-            return [
-                'success' => false,
-                'error'   => "No users found matching name '{$name}'",
-            ];
-        }
-
-        $profiles = Profile::with('channel')->whereIn('id', $profileIds)->get();
-
-        if ($profiles->count() === 1) {
-            return ['success' => true, 'user' => $this->formatProfile($profiles->first(), $name)];
-        }
-
-        return [
-            'success'          => true,
-            'multiple_matches' => true,
-            'message'          => "Found {$profiles->count()} profiles matching '{$name}'. Use profile_id or email for exact lookup.",
-            'users'            => $profiles->map(fn ($p) => [
-                'id'         => null,
-                'profile_id' => $p->id,
-                'email'      => $p->channel_identifier,
-            ])->toArray(),
-        ];
-    }
-
-    private function formatProfile(Profile $profile, string $name): array
-    {
-        return [
-            'id'            => null,
-            'name'          => $name,
-            'email'         => $profile->channel_identifier,
-            'profiles'      => [[
-                'profile_id'         => $profile->id,
-                'channel'            => $profile->channel?->name,
-                'channel_identifier' => $profile->channel_identifier,
-            ]],
-            'organizations' => [],
-            'teams'         => [],
-            'note'          => 'Profile found via meeting participants. No linked user account.',
-        ];
+        // No matching user in the acting user's organizations. The previous fallback that
+        // searched meeting participants by name was org-unbounded and leaked emails of people
+        // from other tenants, so it has been removed.
+        return ['success' => false, 'error' => "No users found matching name '{$name}' in your organizations"];
     }
 
     private function formatUser(User $user): array
