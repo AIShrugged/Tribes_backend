@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\Agent;
 
+use App\Models\Channel;
 use App\Models\Organization;
+use App\Models\Profile;
 use App\Models\User;
 use App\Services\Agent\Tools\GetUserInfoTool;
+use App\Services\Agent\Tools\GetUserInsightsTool;
 use App\Services\Agent\Tools\QueryTribesDataTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -74,6 +77,27 @@ class UserResolutionScopingTest extends TestCase
         $byName = (new GetUserInfoTool)->execute(['name' => 'Foreign Person']);
         $this->assertFalse($byName['success'], 'must not resolve a foreign-org user by name');
         $this->assertStringNotContainsString('foreign.person@x.test', json_encode($byName, JSON_UNESCAPED_UNICODE));
+    }
+
+    #[Test]
+    public function insight_tools_block_a_profile_from_another_organization(): void
+    {
+        [$actor] = $this->userInOrg('A');
+        [, $orgB] = $this->userInOrg('B');
+        $foreign = User::factory()->create();
+        $orgB->users()->attach($foreign->id, ['role' => 'employee']);
+        $profile = Profile::create([
+            'user_id' => $foreign->id,
+            'channel_id' => Channel::query()->value('id'),
+            'channel_identifier' => 'foreign.profile@x.test',
+        ]);
+        $this->actingAs($actor);
+
+        // Psychological insights about a foreign-org person must be blocked on the chat path.
+        $result = (new GetUserInsightsTool)->execute(['profile_id' => $profile->id]);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Profile not accessible.', $result['error']);
     }
 
     /** @return array{0: User, 1: Organization} */

@@ -69,7 +69,9 @@ class GetInsightProfileHistoryTool extends AbstractAgentTool
             ];
         }
 
-        if ($this->isMcpRequest() && ! $this->assertCanAccessProfile((int) $profileId)) {
+        // Always gate insight access (sensitive PII) — the profile's person must share an
+        // organization with the acting user. Not just on the MCP path.
+        if (! $this->assertCanAccessProfile((int) $profileId)) {
             return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 
