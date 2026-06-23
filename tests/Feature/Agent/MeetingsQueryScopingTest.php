@@ -4,7 +4,10 @@ namespace Tests\Feature\Agent;
 
 use App\Models\Organization;
 use App\Models\User;
+use App\Services\Agent\Catalog\CatalogService;
+use App\Services\Agent\Query\StructuredQueryCompiler;
 use App\Services\Agent\Tools\QueryTribesDataTool;
+use App\Services\Agent\Tools\StructuredQueryTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
@@ -71,6 +74,24 @@ class MeetingsQueryScopingTest extends TestCase
 
         $result = (new QueryTribesDataTool($user, null, $org->id, null))
             ->execute(['entity' => 'meetings', 'filters' => ['order' => 'starts_at_desc'], 'limit' => 3]);
+
+        $this->assertTrue($result['success'], $result['error'] ?? '');
+    }
+
+    #[Test]
+    public function it_resolves_me_in_a_delegated_legacy_filter(): void
+    {
+        $user = User::factory()->create();
+        $org = Organization::create(['name' => 'Org', 'slug' => 'org-'.uniqid()]);
+        $org->users()->attach($user->id, ['role' => 'manager']);
+        $this->actingAs($user);
+
+        $legacy = new QueryTribesDataTool($user, null, $org->id, null);
+        $tool = new StructuredQueryTool($user, app(StructuredQueryCompiler::class), app(CatalogService::class), $legacy);
+
+        // "meetings" is delegated to the legacy tool; "me" must become the actor id, not a
+        // literal that lands in SQL (profile_id = me → SQLSTATE error before the fix).
+        $result = $tool->execute(['entity' => 'meetings', 'filters' => [['field' => 'user_id', 'value' => 'me']], 'limit' => 3]);
 
         $this->assertTrue($result['success'], $result['error'] ?? '');
     }

@@ -164,12 +164,20 @@ class StructuredQueryTool extends AbstractAgentTool
         $legacyParams = $parameters;
         $filters = $parameters['filters'] ?? null;
 
-        // Structured list [{field, value}] → legacy map {field: value}. A map passes through.
-        if (is_array($filters) && array_is_list($filters)) {
+        // Normalize the structured [{field, value}] list into the legacy {field: value} map,
+        // AND resolve symbolic actor refs ("me") → the actor id. Without this the legacy tool
+        // receives a literal "me" and puts it straight into SQL (e.g. profile_id = me → error).
+        if (is_array($filters)) {
             $map = [];
-            foreach ($filters as $filter) {
-                if (is_array($filter) && isset($filter['field'])) {
-                    $map[$filter['field']] = $filter['value'] ?? null;
+            if (array_is_list($filters)) {
+                foreach ($filters as $filter) {
+                    if (is_array($filter) && isset($filter['field'])) {
+                        $map[$filter['field']] = $this->resolveActorRef($filter['value'] ?? null);
+                    }
+                }
+            } else {
+                foreach ($filters as $key => $value) {
+                    $map[$key] = $this->resolveActorRef($value);
                 }
             }
             $legacyParams['filters'] = $map;
@@ -200,6 +208,16 @@ class StructuredQueryTool extends AbstractAgentTool
         }
 
         return $row;
+    }
+
+    /** Resolve a symbolic actor reference ("me"/"self") to the acting user id. */
+    private function resolveActorRef(mixed $value): mixed
+    {
+        if (is_string($value) && in_array(mb_strtolower($value), ['me', 'self', 'current', 'current_user', 'я'], true)) {
+            return $this->user->id;
+        }
+
+        return $value;
     }
 
     /** @return list<string> */

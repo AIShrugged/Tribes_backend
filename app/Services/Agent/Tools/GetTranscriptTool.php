@@ -121,7 +121,7 @@ class GetTranscriptTool extends AbstractAgentTool implements ReturnsUntrustedCon
         }
 
         // Large transcript or specific question — delegate to sub-agent
-        return $this->analyzeWithSubAgent($eventMeta, $transcriptText, $question, $event->transcriptEntries->count());
+        return $this->analyzeWithSubAgent($event, $eventMeta, $transcriptText, $question, $event->transcriptEntries->count());
     }
 
     private function wrapUntrusted(string $body, string $origin): string
@@ -152,7 +152,7 @@ class GetTranscriptTool extends AbstractAgentTool implements ReturnsUntrustedCon
         return implode("\n", $lines);
     }
 
-    private function analyzeWithSubAgent(array $eventMeta, string $transcriptText, ?string $question, int $entriesCount): array
+    private function analyzeWithSubAgent(CalendarEvent $event, array $eventMeta, string $transcriptText, ?string $question, int $entriesCount): array
     {
         $defaultQuestion = 'Provide a detailed summary of this meeting: main topics, key decisions, assigned tasks, important discussion points.';
         $actualQuestion = $question ?: $defaultQuestion;
