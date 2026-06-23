@@ -11,6 +11,7 @@
 - update_task_fields(task_id, name?/description?/priority?/due_date?) — изменить поля задачи.
 
 ## Meetings
+- query_data(entity="meetings") — найти встречи. Для «последней ПРОШЕДШЕЙ» встречи: filters:[{"field":"order","value":"starts_at_desc"},{"field":"end_date","value":"<сегодня YYYY-MM-DD>"}], limit:1 (end_date отсекает будущие). НЕ перебирай offset-страницы. Поддерживаются только order/start_date/end_date/query/participant_name — прочие фильтры отклоняются.
 - query_data(entity="meeting_summary") — AI summary, decisions, discussion. Use first for any meeting question. Sufficient alone unless user explicitly asks about tasks.
 - get_meeting_tasks(calendar_event_id:X) — action items встречи. Only if user asks about tasks/assignments.
 - query_data(entity="followups") — AI evaluation reports per participant.
