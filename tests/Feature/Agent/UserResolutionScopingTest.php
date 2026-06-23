@@ -80,6 +80,28 @@ class UserResolutionScopingTest extends TestCase
     }
 
     #[Test]
+    public function get_user_info_hides_foreign_orgs_of_a_shared_org_teammate(): void
+    {
+        // Actor and teammate share org A; the teammate ALSO belongs to a foreign org B.
+        [$actor, $orgA] = $this->userInOrg('A');
+        $teammate = User::factory()->create(['name' => 'Shared Teammate', 'email' => 'mate@x.test']);
+        $orgA->users()->attach($teammate->id, ['role' => 'employee']);
+
+        $foreignOrg = Organization::create(['name' => 'Secret Foreign Org', 'slug' => 'secret-'.uniqid()]);
+        $foreignOrg->users()->attach($teammate->id, ['role' => 'manager']);
+        $this->actingAs($actor);
+
+        $result = (new GetUserInfoTool)->execute(['name' => 'Shared Teammate']);
+
+        $this->assertTrue($result['success']);
+        // The teammate IS resolvable (shared org), but only the shared org may surface.
+        $orgNames = collect($result['user']['organizations'])->pluck('name');
+        $this->assertContains($orgA->name, $orgNames);
+        $this->assertNotContains('Secret Foreign Org', $orgNames, 'must not reveal a teammate\'s foreign-org membership');
+        $this->assertStringNotContainsString('Secret Foreign Org', json_encode($result, JSON_UNESCAPED_UNICODE));
+    }
+
+    #[Test]
     public function insight_tools_block_a_profile_from_another_organization(): void
     {
         [$actor] = $this->userInOrg('A');

@@ -144,6 +144,14 @@ class GetUserInfoTool extends AbstractAgentTool
             }
         }
 
+        // Tenant isolation: only expose orgs/teams the acting user also belongs to. The lookup
+        // query already requires a shared org, but the resolved teammate may ALSO belong to
+        // foreign organizations — listing those would leak their names + the fact of membership
+        // (orgs the caller has no access to). Mirror QueryTribesDataTool::formatUser.
+        $actorOrgIds = $this->currentOrganizationIds();
+        $visibleOrgs = $user->organizations
+            ->filter(fn ($org) => in_array((int) $org->id, $actorOrgIds, true));
+
         return [
             'id'    => $user->id,
             'name'  => $user->name,
@@ -153,15 +161,17 @@ class GetUserInfoTool extends AbstractAgentTool
                 'channel'            => $profile->channel?->name,
                 'channel_identifier' => $profile->channel_identifier,
             ])->toArray(),
-            'organizations' => $user->organizations->map(fn ($org) => [
+            'organizations' => $visibleOrgs->map(fn ($org) => [
                 'id'   => $org->id,
                 'name' => $org->name,
                 'role' => $org->pivot->role ?? null,
-            ])->toArray(),
-            'teams' => $user->teams->map(fn ($team) => [
-                'id'   => $team->id,
-                'name' => $team->name,
-            ])->toArray(),
+            ])->values()->toArray(),
+            'teams' => $user->teams
+                ->filter(fn ($team) => in_array((int) $team->organization_id, $actorOrgIds, true))
+                ->map(fn ($team) => [
+                    'id'   => $team->id,
+                    'name' => $team->name,
+                ])->values()->toArray(),
         ];
     }
 
