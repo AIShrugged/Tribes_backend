@@ -23,5 +23,8 @@ class AgentRunOptions
         public readonly ?int $teamId = null,
         public readonly ?int $agentTaskRunId = null,
         public readonly ?array $allowedTools = null,
+        // True when the initial user input is untrusted (e.g. Telegram group chat).
+        // Taints the run so high-impact tools require confirmation. See HighImpactAgentTool.
+        public readonly bool $untrustedInput = false,
     ) {}
 }

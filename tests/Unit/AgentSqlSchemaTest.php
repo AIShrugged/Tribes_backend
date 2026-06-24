@@ -20,6 +20,23 @@ class AgentSqlSchemaTest extends TestCase
     }
 
     #[Test]
+    public function it_does_not_expose_pii_insight_tables_to_raw_sql(): void
+    {
+        $config = require __DIR__ . '/../../config/agent.php';
+
+        $allowedTables = $config['sql_allowed_tables'];
+
+        // Psychological profiles / personal insights are read only via dedicated
+        // tenant-scoped tools, never via free-form SQL.
+        $this->assertNotContains('insight_profiles', $allowedTables);
+        $this->assertNotContains('insight_items', $allowedTables);
+        $this->assertNotContains('insight_profile_history', $allowedTables);
+        $this->assertNotContains('insight_relationships', $allowedTables);
+        $this->assertNotContains('insight_short_term', $allowedTables);
+        $this->assertNotContains('insight_sources', $allowedTables);
+    }
+
+    #[Test]
     public function execute_sql_query_tool_points_agents_to_issues(): void
     {
         $tool = new ExecuteSqlQueryTool(1);

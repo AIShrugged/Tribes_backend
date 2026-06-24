@@ -250,6 +250,10 @@ class AgentService
         $finalAnswer = null;
         $iterationToolCounts = [];  // [iteration_number => count_of_tool_messages_added]
         $inRunMemoryCompacted = false;
+        // Lethal-trifecta gate: a run becomes "tainted" once untrusted content is read
+        // this run (or starts tainted for untrusted input like a Telegram group). While
+        // tainted, high-impact tools (outbound/mutation) are blocked, not executed.
+        $tainted = $options->untrustedInput;
 
         Log::info('Agent loop started', [
             'user_id' => $user->id,
@@ -364,6 +368,15 @@ class AgentService
                         'count' => count($assistantMessage['tool_calls']),
                     ]);
 
+                    // Run untrusted-content readers first so the taint flag is set before any
+                    // high-impact tool in the SAME batch is evaluated (lethal-trifecta ordering).
+                    usort($assistantMessage['tool_calls'], function ($a, $b): int {
+                        $aUntrusted = $this->toolRegistry->get($a['function']['name'] ?? '') instanceof \App\Services\Agent\Tools\Contracts\ReturnsUntrustedContent;
+                        $bUntrusted = $this->toolRegistry->get($b['function']['name'] ?? '') instanceof \App\Services\Agent\Tools\Contracts\ReturnsUntrustedContent;
+
+                        return ($bUntrusted ? 1 : 0) <=> ($aUntrusted ? 1 : 0);
+                    });
+
                     // Execute each tool call
                     foreach ($assistantMessage['tool_calls'] as $toolCall) {
                         // Honor /stop between tools so long multi-tool iterations can be
@@ -398,9 +411,34 @@ class AgentService
                                 'success' => false,
                                 'error' => "Tool '{$toolName}' not found",
                             ];
+                        } elseif ($tainted && $isInteractive && $tool instanceof \App\Services\Agent\Tools\Contracts\HighImpactAgentTool) {
+                            // Lethal-trifecta gate (INTERACTIVE runs only): untrusted content was read
+                            // this run, so a high-impact (outbound/mutation) action must not run
+                            // automatically. Autonomous runs are NOT gated here — they have no human to
+                            // confirm and rely on their pre-approved allowed_tools allow-list instead.
+                            Log::warning('High-impact tool blocked in tainted run', [
+                                'tool' => $toolName,
+                                'user_id' => $user->id,
+                            ]);
+
+                            $toolResult = [
+                                'success' => false,
+                                'requires_human_confirmation' => true,
+                                'blocked_tool' => $toolName,
+                                'error' => 'Заблокировано в целях безопасности: в этом диалоге был обработан недоверенный '
+                                    .'контент (транскрипт встречи или групповой чат), поэтому действие, отправляющее '
+                                    .'сообщение или меняющее данные, нельзя выполнить автоматически. Сообщи пользователю, '
+                                    .'что это действие нужно подтвердить или выполнить вручную.',
+                            ];
                         } else {
                             try {
                                 $toolResult = $tool->execute($toolArgs);
+
+                                // Reading untrusted content taints the rest of the run.
+                                if ($tool instanceof \App\Services\Agent\Tools\Contracts\ReturnsUntrustedContent
+                                    && is_array($toolResult) && ($toolResult['success'] ?? false) === true) {
+                                    $tainted = true;
+                                }
                             } catch (\Exception $e) {
                                 Log::error('Tool execution failed', [
                                     'tool' => $toolName,
@@ -991,7 +1029,7 @@ class AgentService
             $issues[] = "Tool returned explicit failure: {$error}";
 
             // Provide hints based on tool type
-            if ($toolName === 'query_db' && str_contains($error, 'not found')) {
+            if (in_array($toolName, ['query_db', 'query_data'], true) && str_contains($error, 'not found')) {
                 $issues[] = 'Hint: Try broader search parameters or verify the search criteria';
             }
 
@@ -1009,7 +1047,7 @@ class AgentService
                     $issues[] = "Tool returned empty {$field} array";
 
                     // Context-specific hints
-                    if ($toolName === 'query_db') {
+                    if (in_array($toolName, ['query_db', 'query_data'], true)) {
                         $issues[] = 'Hint: Empty results might mean wrong filter parameters, or the data truly doesn\'t exist. Consider verifying parameters.';
                     }
                 }
@@ -1020,6 +1058,7 @@ class AgentService
         $expectedFieldsByTool = [
             'get_transcript' => ['event', 'transcript'],
             'query_db' => ['success'],
+            'query_data' => ['success'],
         ];
 
         if (isset($expectedFieldsByTool[$toolName]) && is_array($toolResult)) {

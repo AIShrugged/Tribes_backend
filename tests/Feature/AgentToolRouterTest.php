@@ -92,6 +92,33 @@ class AgentToolRouterTest extends TestCase
     }
 
     #[Test]
+    public function task_mutation_tools_are_always_available_even_when_router_picks_another_category(): void
+    {
+        config(['agent.tool_router.enabled' => true]);
+
+        // "reassign these to Ivan" reads as people-related; the router picks people_insights,
+        // NOT tasks_issues. The mutation tools must still be present (they are ALWAYS_ON) —
+        // otherwise the agent says "I can only read".
+        Http::fake([
+            'openrouter.ai/*' => Http::response([
+                'choices' => [[
+                    'message' => ['role' => 'assistant', 'content' => '{"categories": ["people_insights"]}'],
+                    'finish_reason' => 'stop',
+                ]],
+            ], 200),
+        ]);
+
+        $names = app(AgentToolRouter::class)->selectToolNames('переведи их на Ивана');
+
+        $this->assertIsArray($names);
+        foreach (['set_task_status', 'reassign_task', 'update_task_fields'] as $tool) {
+            $this->assertContains($tool, $names, "{$tool} must stay available regardless of routed category");
+        }
+        // sanity: the routed people category is also present
+        $this->assertContains('get_user_insights', $names);
+    }
+
+    #[Test]
     public function autonomous_write_tools_belong_to_no_router_category(): void
     {
         // Even if the router selected EVERY category, the autonomous-write tools never appear,

@@ -67,8 +67,9 @@ class GetRelationshipInsightTool extends AbstractAgentTool
             ];
         }
 
-        if ($this->isMcpRequest()
-            && (! $this->assertCanAccessProfile($profileIdA) || ! $this->assertCanAccessProfile($profileIdB))) {
+        // Always gate insight access (sensitive PII) — BOTH people must share an organization
+        // with the acting user. Not just on the MCP path.
+        if (! $this->assertCanAccessProfile($profileIdA) || ! $this->assertCanAccessProfile($profileIdB)) {
             return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 

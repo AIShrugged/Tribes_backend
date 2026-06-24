@@ -84,7 +84,9 @@ class GetUserInsightsTool extends AbstractAgentTool
             ];
         }
 
-        if ($this->isMcpRequest() && ! $this->assertCanAccessProfile($profile->id)) {
+        // Always gate insight access (psychological profile = sensitive PII): the profile's
+        // person must share an organization with the acting user. Not just on the MCP path.
+        if (! $this->assertCanAccessProfile($profile->id)) {
             return ['success' => false, 'error' => 'Profile not accessible.'];
         }
 

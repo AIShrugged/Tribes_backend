@@ -58,7 +58,11 @@ class ProcessTelegramWorkerJobTest extends TestCase
             ->once()
             ->withArgs(function (User $actualUser, $history, string $content, AgentRunOptions $options) use ($user, $batch): bool {
                 $this->assertTrue($actualUser->is($user));
-                $this->assertSame($batch->content, $content);
+                // Telegram content is wrapped as untrusted data and the run is tainted
+                // (lethal-trifecta mitigation) — the raw batch text is still present inside.
+                $this->assertStringContainsString($batch->content, $content);
+                $this->assertStringContainsString('<untrusted_data', $content);
+                $this->assertTrue($options->untrustedInput);
                 $this->assertSame(OutputMode::MD, $options->outputMode);
                 $this->assertNull($options->organizationId);
                 $this->assertFalse($options->enableSqlTool);

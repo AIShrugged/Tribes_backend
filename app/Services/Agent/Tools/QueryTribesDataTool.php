@@ -40,6 +40,20 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private ?int $orgCache = null;
 
+    /** Entities this tool can query. Exposed so the structured-query surface can merge enums. */
+    public const ENTITIES = [
+        'current_user', 'users', 'tasks', 'meetings', 'meeting_summary',
+        'team_members', 'teams', 'organizations', 'organization_links', 'followups',
+        'extracted_facts', 'user_insights', 'insight_history',
+        'relationships', 'short_term_memory', 'messages', 'agent_memories',
+    ];
+
+    /** @return list<string> */
+    public function supportedEntities(): array
+    {
+        return self::ENTITIES;
+    }
+
     public function __construct(
         private readonly ?User $injectedUser = null,
         private readonly ?AgentMemoryLookupService $memoryLookupService = null,
@@ -122,12 +136,7 @@ class QueryTribesDataTool extends AbstractAgentTool
             'properties' => [
                 'entity' => [
                     'type' => 'string',
-                    'enum' => [
-                        'current_user', 'users', 'tasks', 'meetings', 'meeting_summary',
-                        'team_members', 'teams', 'organizations', 'organization_links', 'followups',
-                        'extracted_facts', 'user_insights', 'insight_history',
-                        'relationships', 'short_term_memory', 'messages', 'agent_memories',
-                    ],
+                    'enum' => self::ENTITIES,
                     'description' => 'Type of data to query.',
                 ],
                 'filters' => [
@@ -156,6 +165,7 @@ class QueryTribesDataTool extends AbstractAgentTool
                         'participant_name' => ['type' => 'string',  'description' => 'Filter meetings by participant name.'],
                         'start_date' => ['type' => 'string',  'description' => 'Meetings starting on/after (YYYY-MM-DD or ISO).'],
                         'end_date' => ['type' => 'string',  'description' => 'Meetings starting on/before (YYYY-MM-DD or ISO).'],
+                        'order' => ['type' => 'string', 'enum' => ['starts_at_asc', 'starts_at_desc'], 'description' => 'Meeting sort order. Use starts_at_desc for the most recent meeting first.'],
                         // insights
                         'category' => [
                             'type' => 'string',
@@ -315,8 +325,15 @@ class QueryTribesDataTool extends AbstractAgentTool
         }
 
         $query = User::query()->with(['organizations', 'teams', 'profiles.channel']);
-        if ($this->effectiveOrganizationId() !== null) {
-            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $this->effectiveOrganizationId()));
+        // Always scope to a tenant — never search the global users table. With an explicit
+        // org, use it; otherwise restrict to the ACTING user's accessible organizations
+        // (fail-closed: no orgs → no results, rather than leaking users of other tenants).
+        $scopeOrgId = $this->effectiveOrganizationId();
+        if ($scopeOrgId !== null) {
+            $query->whereHas('organizations', fn ($q) => $q->where('organizations.id', $scopeOrgId));
+        } else {
+            $actorOrgIds = $this->actingUser()?->organizations()->pluck('organizations.id')->all() ?? [];
+            $query->whereHas('organizations', fn ($q) => $q->whereIn('organizations.id', $actorOrgIds));
         }
 
         if ($userId) {
@@ -339,17 +356,35 @@ class QueryTribesDataTool extends AbstractAgentTool
                 : ['success' => false, 'error' => 'User not found'];
         }
 
-        $escaped = preg_quote($name, '/');
-        $users = (clone $query)
-            ->whereRaw(self::NAME_SQL.' ~* ?', ['\\m'.$escaped.'\\M'])
-            ->limit($limit)
-            ->get();
+        // Match across scripts: also try the Cyrillic→Latin transliteration so a query like
+        // "Иван" finds a user stored as "Ivan". NAME_SQL lowercases the stored name, and
+        // NameNormalizer::normalize() lowercases + transliterates the search term.
+        $terms = array_values(array_unique(array_filter([
+            $name,
+            \App\Support\NameNormalizer::normalize($name),
+        ], fn ($t) => $t !== '')));
 
-        if ($users->isEmpty()) {
+        $users = collect();
+        foreach ($terms as $term) {
             $users = (clone $query)
-                ->whereRaw(self::NAME_SQL.' LIKE ?', ['%'.$name.'%'])
+                ->whereRaw(self::NAME_SQL.' ~* ?', ['\\m'.preg_quote($term, '/').'\\M'])
                 ->limit($limit)
                 ->get();
+            if ($users->isNotEmpty()) {
+                break;
+            }
+        }
+
+        if ($users->isEmpty()) {
+            foreach ($terms as $term) {
+                $users = (clone $query)
+                    ->whereRaw(self::NAME_SQL.' LIKE ?', ['%'.$term.'%'])
+                    ->limit($limit)
+                    ->get();
+                if ($users->isNotEmpty()) {
+                    break;
+                }
+            }
         }
 
         if ($users->isNotEmpty()) {
@@ -591,6 +626,20 @@ class QueryTribesDataTool extends AbstractAgentTool
 
     private function queryMeetings(array $filters, int $limit, int $offset = 0): array
     {
+        // Reject filters this entity does not honor — otherwise they are silently dropped and
+        // the agent gets a result that doesn't match its intent (e.g. asking "completed" and
+        // receiving future meetings). organization_id is injected by applyConversationScope.
+        $supported = ['organization_id', 'query', 'user_id', 'participant_name', 'start_date', 'end_date', 'order'];
+        $unknown = array_diff(array_keys($filters), $supported);
+        if ($unknown !== []) {
+            return [
+                'success' => false,
+                'error' => 'Unsupported filter(s) for meetings: '.implode(', ', $unknown)
+                    .'. Supported: '.implode(', ', $supported)
+                    .'. Use start_date/end_date for time and order=starts_at_desc for the latest meeting.',
+            ];
+        }
+
         $userId = Auth::id();
 
         $query = CalendarEvent::query()
@@ -602,7 +651,10 @@ class QueryTribesDataTool extends AbstractAgentTool
             ->with('participants');
 
         if (! empty($filters['organization_id'])) {
-            $query->where('organization_id', (int) $filters['organization_id']);
+            // calendar_events has NO organization_id column — a meeting's org comes from its
+            // source (see CalendarEventOrganizationResolver). Scope via the source relationship.
+            $orgId = (int) $filters['organization_id'];
+            $query->whereHas('sources', fn ($s) => $s->where('organization_id', $orgId));
         }
         if (! empty($filters['query'])) {
             $query->where('title', 'ilike', '%'.$filters['query'].'%');
@@ -632,8 +684,9 @@ class QueryTribesDataTool extends AbstractAgentTool
             }
         }
 
+        $direction = (($filters['order'] ?? null) === 'starts_at_desc') ? 'desc' : 'asc';
         $total = (clone $query)->count();
-        $events = $query->orderBy('starts_at', 'asc')->offset($offset)->limit($limit)->get();
+        $events = $query->orderBy('starts_at', $direction)->offset($offset)->limit($limit)->get();
         $hasMore = ($offset + $events->count()) < $total;
 
         return [

@@ -108,7 +108,10 @@ class IssueObserver
             return;
         }
 
-        QuickCpmUpdateJob::dispatch($issue->id, $organizationId, removeFromGraph: true);
+        // afterCommit: when an issue change runs inside a transaction (e.g. the agent
+        // command layer), only enqueue once it commits — otherwise the worker can see
+        // half-applied state or run against a rolled-back change. No-op outside a transaction.
+        QuickCpmUpdateJob::dispatch($issue->id, $organizationId, removeFromGraph: true)->afterCommit();
     }
 
     private function queueCpmPending(Issue $issue): void
