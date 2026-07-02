@@ -6,12 +6,33 @@ use App\Models\Methodology;
 use App\Models\Organization;
 use App\Models\Team;
 use App\Services\LlmPromptProvisioningService;
+use App\Services\Organization\ProjectCodeGenerator;
 use App\Services\Workspace\WorkspaceBootstrapService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrganizationObserver
 {
+    public function __construct(
+        private readonly ProjectCodeGenerator $codeGenerator,
+    ) {}
+
+    /**
+     * Assign the Jira-like project code before insert. An explicitly-supplied code
+     * (validated in OrganizationRequest) is kept as-is (uppercased); otherwise one is
+     * generated from the name. The code is immutable, so this only runs on creation.
+     */
+    public function creating(Organization $organization): void
+    {
+        if (blank($organization->code)) {
+            $organization->code = $this->codeGenerator->generate((string) $organization->name);
+
+            return;
+        }
+
+        $organization->code = strtoupper($organization->code);
+    }
+
     public function created(Organization $organization): void
     {
         // Org-shared workspace is methodology-independent and must always exist —

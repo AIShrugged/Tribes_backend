@@ -13,6 +13,7 @@ use App\Models\Issue;
 use App\Models\IssueStatusHistory;
 use App\Models\Team;
 use App\Services\AgentTaskSchedulerService;
+use App\Services\Issue\IssueCodeAllocator;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -36,7 +37,17 @@ class IssueObserver
 
     public function __construct(
         private readonly AgentTaskSchedulerService $scheduler,
+        private readonly IssueCodeAllocator $codeAllocator,
     ) {}
+
+    /**
+     * Allocate the per-organization number and display code (e.g. DEV-14) before insert.
+     * Central choke point covering every Issue::create() path.
+     */
+    public function creating(Issue $issue): void
+    {
+        $this->codeAllocator->allocate($issue);
+    }
 
     public function created(Issue $issue): void
     {

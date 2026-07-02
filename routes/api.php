@@ -1,78 +1,78 @@
 <?php
 
-use App\Http\Controllers\API\v1\AuthController;
-use App\Http\Controllers\API\v1\PasswordResetController;
 use App\Http\Controllers\API\v1\AgendaController;
-use App\Http\Controllers\API\v1\UpcomingAgendaController;
+use App\Http\Controllers\API\v1\AgendaTemplateController;
 use App\Http\Controllers\API\v1\AgentActivityLogController;
 use App\Http\Controllers\API\v1\AgentMemoryController;
 use App\Http\Controllers\API\v1\AgentProfileController;
 use App\Http\Controllers\API\v1\AgentTaskController;
 use App\Http\Controllers\API\v1\AgentToolController;
+use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\BrainEventController;
 use App\Http\Controllers\API\v1\BrainSuggestionController;
-use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\CalendarEventController;
-use App\Http\Controllers\API\v1\OrganizationCalendarController;
+use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ChatArtifactController;
 use App\Http\Controllers\API\v1\ChatController;
 use App\Http\Controllers\API\v1\ChatMessageController;
+use App\Http\Controllers\API\v1\CommitReportController;
+use App\Http\Controllers\API\v1\CriticalPathController;
+use App\Http\Controllers\API\v1\DashboardController;
+use App\Http\Controllers\API\v1\DemoController;
 use App\Http\Controllers\API\v1\EmailVerificationController;
+use App\Http\Controllers\API\v1\ExtractionPlanController;
+use App\Http\Controllers\API\v1\FocusedIssuesController;
 use App\Http\Controllers\API\v1\FollowupController;
 use App\Http\Controllers\API\v1\FollowupExportController;
-use App\Http\Controllers\API\v1\FocusedIssuesController;
 use App\Http\Controllers\API\v1\GoogleCalendarController;
-use App\Http\Controllers\API\v1\MethodologyController;
-use App\Http\Controllers\API\v1\CalendarEventDetailController;
-use App\Http\Controllers\API\v1\ParticipantController;
-use App\Http\Controllers\API\v1\ProfileController;
-use App\Http\Controllers\API\v1\OrganizationController;
-use App\Http\Controllers\API\v1\CommitReportController;
-use App\Http\Controllers\API\v1\OrganizationDecisionController;
-use App\Http\Controllers\API\v1\OrganizationLlmPromptController;
-use App\Http\Controllers\API\v1\RecallWebhookController;
-use App\Http\Controllers\API\v1\SandboxToolGatewayController;
-use App\Http\Controllers\API\v1\SourceController;
-use App\Http\Controllers\API\v1\TeamController;
-use App\Http\Controllers\API\v1\TeamDashboardController;
-use App\Http\Controllers\API\v1\TeamDecisionController;
-use App\Http\Controllers\API\v1\TeamKeyPointController;
-use App\Http\Controllers\API\v1\TeamInviteController;
-use App\Http\Controllers\API\v1\TeamNotificationSettingController;
-use App\Http\Controllers\API\v1\MeetingSummaryTemplateController;
-use App\Http\Controllers\API\v1\AgendaTemplateController;
-use App\Http\Controllers\API\v1\TeamUserController;
-use App\Http\Controllers\API\v1\TelegramBotController;
-use App\Http\Controllers\API\v1\TelegramLinkController;
-use App\Http\Controllers\API\v1\TodayBriefingController;
-use App\Http\Controllers\API\v1\TodayMessageController;
-use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
-use App\Http\Controllers\API\v1\MeetingReviewController;
-use App\Http\Controllers\API\v1\MeetingSummaryController;
-use App\Http\Controllers\API\v1\MeetingTaskReviewController;
 use App\Http\Controllers\API\v1\InsightController;
+use App\Http\Controllers\API\v1\IssueAgentFlowController;
 use App\Http\Controllers\API\v1\IssueAttachmentController;
 use App\Http\Controllers\API\v1\IssueCommentController;
-use App\Http\Controllers\API\v1\IssueAgentFlowController;
-use App\Http\Controllers\API\v1\CriticalPathController;
 use App\Http\Controllers\API\v1\IssueController;
 use App\Http\Controllers\API\v1\IssueHealthReportController;
 use App\Http\Controllers\API\v1\IssueStatsController;
-use App\Http\Controllers\API\v1\PaperclipIssueStatusController;
+use App\Http\Controllers\API\v1\MeetingReviewController;
+use App\Http\Controllers\API\v1\MeetingSummaryController;
+use App\Http\Controllers\API\v1\MeetingSummaryTemplateController;
 use App\Http\Controllers\API\v1\MeetingTaskController;
-use App\Http\Controllers\API\v1\DashboardController;
-use App\Http\Controllers\API\v1\DemoController;
+use App\Http\Controllers\API\v1\MeetingTaskReviewController;
+use App\Http\Controllers\API\v1\MethodologyController;
+use App\Http\Controllers\API\v1\OnboardingController;
+use App\Http\Controllers\API\v1\OrganizationCalendarController;
+use App\Http\Controllers\API\v1\OrganizationController;
+use App\Http\Controllers\API\v1\OrganizationDecisionController;
+use App\Http\Controllers\API\v1\OrganizationLlmPromptController;
+use App\Http\Controllers\API\v1\PaperclipIssueStatusController;
+use App\Http\Controllers\API\v1\ParticipantController;
+use App\Http\Controllers\API\v1\PasswordResetController;
 use App\Http\Controllers\API\v1\PersonController;
-use App\Http\Controllers\API\v1\TranscriptController;
+use App\Http\Controllers\API\v1\ProfileController;
+use App\Http\Controllers\API\v1\RecallWebhookController;
+use App\Http\Controllers\API\v1\SandboxToolGatewayController;
+use App\Http\Controllers\API\v1\SourceController;
 use App\Http\Controllers\API\v1\TaskDataUploadController;
+use App\Http\Controllers\API\v1\TeamController;
+use App\Http\Controllers\API\v1\TeamDashboardController;
+use App\Http\Controllers\API\v1\TeamDecisionController;
+use App\Http\Controllers\API\v1\TeamInviteController;
+use App\Http\Controllers\API\v1\TeamKeyPointController;
+use App\Http\Controllers\API\v1\TeamNotificationSettingController;
+use App\Http\Controllers\API\v1\TeamUserController;
+use App\Http\Controllers\API\v1\TelegramBotController;
+use App\Http\Controllers\API\v1\TelegramChatRegistrationController;
+use App\Http\Controllers\API\v1\TelegramLinkController;
+use App\Http\Controllers\API\v1\TodayBriefingController;
+use App\Http\Controllers\API\v1\TodayMessageController;
+use App\Http\Controllers\API\v1\TranscriptController;
 use App\Http\Controllers\API\v1\TranscriptUploadController;
+use App\Http\Controllers\API\v1\UpcomingAgendaController;
 use App\Http\Controllers\API\v1\UploadLogController;
-use App\Http\Controllers\API\v1\ExtractionPlanController;
 use App\Http\Controllers\API\v1\UserController;
 use App\Http\Controllers\API\v1\UserFocusController;
+use App\Http\Controllers\API\v1\UserIdentityController;
 use App\Http\Controllers\API\v1\UserPreferencesController;
-use App\Http\Controllers\API\v1\OnboardingController;
 use App\Http\Controllers\API\v1\WorkspaceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -126,6 +126,7 @@ Route::group(['prefix' => 'v1'], function () {
         Route::group(['prefix' => 'users'], function () {
             Route::get('/me', function (Request $request) {
                 $user = $request->user();
+
                 return array_merge($user->toArray(), [
                     'preferences' => $user->preferences,
                 ]);
@@ -272,6 +273,8 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('issues/stats/history', [IssueStatsController::class, 'history'])->name('issues.stats.history');
         Route::get('issues', [IssueController::class, 'index'])->name('issues.index');
         Route::post('issues', [IssueController::class, 'store'])->name('issues.store');
+        // Declared before the wildcard {issue} route so the code segment is not shadowed.
+        Route::get('issues/by-code/{code}', [IssueController::class, 'showByCode'])->name('issues.by-code');
         Route::get('issues/{issue}', [IssueController::class, 'show'])->name('issues.show');
         Route::patch('issues/{issue}', [IssueController::class, 'update'])->name('issues.update');
         Route::delete('issues/{issue}', [IssueController::class, 'destroy'])->name('issues.destroy');
@@ -335,6 +338,9 @@ Route::group(['prefix' => 'v1'], function () {
             Route::get('teams/{team}/key-points', [TeamKeyPointController::class, 'index']);
         });
 
+        // Declared before the apiResource so {organization} does not shadow "preview-code".
+        Route::get('organizations/preview-code', [OrganizationController::class, 'previewCode'])
+            ->name('organizations.preview-code');
         Route::apiResource('organizations', OrganizationController::class);
         Route::get('organizations/{organization}/llm-prompts', [OrganizationLlmPromptController::class, 'index']);
         Route::get('organizations/{organization}/llm-prompts/{llmPrompt}', [OrganizationLlmPromptController::class, 'show']);

@@ -29,7 +29,7 @@ class SearchIssuesByTextTool extends AbstractAgentTool
 
     public function getDescription(): string
     {
-        return 'Rank tracker issues by how well they match a commit text (branch / message / keywords). Full-text search over issue name+description, with a name-substring fallback. Org-scoped to open + recently-closed tasks. Budget-limited per run — use it only for commits you cannot match from get_issue_candidates alone.';
+        return 'Rank tracker issues by how well they match a commit text (branch / message / keywords). If the text contains an issue code like "DEV-14" it resolves that exact issue directly. Otherwise full-text search over issue name+description, with a name/code-substring fallback. Org-scoped to open + recently-closed tasks. Budget-limited per run — use it only for commits you cannot match from get_issue_candidates alone.';
     }
 
     public function getParameters(): array
@@ -81,23 +81,44 @@ class SearchIssuesByTextTool extends AbstractAgentTool
                 $q->whereNotIn('status', ['done', 'closed', 'cancelled'])->orWhere('close_date', '>=', $cutoff);
             });
 
-        $tsv = "to_tsvector('russian', coalesce(name, '') || ' ' || coalesce(description, ''))";
+        $matched = null;
+        $source = null;
 
-        // Bindings bind in clause order: WHERE then ORDER BY — one ? in each, same query text.
-        $matched = $base()
-            ->whereRaw("{$tsv} @@ plainto_tsquery('russian', ?)", [$query])
-            ->orderByRaw("ts_rank({$tsv}, plainto_tsquery('russian', ?)) DESC", [$query])
-            ->limit($limit)
-            ->get(['id', 'name', 'status', 'close_date']);
-
-        $source = 'fts';
-        if ($matched->isEmpty()) {
-            $matched = $base()
-                ->where('name', 'ilike', '%'.$query.'%')
-                ->orderByDesc('updated_at')
+        // Direct code hit — the query/branch/message literally names an issue code (e.g. "DEV-14").
+        if (preg_match('/\b([A-Za-z]{3,10}-\d+)\b/', $query, $codeMatch)) {
+            $byCode = $base()
+                ->where('code', strtoupper($codeMatch[1]))
                 ->limit($limit)
-                ->get(['id', 'name', 'status', 'close_date']);
-            $source = 'ilike';
+                ->get(['id', 'code', 'number', 'name', 'status', 'close_date']);
+
+            if ($byCode->isNotEmpty()) {
+                $matched = $byCode;
+                $source = 'code';
+            }
+        }
+
+        if ($matched === null) {
+            $tsv = "to_tsvector('russian', coalesce(name, '') || ' ' || coalesce(description, ''))";
+
+            // Bindings bind in clause order: WHERE then ORDER BY — one ? in each, same query text.
+            $matched = $base()
+                ->whereRaw("{$tsv} @@ plainto_tsquery('russian', ?)", [$query])
+                ->orderByRaw("ts_rank({$tsv}, plainto_tsquery('russian', ?)) DESC", [$query])
+                ->limit($limit)
+                ->get(['id', 'code', 'number', 'name', 'status', 'close_date']);
+
+            $source = 'fts';
+            if ($matched->isEmpty()) {
+                $matched = $base()
+                    ->where(function (Builder $q) use ($query) {
+                        $q->where('name', 'ilike', '%'.$query.'%')
+                            ->orWhere('code', 'ilike', '%'.strtoupper($query).'%');
+                    })
+                    ->orderByDesc('updated_at')
+                    ->limit($limit)
+                    ->get(['id', 'code', 'number', 'name', 'status', 'close_date']);
+                $source = 'ilike';
+            }
         }
 
         return [
@@ -106,6 +127,8 @@ class SearchIssuesByTextTool extends AbstractAgentTool
             'count' => $matched->count(),
             'issues' => $matched->map(fn ($i) => [
                 'id' => $i->id,
+                'code' => $i->code,
+                'number' => $i->number,
                 'name' => $i->name,
                 'status' => $i->status,
                 'closed_at' => $i->close_date?->toDateString(),

@@ -8,8 +8,7 @@ class GetUserOrganizationsTool implements ToolInterface
 {
     public function __construct(
         private readonly User $user,
-    ) {
-    }
+    ) {}
 
     public function getName(): string
     {
@@ -19,26 +18,27 @@ class GetUserOrganizationsTool implements ToolInterface
     public function getDescription(): string
     {
         return 'Returns the list of organizations where the current user is a manager. '
-            . 'Use before saving a methodology to let the user choose which organization to assign it to.';
+            .'Use before saving a methodology to let the user choose which organization to assign it to.';
     }
 
     public function getParameters(): array
     {
         return [
-            'type'       => 'object',
-            'properties' => new \stdClass(),
+            'type' => 'object',
+            'properties' => new \stdClass,
         ];
     }
 
     public function execute(?array $parameters): mixed
     {
         $organizations = $this->user->organizations()
-            ->get(['organizations.id', 'organizations.name']);
+            ->get(['organizations.id', 'organizations.name', 'organizations.code']);
 
         return [
-            'success'       => true,
+            'success' => true,
             'organizations' => $organizations->map(fn ($org) => [
-                'id'   => $org->id,
+                'id' => $org->id,
+                'code' => $org->code,
                 'name' => $org->name,
             ])->values()->toArray(),
         ];
