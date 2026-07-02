@@ -6,11 +6,9 @@ use App\Models\Issue;
 use App\Models\User;
 use App\Services\Agent\Tools\Concerns\ResolvesIssueTenantScope;
 
-class GetIssueDetailTool extends AbstractAgentTool
+class GetIssueByCodeTool extends AbstractAgentTool
 {
     use ResolvesIssueTenantScope;
-
-    private const MAX_DESCRIPTION_CHARS = 11000;
 
     public function __construct(
         private readonly ?User $user = null,
@@ -22,12 +20,14 @@ class GetIssueDetailTool extends AbstractAgentTool
 
     public function getName(): string
     {
-        return 'get_issue_detail';
+        return 'get_issue_by_code';
     }
 
     public function getDescription(): string
     {
-        return 'Get the FULL specification (description = TZ) of one tracker issue by id, to judge whether a commit covers it. Org-scoped. The description is capped so the result stays within tool limits; has_description=false means there is no spec to check against (then say spec coverage is unknown).';
+        return 'Resolve a tracker issue by its human code (e.g. "DEV-14") — the identifier users see and type. '
+            .'Use this whenever the user references a task by its code. Case-insensitive and org-scoped: a code '
+            .'outside the current scope returns not found. Returns the issue id, name, status, assignee and due date.';
     }
 
     public function getParameters(): array
@@ -35,20 +35,20 @@ class GetIssueDetailTool extends AbstractAgentTool
         return [
             'type' => 'object',
             'properties' => [
-                'issue_id' => ['type' => 'integer', 'description' => 'The issue id.'],
+                'code' => ['type' => 'string', 'description' => 'The issue code, e.g. "DEV-14" (case-insensitive).'],
                 'organization_id' => ['type' => 'integer', 'description' => 'Defaults to the run organization.'],
                 'team_id' => ['type' => 'integer', 'description' => 'Optional team scope.'],
             ],
-            'required' => ['issue_id'],
+            'required' => ['code'],
         ];
     }
 
     public function execute(?array $parameters): mixed
     {
         $parameters = $parameters ?? [];
-        $issueId = (int) ($parameters['issue_id'] ?? 0);
-        if ($issueId <= 0) {
-            return ['success' => false, 'error' => 'issue_id is required'];
+        $code = strtoupper(trim((string) ($parameters['code'] ?? '')));
+        if ($code === '') {
+            return ['success' => false, 'error' => 'code is required'];
         }
 
         $scope = $this->resolveTenantScope($this->user, $this->organizationId, $this->teamId, $parameters['organization_id'] ?? null, $parameters['team_id'] ?? null);
@@ -59,16 +59,13 @@ class GetIssueDetailTool extends AbstractAgentTool
 
         $issue = Issue::query()->withoutTrashed()
             ->when($orgId, fn ($q) => $q->inOrganization($orgId))
-            ->whereKey($issueId)
+            ->where('code', $code)
             ->first();
 
         if (! $issue) {
             // Identical message for cross-org and non-existent — no probing.
             return ['success' => false, 'error' => 'Issue not found or not in scope.'];
         }
-
-        $description = (string) ($issue->description ?? '');
-        $truncated = mb_strlen($description) > self::MAX_DESCRIPTION_CHARS;
 
         return [
             'success' => true,
@@ -77,14 +74,11 @@ class GetIssueDetailTool extends AbstractAgentTool
             'number' => $issue->number,
             'name' => $issue->name,
             'status' => $issue->status,
-            'closed_at' => $issue->close_date?->toDateString(),
+            'assignee_name' => $issue->assignee?->name ?? $issue->assignee_name,
+            'assignee_id' => $issue->assignee_id,
             'due_date' => $issue->due_date?->toDateString(),
-            'assignee_name' => $issue->assignee_name,
-            'has_description' => trim($description) !== '',
-            'description_truncated' => $truncated,
-            'description' => $truncated
-                ? mb_substr($description, 0, self::MAX_DESCRIPTION_CHARS)."\n...[description truncated]"
-                : $description,
+            'organization_id' => $issue->organization_id,
+            'team_id' => $issue->team_id,
         ];
     }
 }

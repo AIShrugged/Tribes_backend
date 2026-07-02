@@ -4,8 +4,8 @@ namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\IssueRequest;
-use App\Http\Resources\API\v1\IssueResource;
 use App\Http\Resources\API\v1\AgentTaskRunResource;
+use App\Http\Resources\API\v1\IssueResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Issue;
 use App\Models\IssueAttachment;
@@ -60,11 +60,19 @@ class IssueController extends Controller
             $query->where('epic_id', $filters['epic_id']);
         }
 
+        if ($filters['code']) {
+            $query->where('code', strtoupper($filters['code']));
+        }
+
         if ($filters['search']) {
             if (ctype_digit($filters['search'])) {
                 $query->where('id', (int) $filters['search']);
             } else {
-                $query->where('name', 'like', '%' . $filters['search'] . '%');
+                $term = $filters['search'];
+                $query->where(function (Builder $q) use ($term): void {
+                    $q->where('name', 'like', '%'.$term.'%')
+                        ->orWhere('code', 'like', '%'.strtoupper($term).'%');
+                });
             }
         }
 
@@ -135,27 +143,27 @@ class IssueController extends Controller
 
         // Extract before transaction — avoids capturing the full request object in closure.
         $uploadToken = $request->input('upload_token');
-        $userId      = $request->user()->id;
+        $userId = $request->user()->id;
 
         $issue = DB::transaction(function () use ($data, $uploadToken, $userId) {
             $issue = Issue::create([
-                'user_id'         => $data['author_id'] ?? $userId,
+                'user_id' => $data['author_id'] ?? $userId,
                 'organization_id' => $data['organization_id'],
-                'team_id'         => $data['team_id'] ?? null,
-                'epic_id'         => $data['epic_id'] ?? null,
-                'status'          => $data['status'] ?? 'open',
-                'name'            => $data['name'],
-                'description'     => $data['description'] ?? null,
-                'type'            => $data['type'],
-                'assignee_id'     => $data['assignee_id'] ?? null,
-                'due_date'        => $data['due_date'] ?? null,
-                'priority'        => $data['priority'] ?? 0,
+                'team_id' => $data['team_id'] ?? null,
+                'epic_id' => $data['epic_id'] ?? null,
+                'status' => $data['status'] ?? 'open',
+                'name' => $data['name'],
+                'description' => $data['description'] ?? null,
+                'type' => $data['type'],
+                'assignee_id' => $data['assignee_id'] ?? null,
+                'due_date' => $data['due_date'] ?? null,
+                'priority' => $data['priority'] ?? 0,
             ]);
 
             if ($uploadToken !== null) {
                 IssueAttachment::pending($uploadToken, $userId)
                     ->update([
-                        'issue_id'     => $issue->id,
+                        'issue_id' => $issue->id,
                         'upload_token' => null,
                     ]);
             }
@@ -171,6 +179,21 @@ class IssueController extends Controller
     public function show(IssueRequest $request, int $issue): ApiResponse
     {
         $task = $this->findVisibleIssue($request->user(), $issue);
+
+        return ApiResponse::success(data: IssueResource::make($task->load(['assignee', 'user', 'agentTask.latestRun'])));
+    }
+
+    /**
+     * Resolve an issue by its human-readable code (e.g. "DEV-14") for deep-linking.
+     * Codes are matched case-insensitively; a code the user cannot see returns 404.
+     */
+    public function showByCode(IssueRequest $request, string $code): ApiResponse
+    {
+        $task = Issue::query()
+            ->visibleTo($request->user())
+            ->with(['assignee', 'issueType', 'agentFlow.steps.agentTask.latestRun', 'epic', 'childIssues'])
+            ->where('code', strtoupper($code))
+            ->firstOrFail();
 
         return ApiResponse::success(data: IssueResource::make($task->load(['assignee', 'user', 'agentTask.latestRun'])));
     }
@@ -270,5 +293,4 @@ class IssueController extends Controller
             allowUnbound: false,
         );
     }
-
 }

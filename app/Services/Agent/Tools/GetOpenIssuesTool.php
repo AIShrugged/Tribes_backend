@@ -44,43 +44,43 @@ class GetOpenIssuesTool extends AbstractAgentTool
             'type' => 'object',
             'properties' => [
                 'team_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: filter issues belonging to a specific team.',
                 ],
                 'organization_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: filter issues belonging to a specific organization.',
                 ],
                 'assignee_name' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter by assignee name (case-insensitive, partial match).',
                 ],
                 'assignee_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: filter by assignee user ID.',
                 ],
                 'stale_days' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: only return issues not updated for at least this many days. E.g. 7 means "stale for a week".',
                 ],
                 'statuses' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: comma-separated statuses to include. Defaults to "open,in_progress". Example: "open,in_progress,paused".',
                 ],
                 'created_before' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter issues created on or before this date (YYYY-MM-DD).',
                 ],
                 'created_after' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter issues created on or after this date (YYYY-MM-DD).',
                 ],
                 'limit' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: max number of issues to return per page. Defaults to 50, max 200.',
                 ],
                 'offset' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: how many issues to skip (pagination). Use with the "total"/"has_more"/"next_offset" fields in the response to page through ALL results. Defaults to 0.',
                 ],
             ],
@@ -90,19 +90,19 @@ class GetOpenIssuesTool extends AbstractAgentTool
 
     public function execute(?array $parameters): mixed
     {
-        $parameters   = $parameters ?? [];
-        $teamId       = $parameters['team_id'] ?? null;
-        $orgId        = $parameters['organization_id'] ?? null;
+        $parameters = $parameters ?? [];
+        $teamId = $parameters['team_id'] ?? null;
+        $orgId = $parameters['organization_id'] ?? null;
         $assigneeName = $parameters['assignee_name'] ?? null;
-        $assigneeId   = $parameters['assignee_id'] ?? null;
-        $staleDays    = $parameters['stale_days'] ?? null;
+        $assigneeId = $parameters['assignee_id'] ?? null;
+        $staleDays = $parameters['stale_days'] ?? null;
         $createdBefore = $parameters['created_before'] ?? null;
-        $createdAfter  = $parameters['created_after'] ?? null;
-        $limit        = min((int) ($parameters['limit'] ?? 50), 200);
-        $offset       = max(0, (int) ($parameters['offset'] ?? 0));
+        $createdAfter = $parameters['created_after'] ?? null;
+        $limit = min((int) ($parameters['limit'] ?? 50), 200);
+        $offset = max(0, (int) ($parameters['offset'] ?? 0));
 
         $statusesRaw = $parameters['statuses'] ?? 'open,in_progress';
-        $statuses    = array_filter(array_map('trim', explode(',', $statusesRaw)));
+        $statuses = array_filter(array_map('trim', explode(',', $statusesRaw)));
 
         $scope = $this->resolveTenantScope($orgId, $teamId);
         if ($scope['success'] === false) {
@@ -125,7 +125,7 @@ class GetOpenIssuesTool extends AbstractAgentTool
         }
 
         if ($assigneeName) {
-            $query->where('assignee_name', 'ilike', '%' . $assigneeName . '%');
+            $query->where('assignee_name', 'ilike', '%'.$assigneeName.'%');
         }
 
         if ($assigneeId) {
@@ -157,13 +157,13 @@ class GetOpenIssuesTool extends AbstractAgentTool
 
         if ($issues->isEmpty()) {
             return [
-                'success'      => true,
+                'success' => true,
                 'issues_count' => 0,
-                'total'        => $total,
-                'offset'       => $offset,
-                'has_more'     => $hasMore,
-                'next_offset'  => $hasMore ? $offset + $issues->count() : null,
-                'message'      => $total > 0
+                'total' => $total,
+                'offset' => $offset,
+                'has_more' => $hasMore,
+                'next_offset' => $hasMore ? $offset + $issues->count() : null,
+                'message' => $total > 0
                     ? 'No issues on this page; offset is past the end. Lower the offset.'
                     : 'No open issues found matching the filters.',
             ];
@@ -172,28 +172,30 @@ class GetOpenIssuesTool extends AbstractAgentTool
         $now = Carbon::now();
 
         return [
-            'success'      => true,
+            'success' => true,
             'issues_count' => $issues->count(),
-            'total'        => $total,
-            'offset'       => $offset,
-            'has_more'     => $hasMore,
-            'next_offset'  => $hasMore ? $offset + $issues->count() : null,
-            'issues'       => $issues->map(fn ($issue) => [
-                'id'                => $issue->id,
-                'name'              => $issue->name,
-                'description'       => $issue->description
+            'total' => $total,
+            'offset' => $offset,
+            'has_more' => $hasMore,
+            'next_offset' => $hasMore ? $offset + $issues->count() : null,
+            'issues' => $issues->map(fn ($issue) => [
+                'id' => $issue->id,
+                'code' => $issue->code,
+                'number' => $issue->number,
+                'name' => $issue->name,
+                'description' => $issue->description
                     ? mb_substr($issue->description, 0, 300)
                     : null,
-                'status'            => $issue->status,
-                'assignee_name'     => $issue->assignee_name,
-                'assignee_id'       => $issue->assignee_id,
-                'owner_user_id'     => $issue->user_id,
-                'due_date'          => $issue->due_date?->toDateString(),
-                'team_id'           => $issue->team_id,
-                'organization_id'   => $issue->organization_id,
+                'status' => $issue->status,
+                'assignee_name' => $issue->assignee_name,
+                'assignee_id' => $issue->assignee_id,
+                'owner_user_id' => $issue->user_id,
+                'due_date' => $issue->due_date?->toDateString(),
+                'team_id' => $issue->team_id,
+                'organization_id' => $issue->organization_id,
                 'days_since_update' => (int) abs($now->diffInDays($issue->updated_at)),
                 'registration_date' => $issue->registration_date?->toDateString(),
-                'created_at'        => $issue->created_at->toDateString(),
+                'created_at' => $issue->created_at->toDateString(),
             ])->toArray(),
         ];
     }

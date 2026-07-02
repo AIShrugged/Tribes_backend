@@ -56,6 +56,7 @@ class Issue extends Model
         return [
             'issue_type_id' => 'integer',
             'paperclip_user_id' => 'integer',
+            'number' => 'integer',
             'priority' => 'integer',
             'due_date' => 'date',
             'registration_date' => 'datetime',

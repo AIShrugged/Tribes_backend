@@ -21,6 +21,7 @@ class Organization extends Model
         return [
             'onboarded_at' => 'datetime',
             'team_map' => 'array',
+            'last_issue_number' => 'integer',
         ];
     }
 

@@ -82,7 +82,7 @@ class GetIssueCandidatesTool extends AbstractAgentTool
         }
 
         $now = Carbon::now();
-        $issues = $query->orderByRaw('updated_at DESC NULLS LAST')->limit($limit)->get(['id', 'name', 'status', 'close_date', 'updated_at']);
+        $issues = $query->orderByRaw('updated_at DESC NULLS LAST')->limit($limit)->get(['id', 'code', 'number', 'name', 'status', 'close_date', 'updated_at']);
 
         return [
             'success' => true,
@@ -90,6 +90,8 @@ class GetIssueCandidatesTool extends AbstractAgentTool
             'count' => $issues->count(),
             'issues' => $issues->map(fn ($i) => [
                 'id' => $i->id,
+                'code' => $i->code,
+                'number' => $i->number,
                 'name' => $i->name,
                 'status' => $i->status,
                 'closed_at' => $i->close_date?->toDateString(),

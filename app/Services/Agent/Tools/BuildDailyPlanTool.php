@@ -105,7 +105,7 @@ class BuildDailyPlanTool implements ToolInterface
                 'blockedBy:id,name',
                 'blocking:id,name',
             ])
-            ->select(['id', 'name', 'description', 'priority', 'due_date', 'status', 'assignee_id', 'team_id'])
+            ->select(['id', 'code', 'number', 'name', 'description', 'priority', 'due_date', 'status', 'assignee_id', 'team_id'])
             ->orderBy('priority', 'desc')
             ->orderByRaw('due_date IS NULL ASC')
             ->orderBy('due_date', 'asc');
@@ -127,6 +127,8 @@ class BuildDailyPlanTool implements ToolInterface
 
         return [
             'id' => $issue->id,
+            'code' => $issue->code,
+            'number' => $issue->number,
             'name' => $issue->name,
             'url' => "{$frontendUrl}/dashboard/issues/{$issue->id}",
             'priority' => $this->priorityLabel($issue->priority),

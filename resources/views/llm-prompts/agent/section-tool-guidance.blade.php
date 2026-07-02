@@ -5,6 +5,10 @@
 - Прочие сущности (meeting_summary, followups, users, extracted_facts, insight_history, agent_memories) — тоже через query_data(entity=...); фильтры можно простыми парами.
 - describe_entity — список доступных сущностей или поля/связи/«ловушки» одной сущности.
 
+## Коды задач (PREFIX-N)
+- У каждой задачи есть код вида DEV-14 (PREFIX организации + порядковый номер) — это идентификатор, который видит и называет пользователь. В ответах показывай код (напр. «DEV-14 · Починить логин»), а не голый id.
+- Если пользователь ссылается на задачу кодом — get_issue_by_code(code:"DEV-14"); либо query_data(entity="tasks", filters:[{field:"code", value:"DEV-14"}]).
+
 ## Task mutations (аудируются, обратимы)
 - set_task_status(task_id, status) — изменить статус задачи. «Закрыть задачу» = status=done. Используй ЭТО для статуса (не update_entity).
 - reassign_task(task_id, assignee_id) — назначить исполнителя (assignee_id=null — снять).

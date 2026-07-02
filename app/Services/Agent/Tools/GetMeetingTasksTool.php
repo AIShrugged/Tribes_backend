@@ -3,8 +3,8 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\CalendarEvent;
-use App\Models\Participant;
 use App\Models\Issue;
+use App\Models\Participant;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -48,43 +48,43 @@ class GetMeetingTasksTool extends AbstractAgentTool
             'type' => 'object',
             'properties' => [
                 'calendar_event_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: filter tasks linked to a specific calendar event (meeting) by its ID.',
                 ],
                 'assignee_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Optional: filter tasks assigned to a specific person by their user ID.',
                 ],
                 'team_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Required unless organization_id is provided: filter tasks belonging to a specific team.',
                 ],
                 'organization_id' => [
-                    'type'        => 'integer',
+                    'type' => 'integer',
                     'description' => 'Required unless team_id is provided: filter tasks belonging to a specific organization.',
                 ],
                 'assignee_name' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter tasks by assignee name (case-insensitive, partial match). Use when you have a name but no assignee_id.',
                 ],
                 'status' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter tasks by status. Common values: open, in_progress, paused, done.',
                 ],
                 'due_before' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter tasks with due_date on or before this date (YYYY-MM-DD).',
                 ],
                 'due_after' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter tasks with due_date on or after this date (YYYY-MM-DD).',
                 ],
                 'created_before' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter tasks created on or before this date (YYYY-MM-DD).',
                 ],
                 'created_after' => [
-                    'type'        => 'string',
+                    'type' => 'string',
                     'description' => 'Optional: filter tasks created on or after this date (YYYY-MM-DD).',
                 ],
             ],
@@ -96,16 +96,16 @@ class GetMeetingTasksTool extends AbstractAgentTool
     {
         $parameters = $parameters ?? [];
 
-        $eventId      = $parameters['calendar_event_id'] ?? null;
-        $teamId       = $parameters['team_id'] ?? null;
-        $orgId        = $parameters['organization_id'] ?? null;
-        $assigneeId   = $parameters['assignee_id'] ?? null;
+        $eventId = $parameters['calendar_event_id'] ?? null;
+        $teamId = $parameters['team_id'] ?? null;
+        $orgId = $parameters['organization_id'] ?? null;
+        $assigneeId = $parameters['assignee_id'] ?? null;
         $assigneeName = $parameters['assignee_name'] ?? null;
-        $status       = $parameters['status'] ?? null;
-        $dueBefore    = $parameters['due_before'] ?? null;
-        $dueAfter     = $parameters['due_after'] ?? null;
+        $status = $parameters['status'] ?? null;
+        $dueBefore = $parameters['due_before'] ?? null;
+        $dueAfter = $parameters['due_after'] ?? null;
         $createdBefore = $parameters['created_before'] ?? null;
-        $createdAfter  = $parameters['created_after'] ?? null;
+        $createdAfter = $parameters['created_after'] ?? null;
 
         $scope = $this->resolveTenantScope($orgId, $teamId);
         if ($scope['success'] === false) {
@@ -131,7 +131,7 @@ class GetMeetingTasksTool extends AbstractAgentTool
         }
 
         if ($assigneeName) {
-            $query->where('assignee_name', 'ilike', '%' . $assigneeName . '%');
+            $query->where('assignee_name', 'ilike', '%'.$assigneeName.'%');
         }
 
         if ($assigneeId) {
@@ -143,7 +143,7 @@ class GetMeetingTasksTool extends AbstractAgentTool
 
             $query->where(function ($q) use ($assigneeId, $assigneeNames) {
                 $q->where('assignee_id', $assigneeId);
-                if (!empty($assigneeNames)) {
+                if (! empty($assigneeNames)) {
                     $q->orWhereIn('assignee_name', $assigneeNames);
                 }
             });
@@ -173,31 +173,33 @@ class GetMeetingTasksTool extends AbstractAgentTool
 
         if ($tasks->isEmpty()) {
             return [
-                'success'     => true,
+                'success' => true,
                 'tasks_count' => 0,
-                'message'     => 'No tasks found'
-                    . ($eventId ? " for meeting #{$eventId}" : '')
-                    . ($status ? " with status '{$status}'" : '')
-                    . '.',
+                'message' => 'No tasks found'
+                    .($eventId ? " for meeting #{$eventId}" : '')
+                    .($status ? " with status '{$status}'" : '')
+                    .'.',
             ];
         }
 
         return [
-            'success'     => true,
+            'success' => true,
             'tasks_count' => $tasks->count(),
-            'tasks'       => $tasks->map(fn ($task) => [
-                'id'            => $task->id,
-                'name'          => $task->name,
-                'description'   => $task->description,
+            'tasks' => $tasks->map(fn ($task) => [
+                'id' => $task->id,
+                'code' => $task->code,
+                'number' => $task->number,
+                'name' => $task->name,
+                'description' => $task->description,
                 'assignee_name' => $task->assignee_name,
-                'assignee_id'   => $task->assignee_id,
-                'due_date'      => $task->due_date?->toDateString(),
-                'created_at'    => $task->created_at?->toDateString(),
-                'status'        => $task->status,
-                'team_id'       => $task->team_id,
+                'assignee_id' => $task->assignee_id,
+                'due_date' => $task->due_date?->toDateString(),
+                'created_at' => $task->created_at?->toDateString(),
+                'status' => $task->status,
+                'team_id' => $task->team_id,
                 'organization_id' => $task->organization_id,
                 'sourceable_type' => $task->sourceable_type,
-                'sourceable_id'   => $task->sourceable_id,
+                'sourceable_id' => $task->sourceable_id,
             ])->toArray(),
         ];
     }

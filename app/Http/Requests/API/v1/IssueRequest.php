@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\API\v1;
 
-use App\Enums\MeetingTaskStatus;
 use App\Models\Issue;
 use App\Traits\PaginatedRequestTrait;
 use Illuminate\Foundation\Http\FormRequest;
@@ -27,9 +26,10 @@ class IssueRequest extends FormRequest
                 'offset' => ['nullable', 'integer', 'min:0'],
                 'page' => ['nullable', 'integer', 'min:1'],
                 'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
-                'sort' => ['nullable', Rule::in(['id', 'name', 'status', 'type', 'updated_at', 'created_at', 'due_date'])],
+                'sort' => ['nullable', Rule::in(['id', 'number', 'name', 'status', 'type', 'updated_at', 'created_at', 'due_date'])],
                 'order' => ['nullable', Rule::in(['asc', 'desc'])],
                 'search' => ['nullable', 'string', 'max:255'],
+                'code' => ['nullable', 'string', 'max:32'],
                 'id_from' => ['nullable', 'integer', 'min:1'],
                 'id_to' => ['nullable', 'integer', 'min:1'],
                 'archived' => ['nullable', 'boolean'],
@@ -113,6 +113,7 @@ class IssueRequest extends FormRequest
                 'sort' => $this->query('sort'),
                 'order' => $this->query('order'),
                 'search' => $this->query('search'),
+                'code' => $this->query('code'),
                 'unassigned' => $this->query('unassigned'),
                 'overdue' => $this->query('overdue'),
                 'due_date_from' => $this->query('due_date_from'),
@@ -134,6 +135,7 @@ class IssueRequest extends FormRequest
             'sort' => filled($this->input('sort')) ? $this->input('sort') : 'updated_at',
             'order' => filled($this->input('order')) ? $this->input('order') : 'desc',
             'search' => $this->input('search'),
+            'code' => $this->input('code'),
             'id_from' => $this->integer('id_from') ?: null,
             'id_to' => $this->integer('id_to') ?: null,
             'archived' => $this->boolean('archived', false),

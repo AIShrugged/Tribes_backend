@@ -3,6 +3,7 @@
 namespace App\Http\Requests\API\v1;
 
 use App\Http\Requests\API\ApiResourceRequest;
+use App\Services\Organization\ProjectCodeGenerator;
 use App\Traits\PaginatedRequestTrait;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
@@ -15,6 +16,14 @@ class OrganizationRequest extends ApiResourceRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            // Optional manual override of the auto-generated project code (immutable afterwards).
+            'code' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'regex:'.ProjectCodeGenerator::FORMAT_REGEX,
+                Rule::unique('organizations', 'code'),
+            ],
         ];
     }
 
@@ -48,6 +57,8 @@ class OrganizationRequest extends ApiResourceRequest
         return [
             'name' => $this->name,
             'slug' => Str::slug($this->name),
+            // When omitted, the code is auto-generated in OrganizationObserver::creating.
+            ...($this->filled('code') ? ['code' => strtoupper((string) $this->input('code'))] : []),
         ];
     }
 
@@ -70,6 +81,11 @@ class OrganizationRequest extends ApiResourceRequest
             'slug' => [
                 'description' => 'Organization slug (auto-generated from name if omitted).',
                 'example'     => 'acme-inc',
+            ],
+            'code' => [
+                'description' => 'Jira-like project code, 3–10 letters/digits starting with a letter. '
+                    .'Auto-generated from the name if omitted; immutable after creation.',
+                'example'     => 'ACM',
             ],
             'issue_types' => [
                 'description' => 'Resolved task types and their agent profile mappings.',

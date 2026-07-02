@@ -34,6 +34,8 @@ return [
             'scope' => 'visibleTo',
             'fields' => [
                 'id'          => ['type' => 'integer',  'description' => 'ID задачи'],
+                'code'        => ['type' => 'string',   'description' => 'Код задачи вида PREFIX-N (напр. DEV-14) — идентификатор, который видит и называет пользователь. Уникален глобально. Фильтруй по нему, когда пользователь ссылается на задачу кодом.'],
+                'number'      => ['type' => 'integer',  'description' => 'Порядковый номер задачи внутри организации (напр. 14 в DEV-14).'],
                 'name'        => ['type' => 'string',   'description' => 'Название задачи'],
                 'description' => ['type' => 'string',   'description' => 'Описание / ТЗ задачи'],
                 'status'      => ['type' => 'string',   'description' => 'Статус задачи', 'enum' => \App\Enums\MeetingTaskStatus::class],

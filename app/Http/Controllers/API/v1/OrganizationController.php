@@ -9,8 +9,10 @@ use App\Http\Resources\API\v1\OrganizationResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Organization;
 use App\Models\OrganizationIssueType;
+use App\Services\Organization\ProjectCodeGenerator;
 use App\Services\OrganizationMembershipService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -34,6 +36,28 @@ class OrganizationController extends Controller
      * @response 200 scenario="OK" {"success":true,"data":[{"id":1,"name":"Acme Inc"}],"meta":{"count":1}}
      * @response 401 scenario="Unauthenticated" {"message":"Unauthenticated."}
      */
+    /**
+     * Preview the auto-generated project code for a name
+     *
+     * @group Organizations
+     *
+     * Returns the Jira-like project code that would be generated for the given name,
+     * so the UI can suggest it live while the user types (they may still override it).
+     * The definitive code is the one returned by the create response.
+     *
+     * @queryParam name string required The organization name. Example: Auchan
+     *
+     * @response 200 scenario="OK" {"success":true,"data":{"code":"AUC"}}
+     */
+    public function previewCode(Request $request, ProjectCodeGenerator $generator): ApiResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        return ApiResponse::success(data: ['code' => $generator->generate($validated['name'])]);
+    }
+
     public function index(OrganizationRequest $request): ApiResponse
     {
         $organizations = Auth::user()->organizations();
