@@ -11,6 +11,7 @@ use App\Http\Controllers\API\v1\AuthController;
 use App\Http\Controllers\API\v1\BotController;
 use App\Http\Controllers\API\v1\BrainEventController;
 use App\Http\Controllers\API\v1\BrainSuggestionController;
+use App\Http\Controllers\API\v1\SecondBrainController;
 use App\Http\Controllers\API\v1\CalendarEventController;
 use App\Http\Controllers\API\v1\CalendarEventDetailController;
 use App\Http\Controllers\API\v1\ChatArtifactController;
@@ -405,6 +406,12 @@ Route::group(['prefix' => 'v1'], function () {
         Route::get('brain/suggestions', [BrainSuggestionController::class, 'index']);
         Route::post('brain/suggestions/{suggestion}/approve', [BrainSuggestionController::class, 'approve']);
         Route::post('brain/suggestions/{suggestion}/reject', [BrainSuggestionController::class, 'reject']);
+
+        // Second-brain enable/disable per organization (managers).
+        Route::get('brain/instances', [SecondBrainController::class, 'index']);
+        Route::get('brain/instances/{organization}', [SecondBrainController::class, 'status']);
+        Route::post('brain/instances/{organization}/enable', [SecondBrainController::class, 'enable']);
+        Route::post('brain/instances/{organization}/disable', [SecondBrainController::class, 'disable']);
 
         Route::get('agent-tasks', [AgentTaskController::class, 'index']);
         Route::post('agent-tasks', [AgentTaskController::class, 'store']);

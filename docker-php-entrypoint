@@ -111,6 +111,14 @@ case "$command" in
     exec php artisan schedule:work --no-interaction
   ;;
 
+  brain-orchestrator)
+    # Dedicated second-brain orchestrator: reconciles one Claude Code container
+    # per enabled organization from the DB desired-state. Needs the docker socket
+    # (mounted in compose) + APP_KEY (to decrypt per-org secrets).
+    ensure_permissions
+    exec php artisan brain:reconcile --watch --no-interaction
+  ;;
+
   nginx)
     ln -sf /dev/stdout /var/log/nginx/access.log || true
     ln -sf /dev/stderr /var/log/nginx/error.log || true
