@@ -49,8 +49,11 @@ class DockerNetworkResolver
     /** Base URL (scheme+host) the container posts brain events to. */
     public function gatewayBaseUrl(): string
     {
+        // Any explicit value is used literally (pin a stable service alias like
+        // `http://nginx` when the org container shares the app's network). Only
+        // when empty do we auto-resolve the real nginx container name.
         $configured = trim((string) config('second_brain.internal_base_url', ''));
-        if ($configured !== '' && $configured !== 'http://nginx') {
+        if ($configured !== '') {
             return rtrim($configured, '/');
         }
 
