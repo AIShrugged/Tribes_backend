@@ -94,6 +94,26 @@ seed_settings() {
 }
 seed_settings
 
+# --- MCP endpoint (regenerated from env each start) -------------------------
+# The compose alias `nginx` does not resolve under Coolify (the container is
+# named nginx-<suffix>), so the orchestrator injects the resolved URL via
+# BRAIN_MCP_URL. Falls back to the compose alias for the plain docker-compose
+# setup. The Bearer placeholder stays literal — Claude Code expands it from env.
+seed_mcp_config() {
+  local url="${BRAIN_MCP_URL:-http://nginx/mcp}" tmp
+  tmp=$(mktemp)
+  if jq -n --arg url "$url" \
+      '{mcpServers: {tribesmcp: {type: "http", url: $url, headers: {Authorization: "Bearer ${TRIBESMCP_TOKEN}"}}}}' \
+      > "$tmp" 2>/dev/null; then
+    mv "$tmp" /brain/.mcp.json
+    log "mcp config seeded (url=$url)"
+  else
+    rm -f "$tmp"
+    log "WARN: could not seed .mcp.json (keeping baked-in default)"
+  fi
+}
+seed_mcp_config
+
 log "second-brain (interactive /loop) starting (status_writes=${BRAIN_ALLOW_STATUS_WRITES:-false})"
 
 # --- brain_events shipper (background) -------------------------------------

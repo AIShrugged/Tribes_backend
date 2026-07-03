@@ -73,6 +73,7 @@ class DockerOrchestratorArgvTest extends TestCase
         $this->assertContainsSubsequence(['--env', 'CLAUDE_CODE_OAUTH_TOKEN'], $args);
         $this->assertNotContains('ANTHROPIC_API_KEY', $args);
         $this->assertContainsSubsequence(['-e', 'BRAIN_API_URL=http://nginx-test/api/v1'], $args);
+        $this->assertContainsSubsequence(['-e', 'BRAIN_MCP_URL=http://nginx-test/mcp'], $args);
         $this->assertSame('spodial-second-brain:test', end($args));
 
         // Secrets travel via the child env, not argv.

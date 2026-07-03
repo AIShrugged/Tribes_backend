@@ -66,6 +66,10 @@ class ReconcileSecondBrainCommand extends Command
                 $summary['errors'],
                 $summary['skipped'],
             ));
+        } catch (\Throwable $e) {
+            // A failed pass (e.g. transient image build/docker error) must not kill
+            // the watch loop — log and let the next tick retry.
+            $this->error('[second-brain] reconcile pass failed: '.$e->getMessage());
         } finally {
             optional($lock)->release();
         }
