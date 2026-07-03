@@ -200,33 +200,58 @@ services:
         networks:
             - app
 
-    # Autonomous "second brain" sidecar: Claude Code headless in a self-paced
-    # loop, reaching the HR backend over MCP (http://nginx/mcp) and GitHub via gh.
-    # Provision TRIBESMCP_TOKEN with: docker compose exec backend php artisan brain:issue-token <org-id>
+    # "Second brain" sidecar IMAGE definition (build-only). Multi-tenant: one
+    # container per enabled org is launched dynamically by brain-orchestrator,
+    # each with its own name (second-brain-org<ID>), volume and TRIBESMCP token.
+    # Build the image: docker compose --profile brain build second-brain
     second-brain:
         build:
             context: ./docker/second-brain
-        container_name: second-brain
-        restart: unless-stopped
+        image: spodial-second-brain:latest
         profiles: ["brain"]
+
+    # Dedicated orchestrator: reconciles per-org second-brain containers with the
+    # desired state in `second_brain_instances`. Only this service (besides the
+    # existing agent-task path) touches the docker socket for the brain.
+    brain-orchestrator:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        working_dir: /var/www
+        environment:
+            APP_ENV: "${APP_ENV}"
+            APP_DEBUG: "${APP_DEBUG}"
+            APP_KEY: "${APP_KEY}"
+            APP_URL: "${APP_URL}"
+            DB_CONNECTION: pgsql
+            DB_HOST: postgres
+            DB_PORT: 5432
+            DB_DATABASE: "${DB_DATABASE}"
+            DB_USERNAME: "${DB_USERNAME}"
+            DB_PASSWORD: "${DB_PASSWORD}"
+            QUEUE_CONNECTION: redis
+            CACHE_STORE: redis
+            REDIS_HOST: redis
+            REDIS_PORT: 6379
+            # Network org containers join + the sidecar image tag.
+            AGENT_TASK_SANDBOX_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK:-spodial_hr_backend_app}"
+            SECOND_BRAIN_IMAGE: "${SECOND_BRAIN_IMAGE:-spodial-second-brain:latest}"
+            SECOND_BRAIN_MAX_CONTAINERS: "${SECOND_BRAIN_MAX_CONTAINERS:-20}"
+            # Optional shared GitHub token; per-org Claude creds live in the DB.
+            BRAIN_GITHUB_TOKEN: "${BRAIN_GITHUB_TOKEN:-}"
+            BRAIN_ALLOW_STATUS_WRITES: "${BRAIN_ALLOW_STATUS_WRITES:-false}"
         depends_on:
-            - nginx
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_started
+        volumes:
+            - .:/var/www
+            - /var/run/docker.sock:/var/run/docker.sock
         networks:
             - app
-        environment:
-            # Auth: use ONE of these. CLAUDE_CODE_OAUTH_TOKEN uses your Claude
-            # Pro/Max subscription (no API key) — generate with `claude setup-token`.
-            CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
-            ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-            # The organization is determined by TRIBESMCP_TOKEN's service user — no separate org id needed.
-            TRIBESMCP_TOKEN: ${TRIBESMCP_TOKEN}
-            GITHUB_TOKEN: ${BRAIN_GITHUB_TOKEN:-}
-            # The loop itself is driven by Claude's built-in /loop dynamic (self-paced);
-            # this only controls how fast the watchdog relaunches a dead session.
-            BRAIN_SESSION_RESTART_DELAY: ${BRAIN_SESSION_RESTART_DELAY:-60}
-            BRAIN_ALLOW_STATUS_WRITES: ${BRAIN_ALLOW_STATUS_WRITES:-false}
-        volumes:
-            - second-brain-state:/state
+        command: ["brain-orchestrator"]
+        restart: unless-stopped
 
 networks:
     app:
@@ -234,4 +259,6 @@ networks:
 volumes:
     pgdata:
     minio-data:
-    second-brain-state:
+    # NOTE: per-org state volumes (second-brain-state-org<ID>) are created
+    # dynamically by the orchestrator. The legacy `second-brain-state` volume is
+    # migrated via `php artisan brain:adopt-legacy --copy-volume` before removal.

@@ -326,30 +326,53 @@ services:
     command: ["schedule"]
     restart: unless-stopped
 
+  # "Second brain" sidecar IMAGE (build-only). One container per enabled org is
+  # launched dynamically by brain-orchestrator. NOTE: these ad-hoc containers are
+  # NOT managed by Coolify; the orchestrator's reconcile loop keeps them converged.
   second-brain:
     build:
       context: ./docker/second-brain
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_healthy
-      nginx:
-        condition: service_started
+    image: spodial-second-brain:latest
+    profiles: ["brain"]
+
+  # Dedicated orchestrator: reconciles per-org second-brain containers with the
+  # desired state in `second_brain_instances`. Needs the docker socket + APP_KEY.
+  brain-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www
     environment:
-      # Auth — set ONE in Coolify env. CLAUDE_CODE_OAUTH_TOKEN uses a Claude
-      # Pro/Max subscription (no API key); ANTHROPIC_API_KEY uses the API (billed).
-      CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      # Per-org MCP service-user token: php artisan brain:issue-token <orgId> (REQUIRED).
-      TRIBESMCP_TOKEN: "${TRIBESMCP_TOKEN:-}"
-      # GitHub PAT so the brain can read the org's repos via gh/git.
-      GITHUB_TOKEN: "${BRAIN_GITHUB_TOKEN:-}"
-      BRAIN_SESSION_RESTART_DELAY: "${BRAIN_SESSION_RESTART_DELAY:-60}"
+      APP_ENV: "${APP_ENV}"
+      APP_DEBUG: "${APP_DEBUG}"
+      APP_KEY: "${APP_KEY}"
+      APP_URL: "${APP_URL}"
+      DB_CONNECTION: pgsql
+      DB_HOST: app-postgres
+      DB_PORT: 5432
+      DB_DATABASE: "${DB_DATABASE}"
+      DB_USERNAME: "${DB_USERNAME}"
+      DB_PASSWORD: "${DB_PASSWORD}"
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      REDIS_HOST: app-redis
+      REDIS_PORT: 6379
+      SECOND_BRAIN_NETWORK: "${AGENT_TASK_SANDBOX_NETWORK}"
+      SECOND_BRAIN_IMAGE: "${SECOND_BRAIN_IMAGE:-spodial-second-brain:latest}"
+      SECOND_BRAIN_MAX_CONTAINERS: "${SECOND_BRAIN_MAX_CONTAINERS:-20}"
+      BRAIN_GITHUB_TOKEN: "${BRAIN_GITHUB_TOKEN:-}"
       BRAIN_ALLOW_STATUS_WRITES: "${BRAIN_ALLOW_STATUS_WRITES:-false}"
     networks:
       - app
+    depends_on:
+      app-postgres:
+        condition: service_healthy
+      app-redis:
+        condition: service_started
     volumes:
-      - second-brain-state:/state
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["brain-orchestrator"]
+    restart: unless-stopped
 
   nginx:
     build:
@@ -408,4 +431,6 @@ networks:
 volumes:
   pgdata: null
   redis-data: null
-  second-brain-state: null
+  # Per-org state volumes (second-brain-state-org<ID>) are created dynamically by
+  # the orchestrator. Migrate the legacy `second-brain-state` volume via
+  # `php artisan brain:adopt-legacy --copy-volume` before removing it.
