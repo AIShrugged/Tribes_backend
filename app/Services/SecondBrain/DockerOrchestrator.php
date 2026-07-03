@@ -19,18 +19,41 @@ class DockerOrchestrator
     /** Docker label marking every container this orchestrator manages. */
     public const LABEL = 'com.tribes.secondbrain';
 
+    private bool $imageEnsured = false;
+
     public function __construct(private readonly DockerNetworkResolver $network) {}
 
-    /** Build the sidecar image if it is not present locally. */
+    /**
+     * Build the sidecar image once per process. Rebuilding on each fresh
+     * orchestrator process means a redeploy picks up sidecar source changes
+     * (docker layer cache keeps it fast when nothing changed); an unchanged
+     * rebuild yields the same image id, so no container is needlessly recreated.
+     */
     public function ensureImageBuilt(): void
     {
-        $image = $this->image();
-        if ($this->runDocker(['docker', 'image', 'inspect', $image])['ok']) {
+        if ($this->imageEnsured) {
             return;
         }
 
         $context = (string) config('second_brain.build_context', base_path('docker/second-brain'));
-        $this->mustRunDocker(['docker', 'build', '-t', $image, $context], [], 900);
+        $this->mustRunDocker(['docker', 'build', '-t', $this->image(), $context], [], 900);
+        $this->imageEnsured = true;
+    }
+
+    /** Image id (sha256:…) of the current sidecar image, or null if missing. */
+    public function currentImageId(): ?string
+    {
+        $result = $this->runDocker(['docker', 'image', 'inspect', '-f', '{{.Id}}', $this->image()]);
+
+        return $result['ok'] && $result['stdout'] !== '' ? $result['stdout'] : null;
+    }
+
+    /** Image id the given container was created from, or null if absent. */
+    public function containerImageId(string $containerName): ?string
+    {
+        $result = $this->runDocker(['docker', 'inspect', '-f', '{{.Image}}', $containerName]);
+
+        return $result['ok'] && $result['stdout'] !== '' ? $result['stdout'] : null;
     }
 
     /**
@@ -89,6 +112,7 @@ class DockerOrchestrator
         array_push(
             $args,
             '-e', 'BRAIN_API_URL='.$gateway.'/api/v1',
+            '-e', 'BRAIN_MCP_URL='.$gateway.'/mcp',
             '-e', 'BRAIN_ALLOW_STATUS_WRITES='.$allowStatusWrites,
             '-e', 'BRAIN_SESSION_RESTART_DELAY='.(string) (int) config('second_brain.restart_delay', 60),
             '-v', $volume.':/state',

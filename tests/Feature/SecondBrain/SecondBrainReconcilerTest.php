@@ -23,6 +23,9 @@ class FakeOrchestrator extends DockerOrchestrator
     public array $started = [];
     public array $stopped = [];
     public array $managed = [];
+    public ?string $currentImage = 'img-v1';
+    /** @var array<string, string> container name => image id */
+    public array $containerImages = [];
 
     public function __construct()
     {
@@ -30,6 +33,16 @@ class FakeOrchestrator extends DockerOrchestrator
     }
 
     public function ensureImageBuilt(): void {}
+
+    public function currentImageId(): ?string
+    {
+        return $this->currentImage;
+    }
+
+    public function containerImageId(string $containerName): ?string
+    {
+        return $this->containerImages[$containerName] ?? null;
+    }
 
     public function runContainer(SecondBrainInstance $instance): void
     {
@@ -154,5 +167,38 @@ class SecondBrainReconcilerTest extends TestCase
 
         // credentials_changed_at > last_started_at → recreate.
         $this->assertContains($instance->container_name, $fake->started);
+    }
+
+    #[Test]
+    public function it_recreates_a_running_container_on_a_stale_image(): void
+    {
+        $instance = $this->instanceFor(5, true, SecondBrainInstance::STATUS_RUNNING);
+        $instance->forceFill(['last_started_at' => now()])->save();
+
+        $fake = new FakeOrchestrator();
+        $fake->states[$instance->container_name] = 'running';
+        $fake->currentImage = 'img-new';
+        $fake->containerImages[$instance->container_name] = 'img-old';
+
+        (new SecondBrainReconciler($fake))->reconcile();
+
+        $this->assertContains($instance->container_name, $fake->started);
+    }
+
+    #[Test]
+    public function it_leaves_a_healthy_up_to_date_running_container_alone(): void
+    {
+        $instance = $this->instanceFor(6, true, SecondBrainInstance::STATUS_RUNNING);
+        $instance->forceFill(['last_started_at' => now()])->save();
+
+        $fake = new FakeOrchestrator();
+        $fake->states[$instance->container_name] = 'running';
+        $fake->currentImage = 'img-same';
+        $fake->containerImages[$instance->container_name] = 'img-same';
+
+        (new SecondBrainReconciler($fake))->reconcile();
+
+        $this->assertSame([], $fake->started);
+        $this->assertSame([], $fake->stopped);
     }
 }

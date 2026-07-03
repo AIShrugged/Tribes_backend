@@ -83,8 +83,11 @@ class SecondBrainReconciler
             return $activeCount;
         }
 
-        // Enabled: (re)start when not running or when the credential changed.
-        $needsStart = ! $isRunning || $this->credentialChangedSinceStart($instance);
+        // Enabled: (re)start when not running, the credential changed, or the
+        // container runs a stale image (a redeploy rebuilt the sidecar).
+        $needsStart = ! $isRunning
+            || $this->credentialChangedSinceStart($instance)
+            || ($isRunning && $this->imageChanged($name));
 
         if ($needsStart) {
             if ($activeCount >= $cap) {
@@ -121,6 +124,15 @@ class SecondBrainReconciler
         ])->save();
 
         return $activeCount + 1;
+    }
+
+    /** True when the running container was built from a different image than the current tag. */
+    private function imageChanged(string $containerName): bool
+    {
+        $current = $this->orchestrator->currentImageId();
+        $running = $this->orchestrator->containerImageId($containerName);
+
+        return $current !== null && $running !== null && $current !== $running;
     }
 
     private function credentialChangedSinceStart(SecondBrainInstance $instance): bool
