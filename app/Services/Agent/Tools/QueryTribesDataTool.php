@@ -153,7 +153,7 @@ class QueryTribesDataTool extends AbstractAgentTool
                         // tasks
                         'assignee_id' => ['type' => 'integer', 'description' => 'Filter tasks by assignee user id.'],
                         'assignee_name' => ['type' => 'string',  'description' => 'Filter tasks by assignee name (partial).'],
-                        'statuses' => ['type' => 'string',  'description' => 'Comma-separated statuses. Default: open,in_progress.'],
+                        'statuses' => ['type' => 'string',  'description' => 'Tasks: comma-separated statuses (open,in_progress,paused,review,done,closed,cancelled). Default: open,in_progress. The singular `status` is also accepted here. To dedupe against completed work pass statuses:"done".'],
                         'stale_days' => ['type' => 'integer', 'description' => 'Tasks not updated for N+ days.'],
                         'calendar_event_id' => ['type' => 'integer', 'description' => 'Filter tasks/followups by meeting id.'],
                         'due_before' => ['type' => 'string',  'description' => 'Tasks due on or before (YYYY-MM-DD).'],
@@ -453,7 +453,10 @@ class QueryTribesDataTool extends AbstractAgentTool
             $query->where('sourceable_type', CalendarEvent::class)->where('sourceable_id', $eventId);
         }
 
-        $statuses = array_filter(array_map('trim', explode(',', $filters['statuses'] ?? 'open,in_progress')));
+        // Accept both `statuses` (documented for tasks) and `status` (documented for
+        // followups) — the LLM frequently reuses the singular key for task queries, and a
+        // silent default here means it never actually sees `done`/`closed` tasks.
+        $statuses = array_filter(array_map('trim', explode(',', $filters['statuses'] ?? $filters['status'] ?? 'open,in_progress')));
         $query->whereIn('status', $statuses);
 
         if (! empty($filters['assignee_id'])) {
@@ -518,7 +521,7 @@ class QueryTribesDataTool extends AbstractAgentTool
         // Resolve assignee_profile_id in one batch query
         $assigneeIds = $tasks->pluck('assignee_id')->filter()->unique()->values();
         $assigneeProfileIds = $assigneeIds->isNotEmpty()
-            ? Profile::whereIn('user_id', $assigneeIds)->get()->groupBy('user_id')->map(fn($g) => $g->first()->id)
+            ? Profile::whereIn('user_id', $assigneeIds)->get()->groupBy('user_id')->map(fn ($g) => $g->first()->id)
             : collect();
 
         // Batch-load source meetings for tasks created from CalendarEvents
@@ -538,30 +541,31 @@ class QueryTribesDataTool extends AbstractAgentTool
             'next_offset' => $hasMore ? $offset + $tasks->count() : null,
             'tasks' => $tasks->map(function ($t) use ($now, $assigneeProfileIds, $sourceMeetings) {
                 return [
-                'id' => $t->id,
-                'name' => $t->name,
-                'description' => $t->description ? mb_substr($t->description, 0, 300) : null,
-                'status' => $t->status,
-                'assignee_name' => $t->assignee_name,
-                'assignee_id' => $t->assignee_id,
-                'assignee_profile_id' => $t->assignee_id ? ($assigneeProfileIds[$t->assignee_id] ?? null) : null,
-                'due_date' => $t->due_date?->toDateString(),
-                'created_at' => $t->created_at?->toDateString(),
-                'team_id' => $t->team_id,
-                'organization_id' => $t->organization_id,
-                'days_since_update' => (int) abs($now->diffInDays($t->updated_at)),
-                'sourceable_id' => $t->sourceable_id,
-                'source_meeting' => ($t->sourceable_type === CalendarEvent::class && $t->sourceable_id)
-                    ? (function () use ($t, $sourceMeetings) {
-                        $ev = $sourceMeetings[$t->sourceable_id] ?? null;
-                        return $ev ? [
-                            'calendar_event_id' => $ev->id,
-                            'title'             => $ev->title,
-                            'starts_at'         => $ev->starts_at ? Carbon::parse($ev->starts_at)->toIso8601String() : null,
-                        ] : null;
-                    })()
-                    : null,
-                'created_at' => $t->created_at->toDateString(),
+                    'id' => $t->id,
+                    'name' => $t->name,
+                    'description' => $t->description ? mb_substr($t->description, 0, 300) : null,
+                    'status' => $t->status,
+                    'assignee_name' => $t->assignee_name,
+                    'assignee_id' => $t->assignee_id,
+                    'assignee_profile_id' => $t->assignee_id ? ($assigneeProfileIds[$t->assignee_id] ?? null) : null,
+                    'due_date' => $t->due_date?->toDateString(),
+                    'created_at' => $t->created_at?->toDateString(),
+                    'team_id' => $t->team_id,
+                    'organization_id' => $t->organization_id,
+                    'days_since_update' => (int) abs($now->diffInDays($t->updated_at)),
+                    'sourceable_id' => $t->sourceable_id,
+                    'source_meeting' => ($t->sourceable_type === CalendarEvent::class && $t->sourceable_id)
+                        ? (function () use ($t, $sourceMeetings) {
+                            $ev = $sourceMeetings[$t->sourceable_id] ?? null;
+
+                            return $ev ? [
+                                'calendar_event_id' => $ev->id,
+                                'title' => $ev->title,
+                                'starts_at' => $ev->starts_at ? Carbon::parse($ev->starts_at)->toIso8601String() : null,
+                            ] : null;
+                        })()
+                        : null,
+                    'created_at' => $t->created_at->toDateString(),
                 ];
             })->toArray(),
         ];
@@ -747,12 +751,12 @@ class QueryTribesDataTool extends AbstractAgentTool
                 ->groupBy('user_id')->map(fn ($g) => $g->first()->id)
             : collect();
         $relatedTasksArray = $relatedTasks->map(fn ($t) => [
-            'id'                  => $t->id,
-            'name'                => $t->name,
-            'status'              => $t->status,
-            'assignee_name'       => $t->assignee_name,
+            'id' => $t->id,
+            'name' => $t->name,
+            'status' => $t->status,
+            'assignee_name' => $t->assignee_name,
             'assignee_profile_id' => $t->assignee_id ? ($meetingAssigneeProfileIds[$t->assignee_id] ?? null) : null,
-            'due_date'            => $t->due_date?->toDateString(),
+            'due_date' => $t->due_date?->toDateString(),
         ])->toArray();
 
         return [

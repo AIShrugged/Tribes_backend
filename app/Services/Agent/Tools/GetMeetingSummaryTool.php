@@ -3,6 +3,7 @@
 namespace App\Services\Agent\Tools;
 
 use App\Models\MeetingSummary;
+use App\Models\TranscriptUpload;
 use App\Services\Agent\Tools\Concerns\InteractsWithMcpTenant;
 
 class GetMeetingSummaryTool extends AbstractAgentTool
@@ -39,17 +40,17 @@ class GetMeetingSummaryTool extends AbstractAgentTool
 
         $eventId = $parameters['calendar_event_id'] ?? null;
 
-        if (!$eventId) {
+        if (! $eventId) {
             return [
                 'success' => false,
-                'error'   => 'calendar_event_id is required',
+                'error' => 'calendar_event_id is required',
             ];
         }
 
         if (! $this->assertCanAccessMeeting((int) $eventId)) {
             return [
                 'success' => false,
-                'error'   => 'Meeting not found or not accessible.',
+                'error' => 'Meeting not found or not accessible.',
             ];
         }
 
@@ -57,43 +58,52 @@ class GetMeetingSummaryTool extends AbstractAgentTool
             ->where('calendar_event_id', $eventId)
             ->first();
 
-        if (!$summary) {
+        if (! $summary) {
+            // Distinguish "no transcript was ever captured" (nothing to process — likely the
+            // meeting was not recorded) from "transcript exists but not yet summarized"
+            // (genuine processing lag). Collapsing the two makes an agent infer a stalled
+            // pipeline from meetings that simply have no input.
+            $hasTranscript = TranscriptUpload::where('calendar_event_id', $eventId)->exists();
+
             return [
                 'success' => false,
-                'error'   => 'No summary found for this meeting. The meeting might not have been processed yet.',
+                'reason' => $hasTranscript ? 'not_processed' : 'no_transcript',
+                'error' => $hasTranscript
+                    ? 'No summary yet: a transcript exists but has not been processed. Try again later.'
+                    : 'No summary: no transcript has been captured for this meeting (it was likely not recorded). There is nothing to summarize — this is not a processing backlog.',
             ];
         }
 
         if ($summary->status === 'in_progress') {
             return [
                 'success' => false,
-                'error'   => 'Meeting summary is still being generated. Please try again later.',
+                'error' => 'Meeting summary is still being generated. Please try again later.',
             ];
         }
 
         if ($summary->status === 'failed') {
             return [
                 'success' => false,
-                'error'   => 'Meeting summary generation failed for this meeting.',
+                'error' => 'Meeting summary generation failed for this meeting.',
             ];
         }
 
-        $event        = $summary->calendarEvent;
+        $event = $summary->calendarEvent;
         $participants = $event?->participants->map(fn ($p) => array_filter([
-            'name'       => $p->name,
+            'name' => $p->name,
             'profile_id' => $p->profile_id ?? null,
         ], fn ($v) => $v !== null))->toArray() ?? [];
 
         return [
-            'success'           => true,
+            'success' => true,
             'calendar_event_id' => $eventId,
-            'title'             => $summary->title,
-            'starts_at'         => $event?->starts_at ? \Carbon\Carbon::parse($event->starts_at)->toIso8601String() : null,
-            'ends_at'           => $event?->ends_at   ? \Carbon\Carbon::parse($event->ends_at)->toIso8601String()   : null,
-            'participants'      => $participants,
-            'summary'           => $summary->summary,
-            'key_points'        => $summary->key_points ?? [],
-            'decisions'         => $summary->decisions ?? [],
+            'title' => $summary->title,
+            'starts_at' => $event?->starts_at ? \Carbon\Carbon::parse($event->starts_at)->toIso8601String() : null,
+            'ends_at' => $event?->ends_at ? \Carbon\Carbon::parse($event->ends_at)->toIso8601String() : null,
+            'participants' => $participants,
+            'summary' => $summary->summary,
+            'key_points' => $summary->key_points ?? [],
+            'decisions' => $summary->decisions ?? [],
         ];
     }
 }

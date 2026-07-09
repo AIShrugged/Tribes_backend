@@ -29,8 +29,13 @@ class SuggestActionTool extends AbstractAgentTool
             .'key=update_task_status → payload {issue_id, status (open|in_progress|paused|review|reopen|done)}. '
             .'key=add_comment → payload {issue_id, comment}. Use this INSTEAD of create_issue when a task '
             .'for the same thing ALREADY EXISTS and you only have something to add (new info, a decision, a link). '
+            // Post-meeting artifacts you generate yourself from a transcript. The payload JSON
+            // must match these fields exactly (they map 1:1 to the product models).
+            .'key=save_meeting_summary → payload {calendar_event_id, title, summary (markdown), key_points[] (strings), decisions[] (strings), commitments[] ({who,what,deadline})}. '
+            .'key=save_meeting_agenda → payload {calendar_event_id (the NEXT meeting in the series), source_meeting_id (the processed meeting), type:"general", content (markdown), raw_json {meeting_goal, main_problem, discussion_topics[] ({title,description}), commitments_check[] ({person,commitment,deadline,status,question}), decisions_recap[] (strings)}}. '
+            .'key=save_decision → payload {calendar_event_id, team_id, text, topic?, author_raw_name?} (one call per decision). '
             .'Always pass a deterministic dedupe_key so re-runs do not create duplicates '
-            .'(e.g. "lost:decision:228:premoderation-show-task-id" or "stalled:issue:533" or "close:issue:951"). '
+            .'(e.g. "stalled:issue:533", "close:issue:951", "summary:meeting:228", "agenda:meeting:231", "decision:meeting:228:db-only-via-api", "task:meeting:228:add-premoderation"). '
             .'Include title (short), reasoning (why), and evidence (ids/quotes).';
     }
 
@@ -152,6 +157,15 @@ class SuggestActionTool extends AbstractAgentTool
                 : null,
             BrainSuggestion::KEY_ADD_COMMENT => (empty($payload['issue_id']) || trim((string) ($payload['comment'] ?? '')) === '')
                 ? 'add_comment payload requires issue_id and comment'
+                : null,
+            BrainSuggestion::KEY_SAVE_MEETING_SUMMARY => ((int) ($payload['calendar_event_id'] ?? 0) <= 0 || trim((string) ($payload['summary'] ?? '')) === '')
+                ? 'save_meeting_summary payload requires calendar_event_id and summary'
+                : null,
+            BrainSuggestion::KEY_SAVE_MEETING_AGENDA => ((int) ($payload['calendar_event_id'] ?? 0) <= 0 || trim((string) ($payload['content'] ?? '')) === '')
+                ? 'save_meeting_agenda payload requires calendar_event_id and content'
+                : null,
+            BrainSuggestion::KEY_SAVE_DECISION => ((int) ($payload['calendar_event_id'] ?? 0) <= 0 || (int) ($payload['team_id'] ?? 0) <= 0 || trim((string) ($payload['text'] ?? '')) === '')
+                ? 'save_decision payload requires calendar_event_id, team_id and text'
                 : null,
             default => 'Unsupported key',
         };
