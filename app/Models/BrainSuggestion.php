@@ -17,21 +17,39 @@ class BrainSuggestion extends Model
     use SoftDeletes;
 
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_APPLIED = 'applied';
+
     public const STATUS_REJECTED = 'rejected';
+
     public const STATUS_FAILED = 'failed';
+
     public const STATUS_SUPERSEDED = 'superseded';
+
     public const STATUS_EXPIRED = 'expired';
 
     /** Action keys the brain may propose (must have a handler in SuggestionApplier). */
     public const KEY_CREATE_ISSUE = 'create_issue';
+
     public const KEY_UPDATE_TASK_STATUS = 'update_task_status';
+
     public const KEY_ADD_COMMENT = 'add_comment';
+
+    // Brain-generated post-meeting artifacts (transcript processed by the brain,
+    // written on human approval — see SuggestionApplier).
+    public const KEY_SAVE_MEETING_SUMMARY = 'save_meeting_summary';
+
+    public const KEY_SAVE_MEETING_AGENDA = 'save_meeting_agenda';
+
+    public const KEY_SAVE_DECISION = 'save_decision';
 
     public const KEYS = [
         self::KEY_CREATE_ISSUE,
         self::KEY_UPDATE_TASK_STATUS,
         self::KEY_ADD_COMMENT,
+        self::KEY_SAVE_MEETING_SUMMARY,
+        self::KEY_SAVE_MEETING_AGENDA,
+        self::KEY_SAVE_DECISION,
     ];
 
     protected $guarded = [];
