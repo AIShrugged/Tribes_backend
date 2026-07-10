@@ -125,7 +125,7 @@ class CalendarEvent extends Model
     {
         return $query->where(function (Builder $q) use ($userId): void {
             $q->whereHas('sources', fn (Builder $inner) => $inner->where('user_id', $userId))
-              ->orWhereHas('source', fn (Builder $inner) => $inner->where('user_id', $userId));
+                ->orWhereHas('source', fn (Builder $inner) => $inner->where('user_id', $userId));
         });
     }
 
@@ -139,9 +139,30 @@ class CalendarEvent extends Model
     {
         return $query->where(function (Builder $q) use ($organizationId): void {
             $q->whereHas('transcriptUploads', fn (Builder $u) => $u->where('organization_id', $organizationId))
-              ->orWhereHas('sources', fn (Builder $s) => $s->where('organization_id', $organizationId))
-              ->orWhereHas('source', fn (Builder $s) => $s->where('organization_id', $organizationId))
-              ->orWhereHas('followups.team', fn (Builder $t) => $t->where('organization_id', $organizationId));
+                ->orWhereHas('sources', fn (Builder $s) => $s->where('organization_id', $organizationId))
+                ->orWhereHas('source', fn (Builder $s) => $s->where('organization_id', $organizationId))
+                ->orWhereHas('followups.team', fn (Builder $t) => $t->where('organization_id', $organizationId));
+        });
+    }
+
+    /**
+     * Events the authenticated user may view: meetings they own, plus — for any
+     * organization where they are a manager — every meeting visible to that org
+     * (manual transcript uploads, teammates' meetings). Lets org managers review
+     * the org's protocols/agendas (the second-brain tab) while non-managers keep
+     * owned-only access.
+     */
+    public function scopeViewableBy(Builder $query, int $userId): Builder
+    {
+        $managedOrgIds = User::query()->whereKey($userId)->first()
+            ?->organizations()->wherePivot('role', 'manager')
+            ->pluck('organizations.id')->all() ?? [];
+
+        return $query->where(function (Builder $q) use ($userId, $managedOrgIds): void {
+            $q->owned($userId);
+            foreach ($managedOrgIds as $orgId) {
+                $q->orWhere(fn (Builder $sub) => $sub->visibleToOrganization((int) $orgId));
+            }
         });
     }
 
@@ -152,8 +173,8 @@ class CalendarEvent extends Model
     public function seriesKey(): string
     {
         return $this->url
-            ? 'url:' . $this->url
-            : 'title:' . ($this->title ?? '');
+            ? 'url:'.$this->url
+            : 'title:'.($this->title ?? '');
     }
 
     public function scopeInSameSeriesAs(Builder $query, CalendarEvent $event): Builder
@@ -161,6 +182,7 @@ class CalendarEvent extends Model
         if ($event->url) {
             return $query->where('url', $event->url);
         }
+
         return $query->where('title', $event->title)->whereNull('url');
     }
 
@@ -188,7 +210,7 @@ class CalendarEvent extends Model
      */
     public function getRecallExternalId(): ?string
     {
-        if (!$this->creator_user_id) {
+        if (! $this->creator_user_id) {
             return $this->external_id;
         }
 

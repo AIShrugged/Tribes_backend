@@ -13,7 +13,7 @@ class AgendaController extends Controller
 {
     public function index(int $calendarEventId): ApiResponse
     {
-        $event = CalendarEvent::owned(Auth::id())->findOrFail($calendarEventId);
+        $event = CalendarEvent::viewableBy(Auth::id())->findOrFail($calendarEventId);
 
         $agendas = $event->agendas()
             ->where(function ($q) {
@@ -30,7 +30,7 @@ class AgendaController extends Controller
 
     public function show(int $calendarEventId, MeetingAgenda $agenda): ApiResponse
     {
-        $event = CalendarEvent::owned(Auth::id())->findOrFail($calendarEventId);
+        $event = CalendarEvent::viewableBy(Auth::id())->findOrFail($calendarEventId);
 
         if ($agenda->calendar_event_id !== $event->id) {
             return ApiResponse::notFound();
@@ -45,7 +45,7 @@ class AgendaController extends Controller
 
     public function generate(int $calendarEventId): ApiResponse
     {
-        $event = CalendarEvent::owned(Auth::id())->findOrFail($calendarEventId);
+        $event = CalendarEvent::viewableBy(Auth::id())->findOrFail($calendarEventId);
 
         GenerateAgendaJob::dispatch($event);
 
