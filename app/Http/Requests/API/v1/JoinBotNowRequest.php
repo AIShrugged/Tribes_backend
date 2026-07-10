@@ -15,6 +15,7 @@ class JoinBotNowRequest extends FormRequest
     {
         return [
             'calendar_event_id' => ['required', 'integer', 'exists:calendar_events,id'],
+            'organization_id'   => ['required', 'integer', 'exists:organizations,id'],
         ];
     }
 
@@ -26,5 +27,21 @@ class JoinBotNowRequest extends FormRequest
     public function getCalendarEventId(): int
     {
         return $this->input('calendar_event_id');
+    }
+
+    public function getOrganizationId(): int
+    {
+        return (int) $this->input('organization_id');
+    }
+
+    public function bodyParameters(): array
+    {
+        return [
+            'organization_id' => [
+                'description' => 'Organization the bot is connected from. The meeting then appears '
+                    .'in that organization\'s calendar.',
+                'example'     => 42,
+            ],
+        ];
     }
 }

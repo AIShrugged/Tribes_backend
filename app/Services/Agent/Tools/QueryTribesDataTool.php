@@ -658,7 +658,7 @@ class QueryTribesDataTool extends AbstractAgentTool
             // calendar_events has NO organization_id column — a meeting's org comes from its
             // source (see CalendarEventOrganizationResolver). Scope via the source relationship.
             $orgId = (int) $filters['organization_id'];
-            $query->whereHas('sources', fn ($s) => $s->where('organization_id', $orgId));
+            $query->whereHas('sources', fn ($s) => $s->where('sources.organization_id', $orgId));
         }
         if (! empty($filters['query'])) {
             $query->where('title', 'ilike', '%'.$filters['query'].'%');

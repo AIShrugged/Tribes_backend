@@ -173,7 +173,7 @@ class TodayBriefingService
             ->where(function ($q) use ($user, $sourceIds, $organizationId) {
                 $q->whereHas('sources', function ($sq) use ($user, $organizationId) {
                     $sq->where('user_id', $user->id)
-                        ->when($organizationId !== null, fn ($sourceQuery) => $sourceQuery->where('organization_id', $organizationId));
+                        ->when($organizationId !== null, fn ($sourceQuery) => $sourceQuery->where('sources.organization_id', $organizationId));
                 });
                 if ($sourceIds->isNotEmpty()) {
                     $q->orWhereIn('source_id', $sourceIds);
@@ -502,7 +502,7 @@ class TodayBriefingService
             ->where(function ($q) use ($user, $sourceIds, $organizationId) {
                 $q->whereHas('sources', function ($sq) use ($user, $organizationId) {
                     $sq->where('user_id', $user->id)
-                        ->when($organizationId !== null, fn ($sourceQuery) => $sourceQuery->where('organization_id', $organizationId));
+                        ->when($organizationId !== null, fn ($sourceQuery) => $sourceQuery->where('sources.organization_id', $organizationId));
                 });
                 if ($sourceIds->isNotEmpty()) {
                     $q->orWhereIn('source_id', $sourceIds);

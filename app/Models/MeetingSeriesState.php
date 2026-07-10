@@ -24,7 +24,7 @@ class MeetingSeriesState extends Model
             $organizationIds->push($event->source->organization_id);
         }
 
-        $pivotIds = $event->sources()->whereNotNull('organization_id')->pluck('organization_id');
+        $pivotIds = $event->sources()->whereNotNull('sources.organization_id')->pluck('sources.organization_id');
 
         $organizationIds = $organizationIds->merge($pivotIds)
             ->unique()

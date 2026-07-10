@@ -36,7 +36,7 @@ class CalendarEvent extends Model
     public function sources(): BelongsToMany
     {
         return $this->belongsToMany(Source::class, 'calendar_event_source')
-            ->withPivot('external_id', 'required_bot')
+            ->withPivot('external_id', 'required_bot', 'organization_id')
             ->withTimestamps();
     }
 
@@ -139,9 +139,24 @@ class CalendarEvent extends Model
     {
         return $query->where(function (Builder $q) use ($organizationId): void {
             $q->whereHas('transcriptUploads', fn (Builder $u) => $u->where('organization_id', $organizationId))
-                ->orWhereHas('sources', fn (Builder $s) => $s->where('organization_id', $organizationId))
+                ->orWhereHas('sources', fn (Builder $s) => $s->where('sources.organization_id', $organizationId))
                 ->orWhereHas('source', fn (Builder $s) => $s->where('organization_id', $organizationId))
                 ->orWhereHas('followups.team', fn (Builder $t) => $t->where('organization_id', $organizationId));
+        });
+    }
+
+    /**
+     * Events that belong to an organization's calendar: meetings where the bot
+     * was manually connected from that organization. The org is recorded on the
+     * creator's `calendar_event_source` pivot row at bot-connection time, so we
+     * match required_bot = true and organization_id on the pivot. Both columns
+     * are qualified because `sources` also has an organization_id column.
+     */
+    public function scopeForOrganizationCalendar(Builder $query, int $organizationId): Builder
+    {
+        return $query->whereHas('sources', function (Builder $q) use ($organizationId): void {
+            $q->where('calendar_event_source.required_bot', true)
+                ->where('calendar_event_source.organization_id', $organizationId);
         });
     }
 
@@ -200,6 +215,35 @@ class CalendarEvent extends Model
         }
 
         return $query->exists();
+    }
+
+    /**
+     * The organization the recording bot was connected from, if any.
+     *
+     * Read from the creator's `calendar_event_source` pivot row where the bot is
+     * required. Drives the organization column in the personal calendar and lets
+     * the client sort meetings by organization. `organization_id`/`required_bot`
+     * are qualified to the pivot table (sources also has organization_id).
+     */
+    public function botOrganizationId(): ?int
+    {
+        $query = DB::table('calendar_event_source')
+            ->where('calendar_event_source.calendar_event_id', $this->id)
+            ->where('calendar_event_source.required_bot', true)
+            ->whereNotNull('calendar_event_source.organization_id');
+
+        if ($this->creator_user_id) {
+            $query
+                ->join('sources', 'sources.id', '=', 'calendar_event_source.source_id')
+                ->where('sources.user_id', $this->creator_user_id)
+                ->whereNull('sources.deleted_at');
+        }
+
+        $organizationId = $query
+            ->orderBy('calendar_event_source.id')
+            ->value('calendar_event_source.organization_id');
+
+        return $organizationId !== null ? (int) $organizationId : null;
     }
 
     /**
