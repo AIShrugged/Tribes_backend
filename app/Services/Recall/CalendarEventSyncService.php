@@ -107,17 +107,26 @@ class CalendarEventSyncService
             }
         }
 
-        // Attach source to event via pivot
-        $calendarEvent->sources()->syncWithoutDetaching([
-            $source->id => ['external_id' => $eventDTO->externalId, 'required_bot' => true],
-        ]);
+        // Attach source to event via pivot. The bot is NOT auto-required: the
+        // meeting creator connects it manually from a specific organization
+        // (see BotController::require). New links default to required_bot = false;
+        // existing links keep whatever the creator set (required_bot + the
+        // organization the bot was connected from) — we only refresh external_id,
+        // which the bot scheduling relies on to survive reschedules.
+        $pivotExists = $calendarEvent->sources()
+            ->wherePivot('source_id', $source->id)
+            ->exists();
 
-        // syncWithoutDetaching keeps existing pivot rows as-is, so make sure
-        // an already-linked meeting is actually marked as requiring the bot.
-        $calendarEvent->sources()->updateExistingPivot($source->id, [
-            'external_id' => $eventDTO->externalId,
-            'required_bot' => true,
-        ]);
+        if ($pivotExists) {
+            $calendarEvent->sources()->updateExistingPivot($source->id, [
+                'external_id' => $eventDTO->externalId,
+            ]);
+        } else {
+            $calendarEvent->sources()->attach($source->id, [
+                'external_id' => $eventDTO->externalId,
+                'required_bot' => false,
+            ]);
+        }
 
         $this->syncAttendees($calendarEvent, $attendees);
 

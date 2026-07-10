@@ -16,6 +16,7 @@ class RequireBotRequest extends FormRequest
         return [
             'calendar_event_id' => ['required', 'integer', 'exists:calendar_events,id'],
             'required_bot'      => ['required', 'boolean'],
+            'organization_id'   => ['nullable', 'integer', 'required_if:required_bot,true', 'exists:organizations,id'],
         ];
     }
 
@@ -31,7 +32,14 @@ class RequireBotRequest extends FormRequest
 
     public function getRequiredBot(): bool
     {
-        return $this->input('required_bot');
+        return $this->boolean('required_bot');
+    }
+
+    public function getOrganizationId(): ?int
+    {
+        $value = $this->input('organization_id');
+
+        return $value !== null ? (int) $value : null;
     }
 
     public function bodyParameters(): array
@@ -41,7 +49,11 @@ class RequireBotRequest extends FormRequest
                 'description' => 'Whether the recording bot should join the event.',
                 'example'     => true,
             ],
+            'organization_id' => [
+                'description' => 'Organization the bot is connected from. Required when required_bot is true; '
+                    .'the meeting then appears in that organization\'s calendar.',
+                'example'     => 42,
+            ],
         ];
     }
-
 }

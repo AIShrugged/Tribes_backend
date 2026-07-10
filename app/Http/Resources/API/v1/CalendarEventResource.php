@@ -24,6 +24,7 @@ class CalendarEventResource extends JsonResource
             'ends_at'          => $this->ends_at,
             'creator_user_id'  => $this->creator_user_id,
             'required_bot'     => $this->isRequiredBot(),
+            'organization_id'  => $this->botOrganizationId(),
             'has_summary'      => $this->meetingSummary !== null
                 && $this->meetingSummary->status !== 'in_progress',
         ];

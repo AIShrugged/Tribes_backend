@@ -27,7 +27,10 @@ class BotController extends Controller
      * Set bot requirement for event
      *
      * Marks whether the recording bot should join the specified calendar event
-     * for the current user's source. The bot is active if any participant requires it.
+     * for the current user's source. When enabling the bot, `organization_id`
+     * records which organization the bot was connected from — the meeting then
+     * shows up in that organization's calendar. Only the meeting organizer may
+     * manage the bot, and they must belong to the selected organization.
      *
      * @authenticated
      *
@@ -51,6 +54,7 @@ class BotController extends Controller
      *   "meta": {}
      * }
      * @response 403 scenario="Forbidden" {"message": "Only the meeting organizer can manage the bot."}
+     * @response 403 scenario="Not an organization member" {"message": "You must be a member of the selected organization."}
      * @response 404 scenario="Not Found" {"message": "No query results for model [CalendarEvent] 5"}
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
      */
@@ -65,14 +69,28 @@ class BotController extends Controller
             'Only the meeting organizer can manage the bot.',
         );
 
-        // Update required_bot for the current user's source in the pivot
+        $requiredBot = $request->getRequiredBot();
+        $organizationId = $request->getOrganizationId();
+
+        if ($requiredBot) {
+            abort_unless(
+                Auth::user()->organizations()->whereKey($organizationId)->exists(),
+                403,
+                'You must be a member of the selected organization.',
+            );
+        }
+
+        // Update required_bot for the current user's source in the pivot. When
+        // enabling, record the organization the bot was connected from so the
+        // meeting appears in that organization's calendar; clear it when disabling.
         $source = $calendarEvent->sources()
             ->where('user_id', Auth::id())
             ->first();
 
         if ($source) {
             $calendarEvent->sources()->updateExistingPivot($source->id, [
-                'required_bot' => $request->getRequiredBot(),
+                'required_bot'    => $requiredBot,
+                'organization_id' => $requiredBot ? $organizationId : null,
             ]);
         }
 
@@ -88,11 +106,17 @@ class BotController extends Controller
      *
      * Creates a Recall bot directly by meeting URL, bypassing Recall calendar
      * event lookup. Use this when the meeting has already started and the bot
-     * needs to join immediately.
+     * needs to join immediately. `organization_id` records which organization the
+     * bot was connected from so the meeting shows up in that organization's
+     * calendar. Only the organizer may do this, and they must belong to the
+     * selected organization.
      *
      * @authenticated
      *
      * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
+     *
+     * @response 403 scenario="Forbidden" {"message": "Only the meeting organizer can manage the bot."}
+     * @response 403 scenario="Not an organization member" {"message": "You must be a member of the selected organization."}
      */
     public function joinNow(JoinBotNowRequest $request): ApiResponse
     {
@@ -105,13 +129,22 @@ class BotController extends Controller
             'Only the meeting organizer can manage the bot.',
         );
 
+        $organizationId = $request->getOrganizationId();
+
+        abort_unless(
+            Auth::user()->organizations()->whereKey($organizationId)->exists(),
+            403,
+            'You must be a member of the selected organization.',
+        );
+
         $source = $calendarEvent->sources()
             ->where('user_id', Auth::id())
             ->first();
 
         if ($source) {
             $calendarEvent->sources()->updateExistingPivot($source->id, [
-                'required_bot' => true,
+                'required_bot'    => true,
+                'organization_id' => $organizationId,
             ]);
         }
 

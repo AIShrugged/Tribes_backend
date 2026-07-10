@@ -33,7 +33,7 @@ class PreviousMeetingResolver
         return CalendarEvent::query()
             ->where(function ($q) use ($organizationIds) {
                 $q->whereHas('source', fn ($q) => $q->whereIn('organization_id', $organizationIds))
-                    ->orWhereHas('sources', fn ($q) => $q->whereIn('organization_id', $organizationIds));
+                    ->orWhereHas('sources', fn ($q) => $q->whereIn('sources.organization_id', $organizationIds));
             })
             ->inSameSeriesAs($event)
             ->where('starts_at', '<', $event->starts_at)
@@ -53,7 +53,7 @@ class PreviousMeetingResolver
             $ids->push($event->source->organization_id);
         }
 
-        $pivotIds = $event->sources()->whereNotNull('organization_id')->pluck('organization_id');
+        $pivotIds = $event->sources()->whereNotNull('sources.organization_id')->pluck('sources.organization_id');
 
         return $ids->merge($pivotIds)->unique();
     }

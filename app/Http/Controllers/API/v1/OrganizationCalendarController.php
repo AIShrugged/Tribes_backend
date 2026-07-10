@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\API\v1;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\API\v1\OrganizationCalendarRequest;
+use App\Http\Requests\API\v1\OrganizationCalendarIndexRequest;
 use App\Http\Resources\API\v1\CalendarEventResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\CalendarEvent;
@@ -18,12 +18,15 @@ class OrganizationCalendarController extends Controller
     /**
      * List organization bot meetings
      *
-     * Returns a paginated list of meetings across the organization where the bot
-     * was requested (required_bot = true). Not scoped to the authenticated user —
-     * returns all meetings from all members of the user's organizations.
+     * Returns a paginated list of the given organization's meetings — those where
+     * the meeting creator connected the recording bot from this organization
+     * (required_bot = true and the pivot's organization_id matches). The
+     * authenticated user must be a member of the organization. Not scoped to the
+     * user: it returns the organization's meetings regardless of who created them.
      *
      * @subgroup Organization
      * @authenticated
+     * @queryParam organization_id integer required The organization whose calendar to list. Example: 42
      * @queryParam date_from string Filter meetings starting on or after this date (YYYY-MM-DD). Example: 2026-04-06
      * @queryParam date_to string Filter meetings starting on or before this date (YYYY-MM-DD, must be >= date_from). Example: 2026-04-12
      * @queryParam offset integer Number of items to skip. Example: 0
@@ -50,21 +53,20 @@ class OrganizationCalendarController extends Controller
      *   "meta": {}
      * }
      * @response 401 scenario="Unauthenticated" {"message": "Unauthenticated."}
+     * @response 403 scenario="Not an organization member" {"message": "You must be a member of this organization."}
      */
-    public function index(OrganizationCalendarRequest $request): ApiResponse
+    public function index(OrganizationCalendarIndexRequest $request): ApiResponse
     {
-        $user = Auth::user();
-        $orgIds = $user->organizations()->pluck('organizations.id');
+        $organizationId = $request->getOrganizationId();
+
+        abort_unless(
+            Auth::user()->organizations()->whereKey($organizationId)->exists(),
+            403,
+            'You must be a member of this organization.',
+        );
 
         $query = CalendarEvent::query()
-            ->whereHas('sources', function (Builder $q) use ($orgIds) {
-                $q->where('required_bot', true)
-                  ->whereHas('user', function (Builder $uq) use ($orgIds) {
-                      $uq->whereHas('organizations', function (Builder $oq) use ($orgIds) {
-                          $oq->whereIn('organizations.id', $orgIds);
-                      });
-                  });
-            })
+            ->forOrganizationCalendar($organizationId)
             ->with(['meetingSummary'])
             ->when($request->getDateFrom(), fn (Builder $q, $date) => $q->where('starts_at', '>=', $date))
             ->when($request->getDateTo(),   fn (Builder $q, $date) => $q->where('starts_at', '<=', $date))

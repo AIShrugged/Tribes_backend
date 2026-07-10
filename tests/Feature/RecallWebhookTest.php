@@ -24,6 +24,7 @@ class RecallWebhookTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+    protected Organization $organization;
     protected CalendarEvent $calendarEvent;
     protected Bot $bot;
 
@@ -36,6 +37,7 @@ class RecallWebhookTest extends TestCase
             'name' => 'Test Organization',
             'slug' => 'test-org',
         ]);
+        $this->organization = $organization;
 
         // Создаем пользователя
         $this->user = User::factory()->create();
@@ -135,8 +137,10 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
-    public function calendar_sync_event_marks_meeting_as_required_bot_and_schedules_it(): void
+    public function calendar_sync_event_does_not_auto_require_or_schedule_bot(): void
     {
+        // The bot is now connected manually by the meeting creator, so syncing a
+        // calendar must never auto-require the bot or schedule it with Recall.
         Http::fake(function ($request) {
             if ($request->method() === 'POST') {
                 return Http::response([
@@ -201,22 +205,22 @@ class RecallWebhookTest extends TestCase
 
         $event->refresh();
 
-        $this->assertTrue($event->isRequiredBot());
-        $this->assertNotNull($event->bot_id);
+        $this->assertFalse($event->isRequiredBot());
+        $this->assertNull($event->bot_id);
         $this->assertDatabaseHas('calendar_event_source', [
             'calendar_event_id' => $event->id,
             'source_id' => $source->id,
-            'required_bot' => true,
+            'required_bot' => false,
+            'organization_id' => null,
         ]);
-        $this->assertDatabaseHas('bots', [
+        $this->assertDatabaseMissing('bots', [
             'external_id' => 'bot-sync-1',
-            'meeting_url' => 'https://meet.google.com/sync-test',
-            'is_active' => true,
         ]);
+        Http::assertNotSent(fn ($request) => $request->method() === 'POST');
     }
 
     #[Test]
-    public function calendar_update_event_resyncs_meeting_time_and_schedules_bot(): void
+    public function calendar_update_event_resyncs_meeting_time_and_reschedules_required_bot(): void
     {
         $baseTime = now()->startOfSecond();
         $existingStartsAt = $baseTime->copy()->addHour();
@@ -275,9 +279,11 @@ class RecallWebhookTest extends TestCase
             'required_bot' => false,
         ]);
 
+        // The creator had already connected the bot manually, so a reschedule
+        // must move the meeting time AND reschedule the (still required) bot.
         $existingEvent->sources()->attach($source->id, [
             'external_id' => 'recall-update-event-1',
-            'required_bot' => false,
+            'required_bot' => true,
         ]);
 
         $response = $this->postJson('/api/v1/recall/webhook', [
@@ -816,7 +822,8 @@ class RecallWebhookTest extends TestCase
         $this->actingAs($this->user);
 
         $response = $this->postJson('/api/v1/calendar-events/' . $this->calendarEvent->id . '/bot/require', [
-            'required_bot' => true,
+            'required_bot'    => true,
+            'organization_id' => $this->organization->id,
         ]);
 
         $response->assertOk();
@@ -830,6 +837,13 @@ class RecallWebhookTest extends TestCase
             'external_id' => 'bot-refresh-1',
             'meeting_url' => 'https://meet.google.com/test',
             'is_active' => true,
+        ]);
+
+        $this->assertDatabaseHas('calendar_event_source', [
+            'calendar_event_id' => $this->calendarEvent->id,
+            'source_id'         => $source->id,
+            'required_bot'      => true,
+            'organization_id'   => $this->organization->id,
         ]);
 
         $this->assertSame('bot-refresh-1', $this->calendarEvent->fresh()->bot?->external_id);
@@ -858,7 +872,9 @@ class RecallWebhookTest extends TestCase
 
         $this->actingAs($this->user);
 
-        $response = $this->postJson('/api/v1/calendar-events/' . $this->calendarEvent->id . '/bot/join-now');
+        $response = $this->postJson('/api/v1/calendar-events/' . $this->calendarEvent->id . '/bot/join-now', [
+            'organization_id' => $this->organization->id,
+        ]);
 
         $response->assertOk();
 
@@ -873,6 +889,7 @@ class RecallWebhookTest extends TestCase
             'calendar_event_id' => $this->calendarEvent->id,
             'source_id' => $source->id,
             'required_bot' => true,
+            'organization_id' => $this->organization->id,
         ]);
 
         $this->assertDatabaseHas('bots', [
@@ -1153,7 +1170,7 @@ class RecallWebhookTest extends TestCase
     }
 
     #[Test]
-    public function calendar_sync_from_multiple_sources_for_same_meeting_schedules_only_one_bot(): void
+    public function calendar_sync_from_multiple_sources_for_same_meeting_creates_single_event_without_bot(): void
     {
         $secondUser = User::factory()->create();
         $organization = Organization::query()->firstOrFail();
@@ -1219,11 +1236,11 @@ class RecallWebhookTest extends TestCase
             return Http::response([], 200);
         });
 
-        // Trigger a calendar sync webhook for source A (first user, required_bot=true)
+        // Trigger a calendar sync webhook for source A (first user)
         $webhookPayloadA = [
             'event' => 'calendar.sync_events',
             'data'  => [
-                'calendar_id'    => 'calendar-a',
+                'calendar_id'    => $sourceA->external_id,
                 'last_updated_ts' => now()->subMinute()->toIso8601String(),
             ],
         ];
@@ -1234,25 +1251,27 @@ class RecallWebhookTest extends TestCase
         $webhookPayloadB = [
             'event' => 'calendar.sync_events',
             'data'  => [
-                'calendar_id'    => 'calendar-b',
+                'calendar_id'    => $sourceB->external_id,
                 'last_updated_ts' => now()->subMinute()->toIso8601String(),
             ],
         ];
 
         $this->postJson('/api/v1/recall/webhook', $webhookPayloadB)->assertSuccessful();
 
-        // Only one bot should have been scheduled with Recall
-        $this->assertSame(1, $botScheduleCalls, 'Expected exactly one Recall bot scheduling call for a shared meeting');
+        // No bot is auto-scheduled: both syncs only deduplicate the meeting.
+        $this->assertSame(0, $botScheduleCalls, 'Sync must never auto-schedule a Recall bot');
 
-        // One bot from setUp + one for the shared meeting (not duplicated per source)
-        $this->assertDatabaseCount('bots', 2);
+        // Only the bot from setUp exists; the shared meeting stays bot-less.
+        $this->assertDatabaseCount('bots', 1);
+
+        // The same meeting from two calendars collapses into a single event.
+        $this->assertSame(1, CalendarEvent::query()->where('url', $meetingUrl)->count());
 
         $event = CalendarEvent::query()->where('url', $meetingUrl)->firstOrFail();
-        $this->assertNotNull($event->bot_id);
-        $this->assertDatabaseHas('bots', [
+        $this->assertNull($event->bot_id);
+        $this->assertFalse($event->isRequiredBot());
+        $this->assertDatabaseMissing('bots', [
             'external_id' => 'bot-shared-1',
-            'meeting_url' => $meetingUrl,
-            'is_active'   => true,
         ]);
     }
 
@@ -1337,6 +1356,7 @@ class RecallWebhookTest extends TestCase
             return Http::response([], 200);
         });
 
+        // Attendee calendar (source A) syncs first: no host id yet, nothing scheduled.
         $this->postJson('/api/v1/recall/webhook', [
             'event' => 'calendar.sync_events',
             'data'  => [
@@ -1349,6 +1369,8 @@ class RecallWebhookTest extends TestCase
         $this->assertSame('some_external_id1', $event->fresh()->external_id);
         $this->assertFalse($event->fresh()->isRequiredBot());
 
+        // Host calendar (source B) syncs: host external id is recorded, but the bot
+        // is still NOT auto-scheduled — it must be connected manually.
         $this->postJson('/api/v1/recall/webhook', [
             'event' => 'calendar.sync_events',
             'data'  => [
@@ -1357,8 +1379,20 @@ class RecallWebhookTest extends TestCase
             ],
         ])->assertSuccessful();
 
-        $this->assertSame(['some_external_id2'], $scheduledCalendarEventIds);
+        $this->assertSame([], $scheduledCalendarEventIds);
         $this->assertSame('some_external_id2', $event->fresh()->external_id);
+        $this->assertFalse($event->fresh()->isRequiredBot());
+
+        // The creator connects the bot manually from their organization; scheduling
+        // must use the host's Recall external id, not the attendee's.
+        $this->actingAs($secondUser)
+            ->postJson('/api/v1/calendar-events/' . $event->id . '/bot/require', [
+                'required_bot'    => true,
+                'organization_id' => $organization->id,
+            ])
+            ->assertOk();
+
+        $this->assertSame(['some_external_id2'], $scheduledCalendarEventIds);
         $this->assertTrue($event->fresh()->isRequiredBot());
         $this->assertSame('some_external_id2', $event->fresh()->getRecallExternalId());
         $this->assertDatabaseHas('calendar_event_source', [
@@ -1366,6 +1400,7 @@ class RecallWebhookTest extends TestCase
             'source_id'         => $sourceB->id,
             'external_id'       => 'some_external_id2',
             'required_bot'      => true,
+            'organization_id'   => $organization->id,
         ]);
         $this->assertDatabaseHas('bots', [
             'external_id' => 'bot-shared-required-source',

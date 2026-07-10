@@ -18,7 +18,7 @@ class Source extends Model
     public function calendarEvents(): BelongsToMany
     {
         return $this->belongsToMany(CalendarEvent::class, 'calendar_event_source')
-            ->withPivot('external_id', 'required_bot')
+            ->withPivot('external_id', 'required_bot', 'organization_id')
             ->withTimestamps();
     }
 
