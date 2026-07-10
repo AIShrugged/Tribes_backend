@@ -150,6 +150,7 @@ Route::group(['prefix' => 'v1'], function () {
 
         Route::group(['prefix' => 'calendar-events'], function () {
             Route::get('/organization', [OrganizationCalendarController::class, 'index'])->name('calendar-events.organization');
+            Route::get('/viewable', [CalendarEventController::class, 'viewable'])->name('calendar-events.viewable');
             Route::get('/', [CalendarEventController::class, 'index'])->name('calendar-events.index');
             Route::get('/{calendar_event_id}', [CalendarEventController::class, 'show'])->name('calendar-events.show');
             Route::get('/{calendar_event_id}/detail', [CalendarEventDetailController::class, 'show'])

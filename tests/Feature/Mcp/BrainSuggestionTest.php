@@ -271,8 +271,10 @@ class BrainSuggestionTest extends TestCase
     }
 
     #[Test]
-    public function save_meeting_agenda_does_not_clobber_an_existing_agenda(): void
+    public function save_meeting_agenda_overwrites_an_existing_general_agenda(): void
     {
+        // The brain is an independent pipeline running alongside the code one:
+        // an approved agenda overwrites the code pipeline's general agenda.
         [$user, $org] = $this->managerFor('A');
         $nextMeeting = $this->makeMeeting($org, $user);
         MeetingAgenda::create([
@@ -287,14 +289,17 @@ class BrainSuggestionTest extends TestCase
             'calendar_event_id' => $nextMeeting->id,
             'type' => 'general',
             'content' => 'brain override',
+            'raw_json' => ['meeting_goal' => 'overridden'],
         ]);
 
         Sanctum::actingAs($user, ['*']);
-        $this->postJson("/api/v1/brain/suggestions/{$suggestion->id}/approve")->assertStatus(422);
+        $this->postJson("/api/v1/brain/suggestions/{$suggestion->id}/approve")->assertOk();
 
-        $this->assertSame(BrainSuggestion::STATUS_FAILED, $suggestion->fresh()->status);
+        $this->assertSame(BrainSuggestion::STATUS_APPLIED, $suggestion->fresh()->status);
         $this->assertSame(1, MeetingAgenda::where('calendar_event_id', $nextMeeting->id)->count());
-        $this->assertSame('original', MeetingAgenda::where('calendar_event_id', $nextMeeting->id)->first()->content);
+        $agenda = MeetingAgenda::where('calendar_event_id', $nextMeeting->id)->first();
+        $this->assertSame('brain override', $agenda->content);
+        $this->assertSame('overridden', $agenda->raw_json['meeting_goal']);
     }
 
     #[Test]

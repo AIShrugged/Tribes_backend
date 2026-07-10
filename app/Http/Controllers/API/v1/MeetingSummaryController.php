@@ -24,6 +24,7 @@ class MeetingSummaryController extends Controller
      * generated yet or the event does not belong to the authenticated user.
      *
      * @subgroup Meeting Summary
+     *
      * @authenticated
      *
      * @urlParam calendar_event_id integer required The Calendar Event ID. Example: 5
@@ -62,12 +63,12 @@ class MeetingSummaryController extends Controller
      */
     public function show(MeetingSummaryRequest $request): ApiResponse
     {
-        $calendarEvent = CalendarEvent::owned(Auth::id())
+        $calendarEvent = CalendarEvent::viewableBy(Auth::id())
             ->findOrFail($request->getCalendarEventId());
 
         $summary = $calendarEvent->meetingSummary;
 
-        if (!$summary) {
+        if (! $summary) {
             return ApiResponse::notFound();
         }
 
@@ -80,12 +81,14 @@ class MeetingSummaryController extends Controller
      * Generate meeting summary (for testing)
      *
      * @subgroup Meeting Summary
+     *
      * @authenticated
+     *
      * @hideFromAPIDocumentation
      */
     public function generate(MeetingSummaryRequest $request, MeetingSummaryService $service): ApiResponse
     {
-        $calendarEvent = CalendarEvent::owned(Auth::id())
+        $calendarEvent = CalendarEvent::viewableBy(Auth::id())
             ->findOrFail($request->getCalendarEventId());
 
         $summary = $service->generate($calendarEvent);

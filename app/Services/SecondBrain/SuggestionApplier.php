@@ -107,7 +107,9 @@ class SuggestionApplier
 
     /**
      * Persist a brain-generated agenda for the NEXT meeting in the series.
-     * General agenda only (v1); never overwrites an existing done agenda.
+     * General agenda only (v1). The brain is an independent pipeline running
+     * alongside the code one, so an approved proposal OVERWRITES the existing
+     * general agenda (updateOrCreate) — the manager already chose this version.
      *
      * @param  array<string, mixed>  $payload
      */
@@ -126,17 +128,6 @@ class SuggestionApplier
             $this->fail('save_meeting_agenda: content is empty.');
         }
 
-        // Do not clobber an agenda the real pipeline already produced.
-        $exists = MeetingAgenda::query()
-            ->where('calendar_event_id', $event->id)
-            ->where('type', 'general')
-            ->whereNull('user_id')
-            ->where('status', AgendaStatus::DONE->value)
-            ->exists();
-        if ($exists) {
-            $this->fail("save_meeting_agenda: a general agenda already exists for meeting #{$event->id}.");
-        }
-
         // Best-effort: the processed meeting must be org-visible and precede the target.
         $sourceMeetingId = (int) ($payload['source_meeting_id'] ?? 0);
         if ($sourceMeetingId > 0) {
@@ -146,14 +137,20 @@ class SuggestionApplier
             }
         }
 
-        $agenda = MeetingAgenda::create([
-            'calendar_event_id' => $event->id,
-            'user_id' => null,
-            'type' => 'general',
-            'status' => AgendaStatus::DONE->value,
-            'raw_json' => $this->toArray($payload['raw_json'] ?? null),
-            'content' => $content,
-        ]);
+        // The brain pipeline runs alongside the code one; an approved proposal
+        // overwrites the existing general agenda (unique on event+user+type).
+        $agenda = MeetingAgenda::updateOrCreate(
+            [
+                'calendar_event_id' => $event->id,
+                'user_id' => null,
+                'type' => 'general',
+            ],
+            [
+                'status' => AgendaStatus::DONE->value,
+                'raw_json' => $this->toArray($payload['raw_json'] ?? null),
+                'content' => $content,
+            ],
+        );
 
         return ['calendar_event_id' => $event->id, 'agenda_id' => $agenda->id];
     }
