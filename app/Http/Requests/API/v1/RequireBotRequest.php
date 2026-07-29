@@ -17,6 +17,9 @@ class RequireBotRequest extends FormRequest
             'calendar_event_id' => ['required', 'integer', 'exists:calendar_events,id'],
             'required_bot'      => ['required', 'boolean'],
             'organization_id'   => ['nullable', 'integer', 'required_if:required_bot,true', 'exists:organizations,id'],
+            // 'single' toggles this event only; 'series' fans the requirement out to
+            // every future occurrence sharing this meeting's series (same URL).
+            'scope'             => ['sometimes', 'in:single,series'],
         ];
     }
 
@@ -42,6 +45,11 @@ class RequireBotRequest extends FormRequest
         return $value !== null ? (int) $value : null;
     }
 
+    public function getScope(): string
+    {
+        return $this->input('scope') === 'series' ? 'series' : 'single';
+    }
+
     public function bodyParameters(): array
     {
         return [
@@ -53,6 +61,11 @@ class RequireBotRequest extends FormRequest
                 'description' => 'Organization the bot is connected from. Required when required_bot is true; '
                     .'the meeting then appears in that organization\'s calendar.',
                 'example'     => 42,
+            ],
+            'scope' => [
+                'description' => "Apply to a single event ('single', default) or to every future occurrence "
+                    ."of the meeting series ('series').",
+                'example'     => 'series',
             ],
         ];
     }

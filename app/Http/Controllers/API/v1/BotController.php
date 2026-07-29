@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\API\v1;
 
-use App\Events\CalendarEventChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\API\v1\JoinBotNowRequest;
 use App\Http\Requests\API\v1\RequireBotRequest;
@@ -80,24 +79,24 @@ class BotController extends Controller
             );
         }
 
-        // Update required_bot for the current user's source in the pivot. When
-        // enabling, record the organization the bot was connected from so the
-        // meeting appears in that organization's calendar; clear it when disabling.
-        $source = $calendarEvent->sources()
-            ->where('user_id', Auth::id())
-            ->first();
+        // scope=series fans the requirement out to every future occurrence of the
+        // same meeting series the organizer created; scope=single (default) touches
+        // only this event. Recording the organization on the creator's pivot and the
+        // Recall (re)scheduling both live in BotSchedulingService::setRequirement.
+        $targets = $request->getScope() === 'series'
+            ? CalendarEvent::query()
+                ->inSameSeriesAs($calendarEvent)
+                ->where('creator_user_id', Auth::id())
+                ->where('starts_at', '>', now())
+                ->get()
+            : collect([$calendarEvent]);
 
-        if ($source) {
-            $calendarEvent->sources()->updateExistingPivot($source->id, [
-                'required_bot'    => $requiredBot,
-                'organization_id' => $requiredBot ? $organizationId : null,
-            ]);
+        foreach ($targets as $target) {
+            $this->botSchedulingService->setRequirement($target, Auth::id(), $requiredBot, $organizationId);
         }
 
-        CalendarEventChanged::dispatch($calendarEvent, true);
-
         return ApiResponse::success(
-            data: CalendarEventResource::make($calendarEvent),
+            data: CalendarEventResource::make($calendarEvent->fresh()),
         );
     }
 

@@ -3,6 +3,7 @@
 namespace App\Services\Recall;
 
 use App\Enums\BotEventType;
+use App\Events\CalendarEventChanged;
 use App\Models\Bot;
 use App\Models\CalendarEvent;
 use App\Models\Source;
@@ -200,6 +201,29 @@ class BotSchedulingService
             });
 
         return $deactivated;
+    }
+
+    /**
+     * Record the bot requirement for a user's source on one event, then reschedule.
+     *
+     * Single source of truth for the require/unrequire toggle: it updates the
+     * creator's calendar_event_source pivot (required_bot + the organization the
+     * bot is connected from) and dispatches CalendarEventChanged so the bot is
+     * scheduled/removed via {@see handleRequirement}. Shared by the single-event
+     * and whole-series paths (see BotController::require) so the logic lives once.
+     */
+    public function setRequirement(CalendarEvent $calendarEvent, int $userId, bool $required, ?int $organizationId): void
+    {
+        $source = $calendarEvent->sources()->where('user_id', $userId)->first();
+
+        if ($source) {
+            $calendarEvent->sources()->updateExistingPivot($source->id, [
+                'required_bot'    => $required,
+                'organization_id' => $required ? $organizationId : null,
+            ]);
+        }
+
+        CalendarEventChanged::dispatch($calendarEvent, true);
     }
 
     /**

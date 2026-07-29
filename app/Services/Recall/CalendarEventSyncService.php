@@ -126,6 +126,30 @@ class CalendarEventSyncService
                 'external_id' => $eventDTO->externalId,
                 'required_bot' => false,
             ]);
+
+            // Inherit the series' bot setting: when the organizer has enabled the
+            // bot for the whole series, a newly-synced occurrence copies required_bot
+            // and the connected organization from an existing sibling of the same
+            // series (same source, same meeting URL). The pivot stays the single
+            // source of truth — no separate "series preference" is persisted.
+            if ($isHostSource && $eventDTO->url) {
+                $sibling = DB::table('calendar_event_source')
+                    ->join('calendar_events', 'calendar_events.id', '=', 'calendar_event_source.calendar_event_id')
+                    ->where('calendar_event_source.source_id', $source->id)
+                    ->where('calendar_event_source.required_bot', true)
+                    ->where('calendar_events.url', $eventDTO->url)
+                    ->where('calendar_events.id', '!=', $calendarEvent->id)
+                    ->orderByDesc('calendar_events.starts_at')
+                    ->select('calendar_event_source.organization_id')
+                    ->first();
+
+                if ($sibling) {
+                    $calendarEvent->sources()->updateExistingPivot($source->id, [
+                        'required_bot'    => true,
+                        'organization_id' => $sibling->organization_id,
+                    ]);
+                }
+            }
         }
 
         $this->syncAttendees($calendarEvent, $attendees);
