@@ -9,28 +9,39 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+// Kill-switches for the autonomous LLM layer (see config/features.php).
+// Read config() inside the closure so it is re-evaluated by each freshly
+// booted schedule:run subprocess — a config change is picked up on the next
+// tick without restarting the scheduler.
+$aiSchedulerOn = fn () => (bool) config('features.enable_ai_scheduler', true);
+$agentTasksDispatchOn = fn () => (bool) config('features.enable_agent_tasks_dispatch', true);
+
 // Insight maintenance jobs
 Schedule::call(fn () => app(InsightMaintenanceService::class)->runWeeklyConsolidation())
     ->weekly()
     ->sundays()
     ->at('03:00')
+    ->when($aiSchedulerOn)
     ->name('insight:weekly-consolidation')
     ->withoutOverlapping();
 
 Schedule::call(fn () => app(InsightMaintenanceService::class)->runMonthlyRebuild())
     ->monthly()
+    ->when($aiSchedulerOn)
     ->name('insight:monthly-rebuild')
     ->withoutOverlapping();
 
 // Enrich Insight profiles from Telegram chat history
 Schedule::command('insight:process-telegram')
     ->everyFourHours()
+    ->when($aiSchedulerOn)
     ->name('insight:process-telegram')
     ->withoutOverlapping();
 
 // Extract tasks from Telegram messages
 Schedule::command('tasks:process-telegram')
     ->everyThreeHours()
+    ->when($aiSchedulerOn)
     ->name('tasks:process-telegram')
     ->withoutOverlapping();
 
@@ -63,12 +74,14 @@ Schedule::command('meetings:send-personal-pre-briefs')
 
 Schedule::command('agent-tasks:dispatch --limit='.config('agent.agent_tasks.dispatch_limit', 50))
     ->everyMinute()
+    ->when($agentTasksDispatchOn)
     ->name('agent-tasks:dispatch')
     ->withoutOverlapping();
 
 // Meeting agenda generation and delivery
 Schedule::command('agenda:generate')
     ->everyFiveMinutes()
+    ->when($aiSchedulerOn)
     ->name('agenda:generate')
     ->withoutOverlapping();
 
@@ -80,6 +93,7 @@ Schedule::command('agenda:send')
 // Daily AI nudge generation for Today briefing page
 Schedule::command('today:generate-nudges')
     ->dailyAt('06:00')
+    ->when($aiSchedulerOn)
     ->name('today:generate-nudges')
     ->withoutOverlapping();
 
@@ -126,6 +140,7 @@ Schedule::command('attachments:prune-orphans')
 // Pre-generate daily task progress digests for morning brief consumption (06:30)
 Schedule::command('tasks:generate-daily-digests')
     ->dailyAt('06:30')
+    ->when($aiSchedulerOn)
     ->name('tasks:generate-daily-digests')
     ->withoutOverlapping();
 
@@ -133,18 +148,21 @@ Schedule::command('tasks:generate-daily-digests')
 // so meetings:advice has data to work with at 08:30.
 Schedule::command('agenda:generate --all-today')
     ->dailyAt('07:30')
+    ->when($aiSchedulerOn)
     ->name('agenda:generate:all-today')
     ->withoutOverlapping();
 
 // US-12.4: Generate per-meeting AI preparation advice for morning brief consumption (08:30)
 Schedule::command('tasks:generate-meetings-advice')
     ->dailyAt('08:30')
+    ->when($aiSchedulerOn)
     ->name('tasks:generate-meetings-advice')
     ->withoutOverlapping();
 
 // US-12.3: Weekly task digest for managers (Saturday morning)
 Schedule::command('tasks:send-weekly-digests')
     ->weekly()->saturdays()->at('09:00')
+    ->when($aiSchedulerOn)
     ->name('tasks:send-weekly-digests')
     ->withoutOverlapping();
 
@@ -164,6 +182,7 @@ Schedule::command('extraction:reap-stuck-plans')
 // Daily issue health analysis per team
 Schedule::command('issues:generate-health-reports')
     ->dailyAt('10:00')
+    ->when($aiSchedulerOn)
     ->name('issues:generate-health-reports')
     ->withoutOverlapping();
 
